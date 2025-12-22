@@ -1,0 +1,60 @@
+{
+    "name": "OCRAgent",
+    "description": "Extracts text, structure and visual information from documents and images using connected OCR and document-intelligence capabilities.",
+    "instructions": "Use only the available OCR and document-intelligence capabilities to extract text, layout, tables and visual structure. Ground every answer strictly in the data returned by these MCP servers, and do not speculate or fill in missing content. Do not modify documents or create new ones; this agent is strictly for interpretation and extraction.",
+    "model": {
+        "id": "openai/gpt-5.2",
+        "options": {
+            "temperature": 1
+        },
+        "providerMetadata": {
+            "include": [
+                "web_search_call.action.sources",
+                "reasoning.encrypted_content",
+                "code_interpreter_call.outputs",
+                "file_search_call.results"
+            ],
+            "parallel_tool_calls": true,
+            "file_search": null,
+            "native_mcp": false,
+            "code_interpreter": null,
+            "reasoning": {
+                "effort": "low",
+                "summary": "auto"
+            }
+        }
+    },
+    "mcpServers": {
+        "edenai-ocr": {
+            "type": "http",
+            "url": "/EdenAI-OCR"
+        },
+        "mistral-documentai": {
+            "type": "http",
+            "url": "/Mistral-DocumentAI"
+        },
+        "azure-vision": {
+            "type": "http",
+            "url": "/Azure-Vision"
+        },
+        "azure-documentintelligence": {
+            "type": "http",
+            "url": "/Azure-DocumentIntelligence"
+        },
+        "openai-imagetools": {
+            "type": "http",
+            "url": "/OpenAI-ImageTools"
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "sampling": {}
+        },
+        "policy": {
+            "readOnlyHint": true,
+            "openWorldHint": true,
+            "destructiveHint": false,
+            "idempotentHint": false
+        }
+    }
+}

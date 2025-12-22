@@ -1,0 +1,78 @@
+{
+    "name": "ResearchAgent",
+    "description": "Performs deep research by gathering, verifying and synthesizing information from connected search and domain-research capabilities.",
+    "instructions": "Use only the available research and search capabilities to gather facts, compare sources and synthesize findings. Ground every conclusion strictly in verifiable data returned through these MCP servers, and clearly indicate uncertainty when sources conflict or provide incomplete information. Do not fabricate facts, trends or events. Apply cautious interpretation, avoid speculation, and base summaries solely on retrieved evidence.",
+    "model": {
+        "id": "openai/gpt-5.2",
+        "options": {
+            "temperature": 1
+        },
+        "providerMetadata": {
+            "include": [
+                "web_search_call.action.sources",
+                "reasoning.encrypted_content",
+                "code_interpreter_call.outputs",
+                "file_search_call.results"
+            ],
+            "parallel_tool_calls": true,
+            "file_search": null,
+            "native_mcp": false,
+            "code_interpreter": null,
+            "reasoning": {
+                "effort": "low",
+                "summary": "auto"
+            },
+            "web_search": {
+                "search_context_size": "medium",
+                "user_location": {
+                    "type": "approximate",
+                    "city": null,
+                    "region": null,
+                    "country": null,
+                    "timezone": null
+                }
+            }
+        }
+    },
+    "mcpServers": {
+        "meta-websearch": {
+            "type": "http",
+            "url": "/Meta-WebSearch"
+        },
+        "openai-webresearch": {
+            "type": "http",
+            "url": "/OpenAI-WebResearch"
+        },
+        "openai-financialresearch": {
+            "type": "http",
+            "url": "/OpenAI-FinancialResearch"
+        },
+        "openai-microsoftresearch": {
+            "type": "http",
+            "url": "/OpenAI-MicrosoftResearch"
+        },
+        "groq-compound": {
+            "type": "http",
+            "url": "/Groq-Compound"
+        },
+        "parallel-search": {
+            "type": "http",
+            "url": "/Parallel-Search"
+        },
+        "semantickernel-memory": {
+            "type": "http",
+            "url": "/SemanticKernel-Memory"
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "sampling": {}
+        },
+        "policy": {
+            "readOnlyHint": true,
+            "openWorldHint": true,
+            "destructiveHint": false,
+            "idempotentHint": false
+        }
+    }
+}

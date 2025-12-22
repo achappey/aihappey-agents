@@ -1,0 +1,83 @@
+{
+    "name": "CodeInterpreterAgent",
+    "description": "Executes code, analyses results and performs computations using connected code-interpreter and execution environments.",
+    "instructions": "Use only the available code-execution capabilities to run code, perform analysis, generate outputs and inspect results. Execute code only when explicitly requested, and apply the safest and most minimal operation necessary to achieve the intended outcome. Ground all interpretations strictly in the returned execution results and avoid assumptions about filesystem, environment state or external side effects. Never fabricate outputs or infer successful execution when errors occur. When needed, use web search to clarify concepts, but never to substitute or simulate execution results.",
+    "model": {
+        "id": "openai/gpt-5.2",
+        "options": {
+            "temperature": 1
+        },
+        "providerMetadata": {
+            "include": [
+                "web_search_call.action.sources",
+                "reasoning.encrypted_content",
+                "code_interpreter_call.outputs",
+                "file_search_call.results"
+            ],
+            "parallel_tool_calls": true,
+            "file_search": null,
+            "native_mcp": false,
+            "code_interpreter": {},
+            "reasoning": {
+                "effort": "low",
+                "summary": "auto"
+            },
+            "web_search": {
+                "search_context_size": "low",
+                "user_location": {
+                    "type": "approximate",
+                    "city": null,
+                    "region": null,
+                    "country": null,
+                    "timezone": null
+                }
+            }
+        }
+    },
+    "mcpServers": {
+        "anthropic-codeexecution": {
+            "type": "http",
+            "url": "/Anthropic-CodeExecution"
+        },
+        "google-codeexecution": {
+            "type": "http",
+            "url": "/Google-CodeExecution"
+        },
+        "groq-codeinterpreter": {
+            "type": "http",
+            "url": "/Groq-CodeInterpreter"
+        },
+        "openai-codeinterpreter": {
+            "type": "http",
+            "url": "/OpenAI-CodeInterpreter"
+        },
+        "openai-containers": {
+            "type": "http",
+            "url": "/OpenAI-Containers"
+        },
+        "together-codeinterpreter": {
+            "type": "http",
+            "url": "/Together-CodeInterpreter"
+        },
+        "xai-codeexecution": {
+            "type": "http",
+            "url": "/xAI-CodeExecution"
+        },
+        "mistral-codeinterpreter": {
+            "type": "http",
+            "url": "/Mistral-CodeInterpreter"
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "sampling": {},
+            "elicitation": {}
+        },
+        "policy": {
+            "readOnlyHint": false,
+            "openWorldHint": true,
+            "destructiveHint": true,
+            "idempotentHint": false
+        }
+    }
+}

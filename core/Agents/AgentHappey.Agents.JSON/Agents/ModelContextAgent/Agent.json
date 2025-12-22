@@ -1,0 +1,75 @@
+{
+    "name": "ModelContextAgent",
+    "description": "Supports understanding, inspecting and extending model context by using connected capabilities for documentation, utilities, security checks, statistics and tool generation.",
+    "instructions": "Use only the available model-context capabilities for all analysis, validation and tool-creation operations. Ground every conclusion and action strictly in data retrieved through these MCP servers, and avoid assumptions about model behavior or system state. Perform modifications or tool-generation only when explicitly requested, and apply the safest and most minimal changes required. You may use web search to clarify terminology or validate conceptual details when needed, but all results must remain anchored in verifiable outputs.",
+    "model": {
+        "id": "openai/gpt-5.2",
+        "options": {
+            "temperature": 1
+        },
+        "providerMetadata": {
+            "include": [
+                "web_search_call.action.sources",
+                "reasoning.encrypted_content",
+                "code_interpreter_call.outputs",
+                "file_search_call.results"
+            ],
+            "parallel_tool_calls": true,
+            "file_search": null,
+            "native_mcp": false,
+            "code_interpreter": null,
+            "reasoning": {
+                "effort": "low",
+                "summary": "auto"
+            },
+            "web_search": {
+                "search_context_size": "medium",
+                "user_location": {
+                    "type": "approximate",
+                    "city": null,
+                    "region": null,
+                    "country": null,
+                    "timezone": null
+                }
+            }
+        }
+    },
+    "mcpServers": {
+        "modelcontext-documentation": {
+            "type": "http",
+            "url": "/ModelContext-Documentation"
+        },
+        "modelcontext-editor": {
+            "type": "http",
+            "url": "/ModelContext-Editor"
+        },
+        "modelcontext-security": {
+            "type": "http",
+            "url": "/ModelContext-Security"
+        },
+        "modelcontext-statistics": {
+            "type": "http",
+            "url": "/ModelContext-Statistics"
+        },
+        "modelcontext-toolcreator": {
+            "type": "http",
+            "url": "/ModelContext-ToolCreator"
+        },
+        "modelcontext-utils": {
+            "type": "http",
+            "url": "/ModelContext-Utils"
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "sampling": {},
+            "elicitation": {}
+        },
+        "policy": {
+            "readOnlyHint": false,
+            "openWorldHint": true,
+            "destructiveHint": true,
+            "idempotentHint": false
+        }
+    }
+}

@@ -1,0 +1,76 @@
+{
+    "name": "MicrosoftAuditAgent",
+    "description": "Generates audit, compliance and activity insights across Microsoft 365 by analyzing user behavior, licensing, application usage and tenant-level reports.",
+    "instructions": "Use only the available Microsoft audit, reporting and directory capabilities to gather, correlate and interpret activity data. Ground every conclusion strictly in the logs, reports and signals returned by these MCP servers, and clearly indicate uncertainty when data is incomplete or conflicting. Do not fabricate events, usage patterns or compliance findings. Perform updates only when explicitly requested, applying the safest and minimal change required. This agent must prioritize accuracy, traceability and evidence-based reporting, without making unsupported assumptions about users, licenses or tenant configuration.",
+    "model": {
+        "id": "openai/gpt-5.2",
+        "options": {
+            "temperature": 1
+        },
+        "providerMetadata": {
+            "include": [
+                "web_search_call.action.sources",
+                "reasoning.encrypted_content",
+                "code_interpreter_call.outputs",
+                "file_search_call.results"
+            ],
+            "parallel_tool_calls": true,
+            "file_search": null,
+            "native_mcp": false,
+            "code_interpreter": null,
+            "reasoning": {
+                "effort": "low",
+                "summary": "auto"
+            }
+        }
+    },
+    "mcpServers": {
+        "microsoft-users": {
+            "type": "http",
+            "url": "/Microsoft-Users"
+        },
+        "microsoft-reports": {
+            "type": "http",
+            "url": "/Microsoft-Reports"
+        },
+        "microsoft-licensing": {
+            "type": "http",
+            "url": "/Microsoft-Licensing"
+        },
+        "office365-management": {
+            "type": "http",
+            "url": "/Office365-Management"
+        },
+        "microsoft-applications": {
+            "type": "http",
+            "url": "/Microsoft-Applications"
+        },
+        "microsoft-security": {
+            "type": "http",
+            "url": "/Microsoft-Security"
+        },
+        "microsoft-mysecurity": {
+            "type": "http",
+            "url": "/Microsoft-MySecurity"
+        },
+        "microsoft-softwareupdates": {
+            "type": "http",
+            "url": "/Microsoft-SoftwareUpdates"
+        },
+        "microsoft-devicemanagement": {
+            "type": "http",
+            "url": "/Microsoft-DeviceManagement"
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "sampling": {}
+        },
+        "policy": {
+            "readOnlyHint": true,
+            "openWorldHint": true,
+            "destructiveHint": false,
+            "idempotentHint": false
+        }
+    }
+}

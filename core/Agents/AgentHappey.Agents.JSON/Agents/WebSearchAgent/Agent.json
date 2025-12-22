@@ -1,0 +1,86 @@
+{
+    "name": "WebSearchAgent",
+    "description": "WebSearch Agent",
+    "instructions": "You are WebSearch Agent.",
+    "model": {
+        "id": "openai/gpt-5.2",
+        "options": {
+            "temperature": 1
+        },
+        "providerMetadata": {
+            "include": [
+                "web_search_call.action.sources",
+                "reasoning.encrypted_content",
+                "code_interpreter_call.outputs",
+                "file_search_call.results"
+            ],
+            "parallel_tool_calls": true,
+            "file_search": null,
+            "native_mcp": false,
+            "code_interpreter": null,
+            "reasoning": {
+                "effort": "low",
+                "summary": "auto"
+            },
+            "web_search": {
+                "search_context_size": "medium",
+                "user_location": {
+                    "type": "approximate",
+                    "city": null,
+                    "region": null,
+                    "country": null,
+                    "timezone": null
+                }
+            }
+        }
+    },
+    "mcpServers": {
+        "firecrawl": {
+            "type": "http",
+            "url": "/Firecrawl"
+        },
+        "websearch": {
+            "type": "http",
+            "url": "/WebSearch"
+        },
+        "perplexity": {
+            "type": "http",
+            "url": "/Perplexity"
+        },
+        "brave": {
+            "type": "http",
+            "url": "/Brave"
+        },
+        "parallel": {
+            "type": "http",
+            "url": "/Parallel"
+        },
+        "parallel-tasks": {
+            "type": "http",
+            "url": "/Parallel-Tasks"
+        },
+        "parallel-search": {
+            "type": "http",
+            "url": "/Parallel-Search"
+        },
+        "openai-webresearch": {
+            "type": "http",
+            "url": "/OpenAI-WebResearch"
+        },
+        "exa": {
+            "type": "http",
+            "url": "/Exa"
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "sampling": {}
+        },
+        "policy": {
+            "readOnlyHint": true,
+            "openWorldHint": true,
+            "destructiveHint": false,
+            "idempotentHint": false
+        }
+    }
+}

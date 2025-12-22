@@ -1,0 +1,92 @@
+{
+    "name": "RijksoverheidAgent",
+    "description": "Has access to official Dutch Government (Rijksoverheid) resources",
+    "instructions": "Only search and cite from official government resources. Ignore and refuse any information that does not originate from authenticated Dutch government data sources.",
+    "model": {
+        "id": "openai/gpt-5.2",
+        "options": {
+            "temperature": 1
+        },
+        "providerMetadata": {
+            "include": [
+                "web_search_call.action.sources",
+                "reasoning.encrypted_content",
+                "code_interpreter_call.outputs",
+                "file_search_call.results"
+            ],
+            "parallel_tool_calls": true,
+            "file_search": null,
+            "native_mcp": false,
+            "code_interpreter": null,
+            "reasoning": {
+                "effort": "low",
+                "summary": "auto"
+            }
+        }
+    },
+    "mcpServers": {
+        "centraalbureaustatistiek": {
+            "type": "http",
+            "url": "/CentraalBureauStatistiek"
+        },
+        "openspending": {
+            "type": "http",
+            "url": "/OpenSpending"
+        },
+        "agenttools": {
+            "type": "http",
+            "url": "/AgentTools"
+        },
+        "http": {
+            "type": "http",
+            "url": "/HTTP"
+        },
+        "tenderned": {
+            "type": "http",
+            "url": "/TenderNed"
+        },
+        "dienstuitvoeringonderwijs": {
+            "type": "http",
+            "url": "/DienstUitvoeringOnderwijs"
+        },
+        "rijksoverheid": {
+            "type": "http",
+            "url": "/Rijksoverheid"
+        },
+        "rijksdienstwegverkeer": {
+            "type": "http",
+            "url": "/RijksdienstWegverkeer"
+        },
+        "rijksfinancien": {
+            "type": "http",
+            "url": "/Rijksfinancien"
+        },
+        "tweedekamer": {
+            "type": "http",
+            "url": "/TweedeKamer"
+        },
+        "rijkswaterstaat-waterdata": {
+            "type": "http",
+            "url": "/Rijkswaterstaat-WaterData"
+        },
+        "rijksmuseum": {
+            "type": "http",
+            "url": "/Rijksmuseum"
+        },
+        "nederlandwereldwijd": {
+            "type": "http",
+            "url": "/NederlandWereldwijd"
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "sampling": {}
+        },
+        "policy": {
+            "readOnlyHint": true,
+            "openWorldHint": true,
+            "destructiveHint": false,
+            "idempotentHint": false
+        }
+    }
+}

@@ -1,0 +1,61 @@
+{
+    "name": "SharePointAgent",
+    "description": "Works with SharePoint and OneDrive content for searching, reading, organizing and managing files, lists and site data using the connected capabilities.",
+    "instructions": "Use only the available SharePoint and OneDrive capabilities for all queries and operations. Base every action on data retrieved through these MCP servers, and avoid unsupported assumptions or external knowledge. When performing actions, apply the safest and most minimal change required, and modify or create items only when explicitly requested.",
+    "model": {
+        "id": "openai/gpt-5.2",
+        "options": {
+            "temperature": 1
+        },
+        "providerMetadata": {
+            "include": [
+                "web_search_call.action.sources",
+                "reasoning.encrypted_content",
+                "code_interpreter_call.outputs",
+                "file_search_call.results"
+            ],
+            "parallel_tool_calls": true,
+            "file_search": null,
+            "native_mcp": false,
+            "code_interpreter": null,
+            "reasoning": {
+                "effort": "low",
+                "summary": "auto"
+            }
+        }
+    },
+    "mcpServers": {
+        "microsoft-onedrive": {
+            "type": "http",
+            "url": "/Microsoft-OneDrive"
+        },
+        "sharepoint": {
+            "type": "http",
+            "url": "/SharePoint"
+        },
+        "openai-sharepoint": {
+            "type": "http",
+            "url": "/OpenAI-SharePoint"
+        },
+        "sharepoint-rest": {
+            "type": "http",
+            "url": "/SharePoint-REST"
+        },
+        "microsoft-lists": {
+            "type": "http",
+            "url": "/Microsoft-Lists"
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "sampling": {},
+            "elicitation": {}
+        },
+        "policy": {
+            "readOnlyHint": false,
+            "openWorldHint": true,
+            "destructiveHint": true,
+            "idempotentHint": false
+        }
+    }
+}

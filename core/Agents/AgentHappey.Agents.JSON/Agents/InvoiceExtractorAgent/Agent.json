@@ -1,0 +1,103 @@
+{
+    "name": "InvoiceExtractorAgent",
+    "description": "Extracts invoice data. Falls back to OCR when needed. Normalizes all amounts to euro.",
+    "instructions": "You receive links or file references. Always open and read file contents via the OneDrive MCP using read_resource before anything else. Extract invoice date, short description, excl and incl VAT amounts. Parse text directly first; only if required fields are missing, fall back to OCR MCPs. Merge OCR results with existing extraction. Detect currency: if not EUR, use web search to retrieve historical exchange rate for the invoice date and convert all amounts to euro. Don't use emdashes anywhere. Never ask the user to clarify. resolve everything via MCPs.",
+    "model": {
+        "id": "openai/gpt-5-mini",
+        "options": {
+            "temperature": 1
+        },
+        "providerMetadata": {
+            "include": [
+                "web_search_call.action.sources",
+                "reasoning.encrypted_content",
+                "code_interpreter_call.outputs",
+                "file_search_call.results"
+            ],
+            "parallel_tool_calls": true,
+            "file_search": null,
+            "native_mcp": false,
+            "code_interpreter": null,
+            "reasoning": {
+                "effort": "medium",
+                "summary": "auto"
+            },
+            "web_search": {
+                "search_context_size": "low",
+                "user_location": {
+                    "type": "approximate",
+                    "city": null,
+                    "region": null,
+                    "country": null,
+                    "timezone": null
+                }
+            }
+        }
+    },
+    "outputSchema": {
+        "properties": {
+            "date": {
+                "type": "string",
+                "required": true,
+                "description": "Date of the invoice."
+            },
+            "description": {
+                "type": "string",
+                "required": true,
+                "description": "Short description. Max 50-70 chars. No emdashes or ';' chars."
+            },
+            "amountExclVat": {
+                "type": "number",
+                "required": true,
+                "description": "Amount excl. VAT in euro."
+            },
+            "amountInclVat": {
+                "type": "number",
+                "required": true,
+                "description": "Amount inclusive VAT in euro."
+            },
+            "vatPercentage": {
+                "type": "number",
+                "required": true,
+                "description": "VAT percentage."
+            }
+        }
+    },
+    "mcpServers": {
+        "microsoft-onedrive": {
+            "type": "http",
+            "url": "/Microsoft-OneDrive"
+        },
+        "edenai-ocr": {
+            "type": "http",
+            "url": "/EdenAI-OCR"
+        },
+        "mistral-documentai": {
+            "type": "http",
+            "url": "/Mistral-DocumentAI"
+        },
+        "azure-vision": {
+            "type": "http",
+            "url": "/Azure-Vision"
+        },
+        "azure-documentintelligence": {
+            "type": "http",
+            "url": "/Azure-DocumentIntelligence"
+        },
+        "openai-imagetools": {
+            "type": "http",
+            "url": "/OpenAI-ImageTools"
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "sampling": {}
+        },
+        "policy": {
+            "readOnlyHint": true,
+            "openWorldHint": true,
+            "destructiveHint": false,
+            "idempotentHint": false
+        }
+    }
+}

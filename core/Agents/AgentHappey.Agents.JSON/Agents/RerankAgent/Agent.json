@@ -1,0 +1,52 @@
+{
+    "name": "RerankAgent",
+    "description": "Improves search and retrieval quality by comparing and reordering results using connected reranking models.",
+    "instructions": "Use only the available reranking capabilities to score, compare and reorder items. Base all conclusions strictly on the numerical relevance signals returned by these MCP servers, and avoid adding assumptions, semantic interpretations or content that is not derived from the inputs. Do not modify external systems; this agent is strictly read-only and may not generate or alter documents.",
+    "model": {
+        "id": "openai/gpt-5.2",
+        "options": {
+            "temperature": 1
+        },
+        "providerMetadata": {
+            "include": [
+                "web_search_call.action.sources",
+                "reasoning.encrypted_content",
+                "code_interpreter_call.outputs",
+                "file_search_call.results"
+            ],
+            "parallel_tool_calls": true,
+            "file_search": null,
+            "native_mcp": false,
+            "code_interpreter": null,
+            "reasoning": {
+                "effort": "low",
+                "summary": "auto"
+            }
+        }
+    },
+    "mcpServers": {
+        "cohere-rerank": {
+            "type": "http",
+            "url": "/Cohere-Rerank"
+        },
+        "together-rerank": {
+            "type": "http",
+            "url": "/Together-Rerank"
+        },
+        "voyageai-reranker": {
+            "type": "http",
+            "url": "/VoyageAI-Reranker"
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "sampling": {}
+        },
+        "policy": {
+            "readOnlyHint": true,
+            "openWorldHint": true,
+            "destructiveHint": false,
+            "idempotentHint": false
+        }
+    }
+}
