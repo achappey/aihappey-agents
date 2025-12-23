@@ -32,7 +32,7 @@ This repo focuses on **orchestration** (agents + workflows) and **protocol mappi
 flowchart LR
   client[Clients<br/>aihappey-chat / other UIs] -->|POST /api/chat<br/>Vercel UI message stream| host[Sample Host<br/>ASP.NET]
   host -->|maps UI messages → Agent Framework| runtime[Agent Framework Runtime]
-  runtime -->|tool calling| mcp[MCP servers<br/>/{server}]
+  runtime -->|tool calling| mcp[MCP servers<br/>/&#123;server&#125;]
   runtime -->|chat/completions| ai[Downstream AI backend<br/>(AiConfig.AiEndpoint)]
   runtime -->|maps Agent Framework events → UI parts| host
   host --> client
@@ -40,6 +40,7 @@ flowchart LR
   subgraph content[Agent content]
     json[Static agents JSON<br/>core/Agents/AgentHappey.Agents.JSON/Agents/**/Agent.json]
   end
+
   json --> runtime
 ```
 
