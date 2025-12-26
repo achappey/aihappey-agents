@@ -109,7 +109,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
 
         yield return new FinishUIPart
         {
-            FinishReason = "unknown",
+            FinishReason = "stop",
             MessageMetadata = new Dictionary<string, object>
             {
                 { "timestamp", DateTime.UtcNow }
@@ -317,7 +317,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
 
         yield return new FinishUIPart
         {
-            FinishReason = "unknown",
+            FinishReason = "stop",
             MessageMetadata = new Dictionary<string, object>
                 {
                     { "timestamp", DateTime.UtcNow },
