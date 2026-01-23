@@ -109,7 +109,7 @@ public sealed class InMemoryWorkflowAgentProvider : WorkflowAgentProvider
         await Task.CompletedTask;
     }
 
-    public override async IAsyncEnumerable<AgentRunResponseUpdate> InvokeAgentAsync(
+    public override async IAsyncEnumerable<AgentResponseUpdate> InvokeAgentAsync(
         string agentId,
         string? agentVersion,
         string? conversationId,
@@ -132,7 +132,8 @@ public sealed class InMemoryWorkflowAgentProvider : WorkflowAgentProvider
         var runMessages = messages ?? state.OrderedMessages.ToArray();
 
         // per conversation + agent een eigen thread
-        var thread = state.ThreadsByAgentId.GetOrAdd(agentId, _ => agent.GetNewThread());
+        var threadItem = await agent.GetNewThreadAsync();
+        var thread = state.ThreadsByAgentId.GetOrAdd(agentId, _ => threadItem);
 
         var chatOptions = new ChatOptions { Tools = [.. _tools ?? []] };
 

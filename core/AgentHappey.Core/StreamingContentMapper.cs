@@ -16,7 +16,7 @@ namespace AgentHappey.Core;
 public interface IStreamingContentMapper
 {
     IAsyncEnumerable<UIMessagePart> MapAsync(
-        IAsyncEnumerable<AgentRunResponseUpdate> updates,
+        IAsyncEnumerable<AgentResponseUpdate> updates,
         CancellationToken cancellationToken = default);
 
     IAsyncEnumerable<UIMessagePart> MapAsync(
@@ -45,7 +45,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
     private static readonly JsonSerializerOptions JsonWeb = JsonSerializerOptions.Web;
 
     public async IAsyncEnumerable<UIMessagePart> MapAsync(
-        IAsyncEnumerable<AgentRunResponseUpdate> updates,
+        IAsyncEnumerable<AgentResponseUpdate> updates,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var text = new TextStreamState();
@@ -78,7 +78,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
 
         await foreach (var update in updates.WithCancellation(cancellationToken))
         {
-            if (update is AgentRunUpdateEvent agentRunUpdateEvent)
+            if (update is AgentResponseUpdateEvent agentRunUpdateEvent)
             {
                 var u = agentRunUpdateEvent.Update;
 
