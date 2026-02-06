@@ -2,7 +2,7 @@
 using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
-using AIHappey.Common.Model;
+using AIHappey.Vercel.Models;
 using Microsoft.Extensions.AI;
 
 namespace AgentHappey.Common.Extensions;

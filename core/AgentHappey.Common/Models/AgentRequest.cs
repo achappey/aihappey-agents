@@ -1,6 +1,6 @@
 
 using System.Text.Json.Nodes;
-using AIHappey.Common.Model;
+using AIHappey.Vercel.Models;
 
 namespace AgentHappey.Common.Models;
 

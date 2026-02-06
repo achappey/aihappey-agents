@@ -11,7 +11,7 @@ public sealed class InMemoryWorkflowAgentProvider : WorkflowAgentProvider
     {
         public ConcurrentQueue<ChatMessage> OrderedMessages { get; } = new();
         public ConcurrentDictionary<string, ChatMessage> MessagesById { get; } = new(StringComparer.Ordinal);
-        public ConcurrentDictionary<string, AgentThread> ThreadsByAgentId { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public ConcurrentDictionary<string, AgentSession> ThreadsByAgentId { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
     private readonly ConcurrentDictionary<string, ConversationState> _conversations = new();
@@ -132,7 +132,7 @@ public sealed class InMemoryWorkflowAgentProvider : WorkflowAgentProvider
         var runMessages = messages ?? state.OrderedMessages.ToArray();
 
         // per conversation + agent een eigen thread
-        var threadItem = await agent.GetNewThreadAsync();
+        var threadItem = await agent.CreateSessionAsync(cancellationToken);
         var thread = state.ThreadsByAgentId.GetOrAdd(agentId, _ => threadItem);
 
         var chatOptions = new ChatOptions { Tools = [.. _tools ?? []] };

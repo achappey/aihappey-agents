@@ -10,6 +10,8 @@ using AIHappey.Common.Model;
 using System.Net.Mime;
 using System.Text;
 using AgentHappey.Common.Extensions;
+using AIHappey.Vercel.Models;
+using AIHappey.Vercel.Extensions;
 
 namespace AgentHappey.Core;
 

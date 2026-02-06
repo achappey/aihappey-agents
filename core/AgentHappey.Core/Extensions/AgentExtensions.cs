@@ -2,6 +2,7 @@ using System.Text.Json;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Common.Models;
 using AIHappey.Common.Model;
+using AIHappey.Vercel.Models;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
 
@@ -60,7 +61,7 @@ public static class AgentExtensions
 
         return new UIMessage
         {
-            Role = AIHappey.Common.Model.Role.system,
+            Role = AIHappey.Vercel.Models.Role.system,
             Id = Guid.NewGuid().ToString(),
             Parts = parts
         };

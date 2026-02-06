@@ -13,6 +13,7 @@ using Microsoft.Extensions.AI;
 using AgentHappey.Core.MCP;
 using AIHappey.Common.Model;
 using System.Text;
+using AIHappey.Vercel.Models;
 
 namespace AgentHappey.AzureAuth.Controllers;
 

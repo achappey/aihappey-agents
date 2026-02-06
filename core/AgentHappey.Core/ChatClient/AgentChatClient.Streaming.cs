@@ -6,6 +6,7 @@ using AIHappey.Common.Model;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Core.Extensions;
 using System.Net.Mime;
+using AIHappey.Vercel.Models;
 
 namespace AgentHappey.Core.ChatClient;
 

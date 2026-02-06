@@ -19,6 +19,6 @@
   </ItemGroup>
   
   <ItemGroup>
-    <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Common\AIHappey.Common.csproj" />    
+    <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Vercel\AIHappey.Vercel.csproj" />    
   </ItemGroup>  
 </Project>
