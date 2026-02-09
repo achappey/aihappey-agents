@@ -129,7 +129,7 @@ public sealed class InMemoryWorkflowAgentProvider : WorkflowAgentProvider
                 await CreateMessageAsync(conversationId, m, cancellationToken);
         }
 
-        var runMessages = messages ?? state.OrderedMessages.ToArray();
+        var runMessages = messages ?? [.. state.OrderedMessages];
 
         // per conversation + agent een eigen thread
         var threadItem = await agent.CreateSessionAsync(cancellationToken);

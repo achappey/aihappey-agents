@@ -46,7 +46,7 @@ public partial class AgentChatClient
     public void SetHistory(IEnumerable<ChatMessage> msgs)
     {
         // materialize once, stable ordering
-        var list = msgs as IList<ChatMessage> ?? msgs.ToList();
+        var list = msgs as IList<ChatMessage> ?? [.. msgs];
         Volatile.Write(ref _history, [.. list]);
     }
 
