@@ -7,6 +7,13 @@ namespace AgentHappey.Common.Extensions;
 
 public static class AIHelpers
 {
+    private static ToolApproval CreateAutoApproval(string id, string? reason) => new()
+    {
+        Approved = true,
+        Id = id,
+        Reason = string.IsNullOrWhiteSpace(reason) ? "agent" : reason
+    };
+
     public static string GetDataUIPartType(this DataContent dataContent) =>
       dataContent.Name != null ? dataContent.Name.StartsWith("data-") ?
                                dataContent.Name.Length > 5 ? dataContent.Name
@@ -99,8 +106,10 @@ public static class AIHelpers
                         {
                             ToolCallId = existing.ToolCallId,
                             Type = existing.Type,
+                            State = "output-available",
                             Input = existing.Input ?? new { },
                             Output = fr.Result ?? new { },
+                            Approval = existing.Approval ?? CreateAutoApproval(existing.ToolCallId, msg.AuthorName),
                             ProviderExecuted = true
                         };
 
@@ -139,8 +148,10 @@ public static class AIHelpers
                             {
                                 ToolCallId = callId,
                                 Type = $"tool-{fc.Name}",
+                                State = "approval-responded",
                                 Input = NormalizeArgs(fc.Arguments),
                                 Output = new { },              // filled when tool result arrives
+                                Approval = CreateAutoApproval(callId, msg.AuthorName),
                                 ProviderExecuted = false       // IMPORTANT: call is not executed yet
                             };
 

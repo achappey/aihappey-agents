@@ -17,7 +17,6 @@
     <ProjectReference Include="..\..\core\AgentHappey.Core\AgentHappey.Core.csproj" />
     <ProjectReference Include="..\..\core\Agents\AgentHappey.Agents.JSON\AgentHappey.Agents.JSON.csproj" />
   </ItemGroup>
-  
   <ItemGroup>
     <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Vercel\AIHappey.Vercel.csproj" />    
   </ItemGroup>  

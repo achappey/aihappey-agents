@@ -6,12 +6,9 @@ using Microsoft.Agents.AI.Workflows;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
-using AIHappey.Common.Model;
 using System.Net.Mime;
-using System.Text;
 using AgentHappey.Common.Extensions;
 using AIHappey.Vercel.Models;
-using AIHappey.Vercel.Extensions;
 
 namespace AgentHappey.Core;
 

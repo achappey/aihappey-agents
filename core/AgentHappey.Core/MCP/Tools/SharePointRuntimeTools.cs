@@ -7,7 +7,6 @@ using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
-using Microsoft.Agents.AI.Workflows.Declarative;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;

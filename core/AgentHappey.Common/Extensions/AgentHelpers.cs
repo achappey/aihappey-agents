@@ -64,30 +64,5 @@ public static class AgentHelpers
         };
     }
 
-    public static object? GetOutputSchema2(this Agent agent) =>
-        agent.OutputSchema != null ? new
-        {
-            type = "json_schema",
-            json_schema = new
-            {
-                type = "json_schema",
-                name = $"{agent.Name.ToLowerInvariant()}_output".ToLowerInvariant(),
-                description = agent.Description,
-                schema = new
-                {
-                    type = "object",
-                    properties = agent.OutputSchema.Properties,
-                    required = agent.OutputSchema.Properties
-                        .Where(a => a.Value.Required == true)
-                        .Select(a => a.Key)
-                        .ToList(),
-                    additionalProperties = false,
-                },
-            }
-        } : null;
-
     public static IEnumerable<McpServer> ToMcpServers(this IEnumerable<string> urls) => urls.Select(a => a.ToMcpServer());
-
-
-
 }

@@ -9,6 +9,26 @@ namespace AgentHappey.Common.Extensions;
 
 public static class VercelHelpers
 {
+    private static string NormalizeToolName(string? type) =>
+        type?.StartsWith("tool-", StringComparison.OrdinalIgnoreCase) == true
+            ? type["tool-".Length..]
+            : (type ?? "unknown");
+
+    private static bool HasConcreteOutput(object? output)
+    {
+        if (output is null)
+            return false;
+
+        if (output is JsonElement je)
+            return je.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined;
+
+        return true;
+    }
+
+    private static bool IsApprovalControlPart(ToolInvocationPart ti, string toolName) =>
+        string.Equals(ti.Type, "tool-approval-request", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(toolName, "approval-request", StringComparison.OrdinalIgnoreCase);
+
     public static IEnumerable<ChatMessage> ToMessages(this IEnumerable<UIMessage> messages)
     {
         foreach (var ui in messages)
@@ -50,9 +70,17 @@ public static class VercelHelpers
                         assistantContents.Add(new TextContent(td.Delta ?? ""));
                         break;
 
+                    // Explicit approval envelope/control messages are transport-only,
+                    // never executable tools in the agents runtime.
+                    case ToolApprovalRequestUIPart:
+                        break;
+
                     // If your UI has ToolCallPart separately (optional):
                     case ToolCallPart tc:
                         {
+                            if (string.Equals(tc.ToolName, "approval-request", StringComparison.OrdinalIgnoreCase))
+                                break;
+
                             var args = JsonSerializer.Deserialize<Dictionary<string, object?>>(
                                 JsonSerializer.Serialize(tc.Input)
                             ) ?? [];
@@ -64,9 +92,12 @@ public static class VercelHelpers
                     // The important one: ToolInvocationPart => assistant call + tool result
                     case ToolInvocationPart ti:
                         {
-                            var toolName = ti.Type?.StartsWith("tool-") == true
-                                ? ti.Type["tool-".Length..]
-                                : (ti.Type ?? "unknown");
+                            var toolName = NormalizeToolName(ti.Type);
+
+                            // Approval control parts belong to the UI approval handshake.
+                            // Agents auto-approve and never execute these as functions.
+                            if (IsApprovalControlPart(ti, toolName))
+                                break;
 
                             var args = JsonSerializer.Deserialize<Dictionary<string, object?>>(
                                 JsonSerializer.Serialize(ti.Input)
@@ -75,11 +106,18 @@ public static class VercelHelpers
                             // 1) assistant function call
                             assistantContents.Add(new FunctionCallContent(ti.ToolCallId, toolName, args));
 
-                            // 2) tool function result (separate message)
-                            toolMessages.Add(new ChatMessage(ChatRole.Tool,
-                            [
-                                new FunctionResultContent(ti.ToolCallId, ti.Output ?? new { })
-                            ]));
+                            // 2) tool function result (separate message) only when concrete output exists.
+                            // If output is not present yet (approval-requested/approval-responded flow),
+                            // let the agents runtime execute the tool call.
+                            if (HasConcreteOutput(ti.Output)
+                                || string.Equals(ti.State, "output-available", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(ti.State, "output-error", StringComparison.OrdinalIgnoreCase))
+                            {
+                                toolMessages.Add(new ChatMessage(ChatRole.Tool,
+                                [
+                                    new FunctionResultContent(ti.ToolCallId, ti.Output ?? new { })
+                                ]));
+                            }
 
                             break;
                         }
@@ -122,6 +160,9 @@ public static class VercelHelpers
     public static IEnumerable<ChatResponseUpdate>? ToChatResponseUpdates(this UIMessagePart part,
         string modelId, string authorName)
     {
+        if (part is ToolApprovalRequestUIPart)
+            return null;
+
         if (part is ToolCallDeltaPart)
             return null;
 
@@ -198,6 +239,9 @@ public static class VercelHelpers
 
         if (part is ToolCallPart tc)
         {
+            if (string.Equals(tc.ToolName, "approval-request", StringComparison.OrdinalIgnoreCase))
+                return null;
+
             if (tc.ProviderExecuted == true)
                 return One(new ChatResponseUpdate(ChatRole.Assistant,
                     [new DataContent(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(tc)), MediaTypeNames.Application.Json)])
@@ -244,20 +288,30 @@ public static class VercelHelpers
 
         if (part is ToolInvocationPart ti)
         {
-            var toolName = ti.Type.Replace("tool-", "");
+            var toolName = NormalizeToolName(ti.Type);
+
+            if (IsApprovalControlPart(ti, toolName))
+                return null;
 
             var args = JsonSerializer.Deserialize<Dictionary<string, object?>>(
                 JsonSerializer.Serialize(ti.Input)
             ) ?? [];
 
-            return Two(
-                new ChatResponseUpdate(ChatRole.Assistant,
+            var call = new ChatResponseUpdate(ChatRole.Assistant,
                     [new FunctionCallContent(ti.ToolCallId, toolName, args)])
-                {
-                    MessageId = Guid.NewGuid().ToString(),
-                    AuthorName = authorName,
-                    ModelId = modelId
-                },
+            {
+                MessageId = Guid.NewGuid().ToString(),
+                AuthorName = authorName,
+                ModelId = modelId
+            };
+
+            if (!HasConcreteOutput(ti.Output)
+                && !string.Equals(ti.State, "output-available", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(ti.State, "output-error", StringComparison.OrdinalIgnoreCase))
+                return One(call);
+
+            return Two(
+                call,
                 new ChatResponseUpdate(ChatRole.Tool,
                     [new FunctionResultContent(ti.ToolCallId, ti.Output ?? new { })])
                 {

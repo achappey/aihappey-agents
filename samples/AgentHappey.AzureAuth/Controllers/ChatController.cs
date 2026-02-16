@@ -11,7 +11,6 @@ using Microsoft.Identity.Web;
 using AgentHappey.Core.Extensions;
 using Microsoft.Extensions.AI;
 using AgentHappey.Core.MCP;
-using AIHappey.Common.Model;
 using System.Text;
 using AIHappey.Vercel.Models;
 
