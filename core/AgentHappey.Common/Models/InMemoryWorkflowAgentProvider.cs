@@ -5,7 +5,7 @@ using Microsoft.Extensions.AI;
 
 namespace AgentHappey.Common.Models;
 
-public sealed class InMemoryWorkflowAgentProvider : WorkflowAgentProvider
+public sealed class InMemoryWorkflowAgentProvider : ResponseAgentProvider
 {
     private sealed class ConversationState
     {

@@ -8,7 +8,7 @@ namespace AgentHappey.Core.Extensions;
 
 public static class WorkflowExtensions
 {
-    public static Workflow ParseWorkflow<TInput>(this string yamlText, WorkflowAgentProvider workflowAgentProvider)
+    public static Workflow ParseWorkflow<TInput>(this string yamlText, ResponseAgentProvider workflowAgentProvider)
     {
         using var reader = new StringReader(yamlText);
         var options = new DeclarativeWorkflowOptions(workflowAgentProvider);

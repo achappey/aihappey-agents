@@ -355,7 +355,6 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             ToolCallId = fc.CallId!,
             ProviderExecuted = true,
             ToolName = fc.Name,
-            //    Type = $"tool-{fc.Name}",
             Input = normalizedInput
         };
     }

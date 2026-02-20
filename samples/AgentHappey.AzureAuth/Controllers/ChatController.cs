@@ -133,7 +133,7 @@ public class ChatController(IHttpClientFactory httpClientFactory,
             {
                 workflow = yamlContent.ParseWorkflow<string>(provider);
 
-                await using var run = await InProcessExecution.StreamAsync(
+                await using var run = await InProcessExecution.RunStreamingAsync(
                               workflow,
                               messages.LastOrDefault(a => a.Role == ChatRole.User)?.Text!,
                               cancellationToken: cancellationToken
@@ -156,7 +156,7 @@ public class ChatController(IHttpClientFactory httpClientFactory,
                  await Response.WritePartsAsync(mapped, cancellationToken);*/
 
                 // SINGLE execution path
-                await using var run = await InProcessExecution.StreamAsync(
+                await using var run = await InProcessExecution.RunStreamingAsync(
                     workflow,
                     messages,
                     cancellationToken: cancellationToken

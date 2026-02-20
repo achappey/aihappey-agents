@@ -72,7 +72,7 @@ public class ChatController(IHttpClientFactory httpClientFactory,
             };
 
             // SINGLE execution path
-            await using var run = await InProcessExecution.StreamAsync(
+            await using var run = await InProcessExecution.RunStreamingAsync(
                 workflow,
                 messages,
                 cancellationToken: cancellationToken
