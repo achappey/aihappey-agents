@@ -74,11 +74,7 @@ public class RuntimeTools
 
         return new()
         {
-            StructuredContent = await JsonNode.ParseAsync(
-                BinaryData.FromObjectAsJson(response,
-                    JsonSerializerOptions.Web)
-                    .ToStream(),
-                cancellationToken: cancellationToken)
+            StructuredContent = JsonSerializer.SerializeToElement(response, JsonSerializerOptions.Web)
         };
     }
 
@@ -113,7 +109,7 @@ public class RuntimeTools
         var tokenAcquisition = services.GetRequiredService<ITokenAcquisition>();
         var client = httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(aiConfig.AiEndpoint);
-        
+
         var agent = new Agent()
         {
             Name = agentName,
@@ -137,22 +133,6 @@ public class RuntimeTools
                     Elicitation = elicitCapability == true ? new() : null
                 }
             },
-       /*     Mcp = new()
-            {
-                Servers = mcpServers?.ToMcpServers(),
-                Policy = new()
-                {
-                    ReadOnly = readOnly,
-                    Idempotent = idempotent,
-                    OpenWorld = openWorld,
-                    Destructive = destructive
-                },
-                ClientCapabilities = new()
-                {
-                    Sampling = samplingCapability == true ? new() : null,
-                    Elicitation = elicitCapability == true ? new() : null
-                }
-            }*/
         };
 
         IEnumerable<ChatMessage> messages = [new ChatMessage(ChatRole.User, task)];
@@ -172,7 +152,7 @@ public class RuntimeTools
                  services.GetMcpTokenAsync,
                  azureAd.TenantId);
 
-        var tools = await agentItem.ConnectMcp( cancellationToken);
+        var tools = await agentItem.ConnectMcp(cancellationToken);
 
         var aiAgent = new ChatClientAgent(agentItem,
             instructions: agent.Instructions,
@@ -189,11 +169,7 @@ public class RuntimeTools
 
         return new()
         {
-            StructuredContent = await JsonNode.ParseAsync(
-                BinaryData.FromObjectAsJson(response,
-                    JsonSerializerOptions.Web)
-                    .ToStream(),
-                cancellationToken: cancellationToken)
+            StructuredContent = JsonSerializer.SerializeToElement(response, JsonSerializerOptions.Web)
         };
     }
 }

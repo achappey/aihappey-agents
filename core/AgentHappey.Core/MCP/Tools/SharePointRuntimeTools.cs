@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.Extensions;
@@ -19,8 +18,6 @@ namespace AgentHappey.Core.MCP.Tools;
 [McpServerToolType]
 public class SharePointRuntimeTools
 {
-
-
     [Description("Ask an AI agent by SharePoint agent.json file.")]
     [McpServerTool(Title = "Ask an AI agent",
         Name = "agent_sharepoint_runtime_ask",
@@ -98,11 +95,7 @@ public class SharePointRuntimeTools
 
         return new()
         {
-            StructuredContent = await JsonNode.ParseAsync(
-                BinaryData.FromObjectAsJson(response,
-                    JsonSerializerOptions.Web)
-                    .ToStream(),
-                cancellationToken: cancellationToken)
+            StructuredContent = JsonSerializer.SerializeToElement(response, JsonSerializerOptions.Web)
         };
     }
 
@@ -175,7 +168,7 @@ public class SharePointRuntimeTools
                                 new Dictionary<string, string?>(),
                                 services.GetMcpTokenAsync,
                                 azureAd.TenantId);
-                                
+
                 agentChatClientItem.SetHistory(messages);
 
                 var agentTools = await agentChatClientItem.ConnectMcp(cancellationToken);
@@ -227,23 +220,16 @@ public class SharePointRuntimeTools
             await using var run = await InProcessExecution.RunAsync(
                                workflow,
                                messages.LastOrDefault(a => a.Role == ChatRole.User)?.Text!,
-                               // messages.LastOrDefault()?.Text!,
                                cancellationToken: cancellationToken
                            );
-            // var response = await workflow.AsAgent().RunAsync(messages, options: runOpts, cancellationToken: cancellationToken);
 
             var events = run.OutgoingEvents
-                // jij bepaalt zelf welke events je wilt
-                //.Where(e => e is WorkflowOutputEvent || e is WorkflowErrorEvent)
                 .Select(e => e.ToString())
                 .ToList();
 
             return new()
             {
-                StructuredContent = JsonSerializer.SerializeToNode(
-                    new { Events = events },
-                    JsonSerializerOptions.Web
-                )
+                StructuredContent = JsonSerializer.SerializeToElement(new { Events = events }, JsonSerializerOptions.Web)
             };
         }
         catch (Exception e)
@@ -254,11 +240,6 @@ public class SharePointRuntimeTools
                 Content = [new TextContentBlock() {
                     Text = e.Message + e.StackTrace
                 }]
-                /*    StructuredContent = await JsonNode.ParseAsync(
-                        BinaryData.FromObjectAsJson(run,
-                            JsonSerializerOptions.Web)
-                            .ToStream(),
-                        cancellationToken: cancellationToken)*/
             };
         }
     }

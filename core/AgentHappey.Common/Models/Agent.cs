@@ -21,10 +21,6 @@ public class Agent
     [JsonPropertyName("argumentHint")]
     public string? ArgumentHint { get; set; }
 
-    // [JsonPropertyName("mcp")]
-    // [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    // public Mcp? Mcp { get; set; }
-
     [JsonPropertyName("outputSchema")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public OutputSchema? OutputSchema { get; set; }

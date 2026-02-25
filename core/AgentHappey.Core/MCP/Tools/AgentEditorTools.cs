@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.Extensions;
@@ -29,7 +28,7 @@ public class AgentEditorTools
 
         return new CallToolResult()
         {
-            StructuredContent = JsonNode.Parse(schema.ToJson())!
+            StructuredContent = JsonSerializer.SerializeToElement(schema, JsonSerializerOptions.Web)
         };
     }
 
@@ -113,24 +112,7 @@ public class AgentEditorTools
                     Elicitation = capabilityElicitation == true ? new() : null
                 }
             },
-            /* Mcp = new Mcp
-             {
-                 Servers = mcpServerUrls?.Select(url => url.ToMcpServer()),
-                 Policy = new McpPolicy
-                 {
-                     ReadOnly = policyReadOnly,
-                     Idempotent = policyIdempotent,
-                     OpenWorld = policyOpenWorld,
-                     Destructive = policyDestructive
-                 },
-                 ClientCapabilities = new ClientCapabilities
-                 {
-                     Sampling = capabilitySampling == true ? new() : null,
-                     Elicitation = capabilityElicitation == true ? new() : null
-                 }
-             }*/
         };
-
 
         var json = JsonSerializer.Serialize(agent, JsonSerializerOptions.Web);
         await using var ms = new MemoryStream(Encoding.UTF8.GetBytes(json));
@@ -146,7 +128,7 @@ public class AgentEditorTools
 
         return new CallToolResult
         {
-            StructuredContent = JsonNode.Parse(JsonSerializer.Serialize(created, JsonSerializerOptions.Web))!
+            StructuredContent = JsonSerializer.SerializeToElement(created, JsonSerializerOptions.Web)
         };
     }
 
@@ -225,22 +207,6 @@ public class AgentEditorTools
                     Elicitation = capabilityElicitation == true ? new() : null
                 }
             },
-            /*Mcp = new Mcp
-            {
-                Servers = mcpServerUrls?.Select(url => url.ToMcpServer()),
-                Policy = new McpPolicy
-                {
-                    ReadOnly = policyReadOnly,
-                    Idempotent = policyIdempotent,
-                    OpenWorld = policyOpenWorld,
-                    Destructive = policyDestructive
-                },
-                ClientCapabilities = new ClientCapabilities
-                {
-                    Sampling = capabilitySampling == true ? new() : null,
-                    Elicitation = capabilityElicitation == true ? new() : null
-                }
-            }*/
         };
 
         var json = JsonSerializer.Serialize(agent, JsonSerializerOptions.Web);
@@ -252,12 +218,12 @@ public class AgentEditorTools
             .PutAsync(ms, rc =>
             {
                 rc.Headers.Add("Content-Type", "application/json; charset=utf-8");
-            }, cancellationToken) 
+            }, cancellationToken)
             ?? throw new Exception("Upload failed");
 
         return new CallToolResult
         {
-            StructuredContent = JsonNode.Parse(JsonSerializer.Serialize(updated, JsonSerializerOptions.Web))!
+            StructuredContent = JsonSerializer.SerializeToElement(updated, JsonSerializerOptions.Web)
         };
     }
 }
