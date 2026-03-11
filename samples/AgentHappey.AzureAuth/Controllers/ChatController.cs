@@ -13,6 +13,7 @@ using Microsoft.Extensions.AI;
 using AgentHappey.Core.MCP;
 using System.Text;
 using AIHappey.Vercel.Models;
+using System.Text.Json;
 
 namespace AgentHappey.AzureAuth.Controllers;
 
@@ -83,13 +84,24 @@ public class ChatController(IHttpClientFactory httpClientFactory,
             });
 
             var connections = await agentItem.GetConnections();
-            var items = connections.Select(z => new DataUIPart()
-            {
-                Type = "data-model-context",
-                Data = z
-            });
+
+            List<UIMessagePart> items = [.. connections.Select(z => ToolCallPart.CreateProviderExecuted(z.SessionId!, "connect_mcp", new {
+                z.Url
+            }))];
 
             await Response.WritePartsAsync(ToAsync(items), cancellationToken);
+
+            List<UIMessagePart> connectedItems = [.. connections.Select(z => new ToolOutputAvailablePart() {
+                ToolCallId = z.SessionId!,
+                Output = new ModelContextProtocol.Protocol.CallToolResult
+                        {
+                            IsError = false,
+                            StructuredContent = JsonSerializer.SerializeToElement(z)
+                        },
+                ProviderExecuted = true
+            })];
+
+            await Response.WritePartsAsync(ToAsync(connectedItems), cancellationToken);
         }
 
         var yamlFile = chatRequest.Messages
@@ -149,13 +161,6 @@ public class ChatController(IHttpClientFactory httpClientFactory,
             }
             else
             {
-                /* var wfAgent = workflow.AsAgent();
-                 var updates = wfAgent.RunStreamingAsync(messages, options: runOpts, cancellationToken: cancellationToken);
-                 var mapped = mapper.MapAsync(updates, cancellationToken);
-
-                 await Response.WritePartsAsync(mapped, cancellationToken);*/
-
-                // SINGLE execution path
                 await using var run = await InProcessExecution.RunStreamingAsync(
                     workflow,
                     messages,

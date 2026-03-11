@@ -8,6 +8,8 @@ using Microsoft.Extensions.Options;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.Extensions;
+using AIHappey.Vercel.Models;
+using System.Text.Json;
 
 namespace AgentHappey.HeaderAuth.Controllers;
 
@@ -49,6 +51,25 @@ public class ChatController(IHttpClientFactory httpClientFactory,
                 Tools = tools
             });
 
+            var connections = await agentItem.GetConnections();
+
+            List<UIMessagePart> items = [.. connections.Select(z => ToolCallPart.CreateProviderExecuted(z.SessionId!, "connect_mcp", new {
+                z.Url
+            }))];
+
+            await Response.WritePartsAsync(ToAsync(items), cancellationToken);
+
+            List<UIMessagePart> connectedItems = [.. connections.Select(z => new ToolOutputAvailablePart() {
+                ToolCallId = z.SessionId!,
+                Output = new ModelContextProtocol.Protocol.CallToolResult
+                        {
+                            IsError = false,
+                            StructuredContent = JsonSerializer.SerializeToElement(z)
+                        },
+                ProviderExecuted = true
+            })];
+
+            await Response.WritePartsAsync(ToAsync(connectedItems), cancellationToken);
         }
 
         var aiAgent = agents.FirstOrDefault() ?? throw new Exception("No agent found");
@@ -93,6 +114,15 @@ public class ChatController(IHttpClientFactory httpClientFactory,
         }
 
         return new EmptyResult();
+    }
+
+    static async IAsyncEnumerable<T> ToAsync<T>(IEnumerable<T> source)
+    {
+        foreach (var item in source)
+        {
+            yield return item;
+            await Task.Yield(); // optioneel
+        }
     }
 }
 

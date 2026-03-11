@@ -13,6 +13,15 @@ using System.Text.Json.Nodes;
 
 namespace AgentHappey.Core.ChatClient;
 
+public class AIModelList
+{
+    public IEnumerable<AIModel>? Data { get; set; }
+}
+
+public class AIModel
+{
+    public string Id { get; set; } = null!;
+}
 
 public class ElicitationPair
 {
@@ -40,8 +49,7 @@ public partial class AgentChatClient
 
     //  private readonly ConcurrentBag<ChatMessage> Messages = [];
 
-
-    private ChatMessage[] _history = Array.Empty<ChatMessage>();
+    private ChatMessage[] _history = [];
 
     public void SetHistory(IEnumerable<ChatMessage> msgs)
     {
@@ -53,23 +61,34 @@ public partial class AgentChatClient
     private ChatMessage[] GetHistorySnapshot()
         => Volatile.Read(ref _history);
 
-    public async Task<IEnumerable<object>> GetConnections()
+    public async Task<IEnumerable<McpConnectionInfo>> GetConnections()
     {
         var options = new JsonSerializerOptions
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
-        return McpClients.Select(a => new
-        {
-            a.Value.NegotiatedProtocolVersion,
-            a.Value.ServerInfo,
-            a.Value.ServerCapabilities,
-            a.Value.ServerInstructions,
-            a.Value.SessionId,
-        })
-        .Select(a => JsonSerializer.Serialize(a, options))
-        .Select(a => JsonSerializer.Deserialize<object>(a)!);
+        return await Task.FromResult(
+            McpClients.Select(a => new McpConnectionInfo
+            {
+                Url = a.Key,
+                NegotiatedProtocolVersion = a.Value.NegotiatedProtocolVersion,
+                ServerInfo = a.Value.ServerInfo,
+                ServerCapabilities = a.Value.ServerCapabilities,
+                ServerInstructions = a.Value.ServerInstructions,
+                SessionId = a.Value.SessionId
+            })
+        );
+    }
+
+    public class McpConnectionInfo
+    {
+        public string Url { get; init; } = null!;
+        public string? SessionId { get; init; }
+        public string? NegotiatedProtocolVersion { get; init; }
+        public object? ServerInfo { get; init; }
+        public object? ServerCapabilities { get; init; }
+        public string? ServerInstructions { get; init; }
     }
 
     public async Task<List<AITool>> ConnectMcp(CancellationToken cancellationToken)
@@ -128,9 +147,10 @@ public partial class AgentChatClient
                                {
                                    Request = value!
                                });
+                               List<ChatMessage> history = [];
 
-                               // 1) Convert history into text blocks the model can understand
-                               var historyBlocks = GetHistorySnapshot()
+                               var historyBlocks =
+                                    history
                                     .Where(a => a.Contents.Any())
                                     .Select(m => new
                                     {
@@ -230,18 +250,51 @@ public partial class AgentChatClient
             if (agent.McpClient?.Capabilities?.Sampling != null)
                 options.Handlers.SamplingHandler = async (value, progress, cancel) =>
                 {
-                    if (headers != null)
-                        foreach (var header in headers.Where(z => !http.DefaultRequestHeaders.Contains(z.Key)))
-                            http.DefaultRequestHeaders.Add(header.Key, header.Value);
+                    if (value == null)
+                    {
+                        throw new Exception();
+                    }
 
-                    var json = JsonSerializer.Serialize(value, JsonSerializerOptions.Web);
-                    using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                    var modelResponse = await http.GetAsync("v1/models", cancellationToken);
+                    var models = await modelResponse.Content.ReadFromJsonAsync<AIModelList>(cancellationToken: cancel);
 
-                    var response = await http.PostAsync("sampling", content, cancellationToken);
-                    response.EnsureSuccessStatusCode();
+                    var modelHint = (value.ModelPreferences?.Hints?.FirstOrDefault()) ?? throw new Exception();
+                    var preferedProviders = value.Metadata?.Select(a => a.Key);
 
-                    return await response.Content.ReadFromJsonAsync<CreateMessageResult>(cancellationToken)
-                        ?? throw new Exception("Something went wrong");
+                    var allModelProviders = models?.Data?.Where(l => l.Id.EndsWith(modelHint.Name!)
+                        && (l.Id.Split("/").Length == modelHint.Name?.Split("/").Length + 1)
+                        && preferedProviders?.Contains(l.Id.Split("/").First()) == true)
+                        .Where(a => !string.IsNullOrEmpty(a.Id))
+                        .Select(a => a.Id.Split("/").First()) ?? [];
+
+                    foreach (var modelProvider in allModelProviders)
+                    {
+                        try
+                        {
+                            value.ModelPreferences ??= new();
+                            value.ModelPreferences.Hints = value?.ModelPreferences?.Hints?.Select(a =>
+                                new ModelHint()
+                                {
+                                    Name = $"{modelProvider}/{modelHint.Name}",
+                                }).ToList();
+
+                            if (headers != null)
+                                foreach (var header in headers.Where(z => !http.DefaultRequestHeaders.Contains(z.Key)))
+                                    http.DefaultRequestHeaders.Add(header.Key, header.Value);
+
+                            var json = JsonSerializer.Serialize(value, JsonSerializerOptions.Web);
+                            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                            var response = await http.PostAsync("sampling", content, cancellationToken);
+                            response.EnsureSuccessStatusCode();
+
+                            return await response.Content.ReadFromJsonAsync<CreateMessageResult>(cancellationToken)
+                                ?? throw new Exception("Something went wrong");
+                        }
+                        catch (Exception) { }
+                    }
+
+                    throw new Exception("Sampling failed");
                 };
 
             McpClient? mcpClient = null;
@@ -356,8 +409,10 @@ public partial class AgentChatClient
         }
     }
 
-    private static readonly string ElicitPrompt = @"You are an AI form-filling agent. Use all available information in the request to fill in the form fields exactly. Decline if any required field cannot be filled with certainty.
-        Respond ONLY with a valid JSON object matching the schema below:
+    //Use all available information in the request to fill in the form fields exactly. Decline if any required field cannot be filled with certainty.
+    private static readonly string ElicitPrompt = @"You are an AI form-confirmation agent. 
+        Just confirm the incoming request, nothing else. Use the incoming values (empty fields possible), do NOT make up information, just confirm the incoming form. 
+        Respond with a valid JSON object matching the schema below:
 
         {
         ""action"": ""accept | decline"",
