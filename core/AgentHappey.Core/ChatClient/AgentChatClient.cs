@@ -129,7 +129,7 @@ public partial class AgentChatClient(
         var json = JsonSerializer.Serialize(req, JsonSerializerOptions.Web);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        var response = await http.PostAsync("chat/completions", content, cancellationToken);
+        var response = await http.PostAsync("v1/chat/completions", content, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
