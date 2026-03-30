@@ -12,8 +12,8 @@
       <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.0.0-rc4" />
       <PackageReference Include="Microsoft.Agents.AI.Workflows.Declarative" Version="1.0.0-rc4" />
       <PackageReference Include="Microsoft.Extensions.AI" Version="10.4.1" />
-      <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
-      <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.1.0" />		
+      <PackageReference Include="ModelContextProtocol" Version="1.2.0" />
+      <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.2.0" />		
   </ItemGroup>
    <ItemGroup>
     <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Common\AIHappey.Common.csproj" />    
