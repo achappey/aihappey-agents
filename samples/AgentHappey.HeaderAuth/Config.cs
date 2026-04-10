@@ -7,5 +7,6 @@ public class Config
 {
     public AiConfig AiConfig { get; set; } = default!;
     public McpConfig McpConfig { get; set; } = default!;
+    public BlobAgentsConfig? BlobAgents { get; set; }
 }
 

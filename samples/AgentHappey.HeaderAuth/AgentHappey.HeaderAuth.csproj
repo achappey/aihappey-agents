@@ -10,10 +10,11 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
   </ItemGroup>
- <ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\core\AgentHappey.Common\AgentHappey.Common.csproj" />
     <ProjectReference Include="..\..\core\AgentHappey.Core\AgentHappey.Core.csproj" />
      <ProjectReference Include="..\..\core\Agents\AgentHappey.Agents.JSON\AgentHappey.Agents.JSON.csproj" />
+     <ProjectReference Include="..\..\core\Agents\AgentHappey.Agents.Blob\AgentHappey.Agents.Blob.csproj" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Common\AIHappey.Common.csproj" />    

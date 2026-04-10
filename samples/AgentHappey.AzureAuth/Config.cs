@@ -9,4 +9,5 @@ public class Config
     public AzureAd AzureAd { get; set; } = default!;
     public AiConfig AiConfig { get; set; } = default!;
     public McpConfig McpConfig { get; set; } = default!;
+    public BlobAgentsConfig? BlobAgents { get; set; }
 }

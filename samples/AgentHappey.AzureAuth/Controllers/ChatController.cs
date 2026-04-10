@@ -10,10 +10,10 @@ using AgentHappey.Core;
 using Microsoft.Identity.Web;
 using AgentHappey.Core.Extensions;
 using Microsoft.Extensions.AI;
+using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.MCP;
 using System.Text;
 using AIHappey.Vercel.Models;
-using System.Text.Json;
 
 namespace AgentHappey.AzureAuth.Controllers;
 
@@ -21,22 +21,13 @@ namespace AgentHappey.AzureAuth.Controllers;
 [Route("api/chat")]
 public class ChatController(IHttpClientFactory httpClientFactory,
     IOptions<Config> options,
-    [FromServices] IStreamingContentMapper mapper,
+    [FromServices] IChatRuntimeOrchestrator orchestrator,
     IServiceProvider serviceProvider,
     ITokenAcquisition tokenAcquisition) : ControllerBase
 {
     private readonly string Endpoint = options.Value.AiConfig.AiEndpoint!;
 
     private readonly string? AiScopes = options.Value.AiConfig.AiScopes;
-
-    static async IAsyncEnumerable<T> ToAsync<T>(IEnumerable<T> source)
-    {
-        foreach (var item in source)
-        {
-            yield return item;
-            await Task.Yield(); // optioneel
-        }
-    }
 
     [HttpPost]
     [Authorize]
@@ -45,64 +36,24 @@ public class ChatController(IHttpClientFactory httpClientFactory,
         var client = httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(Endpoint);
 
-        List<AIAgent> agents = [];
-        ChatClientAgentRunOptions? runOpts = null;
-
         string downstreamToken = await tokenAcquisition.GetAccessTokenForUserAsync(
                  scopes: [AiScopes!],
                  user: HttpContext.User);
 
         client.DefaultRequestHeaders.Authorization = new("Bearer", downstreamToken);
-        var messages = chatRequest.Messages.ToMessages().ToList();
-        Response.ContentType = "text/event-stream";
-        Response.Headers["x-vercel-ai-ui-message-stream"] = "v1";
 
-        foreach (var agent in chatRequest.Agents)
-        {
-            var agentItem = new AgentChatClient(client,
+        var context = await orchestrator.PrepareAsync(
+            Response,
+            chatRequest,
+            agent => new AgentChatClient(
+                client,
                 httpClientFactory,
                 agent,
                 new Dictionary<string, string?>(),
                 serviceProvider.GetMcpTokenAsync,
-                options.Value.AzureAd.TenantId);
-
-            agentItem.SetHistory(messages);
-
-            var tools = await agentItem.ConnectMcp(cancellationToken);
-
-            var clientChatAgent = new ChatClientAgent(agentItem,
-                            instructions: agent.Instructions,
-                            name: agent.Name,
-                            tools: tools,
-                            description: agent.Description);
-
-            agents.Add(clientChatAgent);
-
-            runOpts = new(new()
-            {
-                Tools = tools
-            });
-
-            var connections = await agentItem.GetConnections();
-
-            List<UIMessagePart> items = [.. connections.Select(z => ToolCallPart.CreateProviderExecuted(z.SessionId!, "connect_mcp", new {
-                z.Url
-            }))];
-
-            await Response.WritePartsAsync(ToAsync(items), cancellationToken);
-
-            List<UIMessagePart> connectedItems = [.. connections.Select(z => new ToolOutputAvailablePart() {
-                ToolCallId = z.SessionId!,
-                Output = new ModelContextProtocol.Protocol.CallToolResult
-                        {
-                            IsError = false,
-                            StructuredContent = JsonSerializer.SerializeToElement(z)
-                        },
-                ProviderExecuted = true
-            })];
-
-            await Response.WritePartsAsync(ToAsync(connectedItems), cancellationToken);
-        }
+                options.Value.AzureAd.TenantId),
+            (agentClient, messages) => agentClient.SetHistory(messages),
+            cancellationToken);
 
         var yamlFile = chatRequest.Messages
                 .SelectMany(m => m.Parts)
@@ -118,70 +69,22 @@ public class ChatController(IHttpClientFactory httpClientFactory,
             yamlContent = Encoding.UTF8.GetString(Convert.FromBase64String(base64));
         }
 
-        var aiAgent = agents.FirstOrDefault() ?? throw new Exception("No agent found");
-
-
-        var provider = new InMemoryWorkflowAgentProvider(
-            agents.Select(a => (a.Name!, a))
-        );
-
-        if (agents.Count > 1)
+        if (context.Agents.Count > 1 && !string.IsNullOrEmpty(yamlContent))
         {
-            var workflow = chatRequest.WorkflowType switch
-            {
-                "sequential" => AgentWorkflowBuilder.BuildSequential(agents),
-                "concurrent" => AgentWorkflowBuilder.BuildConcurrent(agents),
-                "groupchat" => AgentWorkflowBuilder.CreateGroupChatBuilderWith(team =>
-                                        new RoundRobinGroupChatManager(team)
-                                        { MaximumIterationCount = chatRequest.WorkflowMetadata?.Groupchat?.MaximumIterationCount ?? 5 })
-                                            .AddParticipants(agents)
-                                            .Build(),
-                "handoff" => agents.BuildHandoffWorkflow(chatRequest.WorkflowMetadata?.Handoff?.Handoffs),
-                // "yaml" => yaml!.ParseWorkflow<string>(provider),
-                _ => throw new InvalidOperationException("Invalid workflow type.")
-            };
+            var workflow = yamlContent.ParseWorkflow<string>(context.CreateWorkflowAgentProvider());
+            var latestUserInput = context.Messages.LastOrDefault(message => message.Role == ChatRole.User)?.Text
+                ?? throw new InvalidOperationException("No user message found for YAML workflow input.");
 
-            if (!string.IsNullOrEmpty(yamlContent))
-            {
-                workflow = yamlContent.ParseWorkflow<string>(provider);
-
-                await using var run = await InProcessExecution.RunStreamingAsync(
-                              workflow,
-                              messages.LastOrDefault(a => a.Role == ChatRole.User)?.Text!,
-                              cancellationToken: cancellationToken
-                          );
-
-                //await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
-
-                var updates = run.WatchStreamAsync(cancellationToken);
-                var mapped = mapper.MapAsync(updates, cancellationToken);
-
-                await Response.WritePartsAsync(mapped, cancellationToken);
-
-            }
-            else
-            {
-                await using var run = await InProcessExecution.RunStreamingAsync(
-                    workflow,
-                    messages,
-                    cancellationToken: cancellationToken
-                );
-
-                await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
-
-                var updates = run.WatchStreamAsync(cancellationToken);
-                var mapped = mapper.MapAsync(updates, cancellationToken);
-
-                await Response.WritePartsAsync(mapped, cancellationToken);
-            }
-
+            await orchestrator.ExecuteWorkflowAsync(
+                Response,
+                workflow,
+                latestUserInput,
+                emitTurnToken: false,
+                cancellationToken);
         }
         else
         {
-            var updates = aiAgent.RunStreamingAsync(messages, options: runOpts, cancellationToken: cancellationToken);
-            var mapped = mapper.MapAsync(updates, cancellationToken);
-
-            await Response.WritePartsAsync(mapped, cancellationToken);
+            await orchestrator.ExecuteAsync(Response, chatRequest, context, cancellationToken);
         }
 
         return new EmptyResult();

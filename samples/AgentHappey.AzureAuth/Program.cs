@@ -1,6 +1,9 @@
 using AgentHappey.Agents.JSON;
+using AgentHappey.Agents.Blob;
 using AgentHappey.AzureAuth;
+using AgentHappey.Common.Models;
 using AgentHappey.Core;
+using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.MCP;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Identity.Web;
@@ -34,6 +37,10 @@ builder.Services
 })
 .AddHttpContextAccessor()
 .AddSingleton<IStreamingContentMapper, StreamingContentMapper>()
+.AddSingleton<IChatRuntimeOrchestrator, ChatRuntimeOrchestrator>()
+.AddSingleton<IModelCatalog, ModelCatalog>()
+.AddSingleton<IModelSource>(_ => new JsonModelSource(basePath))
+.AddSingleton<IModelSource>(_ => new BlobModelSource(appConfig?.BlobAgents))
 .AddHttpClient()
 .AddMcpServers();
 

@@ -1,5 +1,8 @@
 using AgentHappey.Agents.JSON;
+using AgentHappey.Agents.Blob;
+using AgentHappey.Common.Models;
 using AgentHappey.Core;
+using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.MCP;
 using AgentHappey.HeaderAuth;
 
@@ -25,6 +28,10 @@ builder.Services.AddCors(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddControllers();
 builder.Services.AddSingleton<IStreamingContentMapper, StreamingContentMapper>();
+builder.Services.AddSingleton<IChatRuntimeOrchestrator, ChatRuntimeOrchestrator>();
+builder.Services.AddSingleton<IModelCatalog, ModelCatalog>();
+builder.Services.AddSingleton<IModelSource>(_ => new JsonModelSource(basePath));
+builder.Services.AddSingleton<IModelSource>(_ => new BlobModelSource(appConfig?.BlobAgents));
 builder.Services.AddHttpClient();
 builder.Services.AddMcpServers();
 

@@ -1,7 +1,6 @@
 using System.Text.Json;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Common.Models;
-using AIHappey.Common.Model;
 using AIHappey.Vercel.Models;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
@@ -11,10 +10,10 @@ namespace AgentHappey.Core.Extensions;
 public static class AgentExtensions
 {
  
-    public static IEnumerable<AIHappey.Common.Model.Tool> ToTools(
+    public static IEnumerable<AIHappey.Vercel.Models.Tool> ToTools(
             this IEnumerable<AITool> tools) => tools?
             .OfType<AIFunctionDeclaration>()
-            .Select(a => new AIHappey.Common.Model.Tool()
+            .Select(a => new AIHappey.Vercel.Models.Tool()
             {
                 Name = a.Name,
                 Description = a.Description,

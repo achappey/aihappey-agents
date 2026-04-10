@@ -12,10 +12,11 @@
     <PackageReference Include="Microsoft.Identity.Web" Version="4.7.0" />
     <PackageReference Include="Microsoft.Identity.Web.UI" Version="4.7.0" />
   </ItemGroup>
- <ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\core\AgentHappey.Common\AgentHappey.Common.csproj" />
     <ProjectReference Include="..\..\core\AgentHappey.Core\AgentHappey.Core.csproj" />
     <ProjectReference Include="..\..\core\Agents\AgentHappey.Agents.JSON\AgentHappey.Agents.JSON.csproj" />
+    <ProjectReference Include="..\..\core\Agents\AgentHappey.Agents.Blob\AgentHappey.Agents.Blob.csproj" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Vercel\AIHappey.Vercel.csproj" />    

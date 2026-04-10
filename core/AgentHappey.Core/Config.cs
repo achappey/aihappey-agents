@@ -26,3 +26,12 @@ public class McpConfig
 
     public string? DarkIcon { get; set; }
 }
+
+public class BlobAgentsConfig
+{
+    public string? ConnectionString { get; set; }
+
+    public string? ContainerName { get; set; }
+
+    public string? Prefix { get; set; } = "Agents";
+}
