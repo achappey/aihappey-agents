@@ -133,6 +133,7 @@ public static class VercelHelpers
         }
     }
 
+
     public static UsageDetails ToUsageDetails(this Dictionary<string, object> keyValuePairs) =>
           new()
           {
@@ -154,7 +155,12 @@ public static class VercelHelpers
     public static UsageContent? ToUsageContent(this FinishUIPart finishUIPart) =>
          finishUIPart.MessageMetadata != null ? new()
          {
-             Details = finishUIPart.MessageMetadata.ToUsageDetails()
+             Details = new UsageDetails()
+             {
+                 InputTokenCount = finishUIPart.MessageMetadata.Usage.PromptTokens,
+                 OutputTokenCount = finishUIPart.MessageMetadata.Usage.CompletionTokens,
+                 TotalTokenCount = finishUIPart.MessageMetadata.Usage.TotalTokens
+             }
          } : null;
 
     public static IEnumerable<ChatResponseUpdate>? ToChatResponseUpdates(this UIMessagePart part,
