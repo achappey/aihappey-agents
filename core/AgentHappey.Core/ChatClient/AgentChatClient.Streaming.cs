@@ -32,13 +32,7 @@ public partial class AgentChatClient
 
         List<UIMessage> uiMessages = [agentSystemMessage, .. messageList.ToMessages()];
 
-        var providerMetadata = new Dictionary<string, Dictionary<string, object>>
-               {
-                   {
-                       agent.Model.Id.Split('/')[0],
-                       agent.Model.ProviderMetadata ?? []
-                   }
-               };
+        var providerMetadata = BuildStreamingProviderMetadata();
 
         var req = new
         {
