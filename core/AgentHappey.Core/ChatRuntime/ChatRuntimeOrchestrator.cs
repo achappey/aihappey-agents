@@ -48,7 +48,7 @@ public sealed record ChatRuntimeContext(
         new(Agents.Select(agent => (agent.Name!, agent)));
 }
 
-public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper) : IChatRuntimeOrchestrator
+public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IModelCatalog modelCatalog) : IChatRuntimeOrchestrator
 {
     public async Task<ChatRuntimeContext> PrepareAsync(
         HttpResponse response,
@@ -60,10 +60,11 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper) : IC
         var agents = new List<AIAgent>();
         ChatClientAgentRunOptions? runOptions = null;
         var messages = chatRequest.Messages.ToMessages().ToList();
+        var resolvedAgents = await ResolveAgentsAsync(chatRequest, cancellationToken);
 
         ConfigureStreamingResponse(response);
 
-        foreach (var agent in chatRequest.Agents)
+        foreach (var agent in resolvedAgents)
         {
             var agentClient = agentClientFactory(agent);
             configureAgentClient?.Invoke(agentClient, messages);
@@ -86,6 +87,33 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper) : IC
         }
 
         return new ChatRuntimeContext(messages, agents, runOptions);
+    }
+
+    private async Task<IReadOnlyList<Agent>> ResolveAgentsAsync(
+        AgentRequest chatRequest,
+        CancellationToken cancellationToken)
+    {
+        var requestedModels = chatRequest.Models?
+            .Where(modelId => !string.IsNullOrWhiteSpace(modelId))
+            .ToList();
+
+        if (requestedModels is { Count: > 0 })
+        {
+            var resolvedAgents = await modelCatalog.ResolveAgentsAsync(requestedModels, cancellationToken);
+
+            if (resolvedAgents.Count == requestedModels.Count)
+                return resolvedAgents;
+        }
+
+        if (!string.IsNullOrWhiteSpace(chatRequest.Model))
+        {
+            var resolvedAgent = await modelCatalog.ResolveAgentAsync(chatRequest.Model, cancellationToken);
+
+            if (resolvedAgent != null)
+                return [resolvedAgent];
+        }
+
+        return chatRequest.Agents?.ToList() ?? [];
     }
 
     public Workflow BuildWorkflow(AgentRequest chatRequest, IReadOnlyList<AIAgent> agents) =>

@@ -320,7 +320,8 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             MessageMetadata = new Dictionary<string, object>
                 {
                     { "timestamp", DateTime.UtcNow },
-                    { "author", author ?? string.Empty }
+                    { "author", author ?? string.Empty },
+                    { "model", author ?? string.Empty }
                 }
         };
     }

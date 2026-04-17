@@ -2,7 +2,6 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
-using AIHappey.Common.Model;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Core.Extensions;
 using System.Net.Mime;

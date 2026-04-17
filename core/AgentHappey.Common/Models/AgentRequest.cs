@@ -6,11 +6,15 @@ namespace AgentHappey.Common.Models;
 
 public class AgentRequest
 {
-    public IEnumerable<Agent> Agents { get; set; } = null!;
+    public IEnumerable<Agent>? Agents { get; set; } = null;
 
     public string WorkflowType { get; set; } = "sequential";
 
     public string? WorkflowFile { get; set; }
+
+    public string? Model { get; set; }
+
+    public IEnumerable<string>? Models { get; set; }
 
     public string Id { get; set; } = null!;
 

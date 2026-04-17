@@ -1,14 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Agents.AI;
-using AgentHappey.Core;
-using Microsoft.Extensions.AI;
 using AgentHappey.Common.Models;
-using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.Options;
-using AgentHappey.Common.Extensions;
 using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.ChatRuntime;
-using AgentHappey.Core.Extensions;
 
 namespace AgentHappey.HeaderAuth.Controllers;
 

@@ -30,7 +30,7 @@ builder.Services.AddControllers();
 builder.Services.AddSingleton<IStreamingContentMapper, StreamingContentMapper>();
 builder.Services.AddSingleton<IChatRuntimeOrchestrator, ChatRuntimeOrchestrator>();
 builder.Services.AddSingleton<IModelCatalog, ModelCatalog>();
-builder.Services.AddSingleton<IModelSource>(_ => new JsonModelSource(basePath));
+builder.Services.AddSingleton<IModelSource>(_ => new JsonModelSource(basePath, appConfig?.McpConfig?.McpBaseUrl));
 builder.Services.AddSingleton<IModelSource>(_ => new BlobModelSource(appConfig?.BlobAgents));
 builder.Services.AddHttpClient();
 builder.Services.AddMcpServers();

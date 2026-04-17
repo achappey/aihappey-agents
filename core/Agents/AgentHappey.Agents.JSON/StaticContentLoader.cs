@@ -6,7 +6,7 @@ namespace AgentHappey.Agents.JSON;
 
 public static class StaticContentLoader
 {
-    public static IEnumerable<Agent> GetAgents(this string basePath, string mcpBaseUrl)
+    public static IEnumerable<Agent> GetAgents(this string basePath, string? mcpBaseUrl)
     {
         var agents = new List<Agent>();
 
@@ -50,7 +50,7 @@ public static class StaticContentLoader
             .OrderBy(file => file, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static Agent? LoadAgent(string file, string mcpBaseUrl)
+    private static Agent? LoadAgent(string file, string? mcpBaseUrl)
     {
         var jsonContent = File.ReadAllText(file);
 
@@ -66,7 +66,7 @@ public static class StaticContentLoader
 
         foreach (var server in original.Values.ToList())
         {
-            if (server.Url.StartsWith('/'))
+            if (server.Url.StartsWith('/') && !string.IsNullOrWhiteSpace(mcpBaseUrl))
                 server.Url = $"{mcpBaseUrl}{server.Url}";
 
             var key = server.Url.ToReverseDnsKey();

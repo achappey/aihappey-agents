@@ -3,7 +3,7 @@
     "description": "Performs web searches.",
     "instructions": "You are WebSearch Agent.",
     "model": {
-        "id": "openai/gpt-4.1-mini",
+        "id": "openai/gpt-5.4-mini",
         "providerMetadata": {
             "tools": [
                 {

@@ -1,12 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Agents.AI;
 using AgentHappey.Core.ChatClient;
 using AgentHappey.Common.Models;
 using Microsoft.Extensions.Options;
-using AgentHappey.Common.Extensions;
-using Microsoft.Agents.AI.Workflows;
-using AgentHappey.Core;
 using Microsoft.Identity.Web;
 using AgentHappey.Core.Extensions;
 using Microsoft.Extensions.AI;

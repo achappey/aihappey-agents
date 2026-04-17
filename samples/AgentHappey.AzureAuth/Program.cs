@@ -39,7 +39,7 @@ builder.Services
 .AddSingleton<IStreamingContentMapper, StreamingContentMapper>()
 .AddSingleton<IChatRuntimeOrchestrator, ChatRuntimeOrchestrator>()
 .AddSingleton<IModelCatalog, ModelCatalog>()
-.AddSingleton<IModelSource>(_ => new JsonModelSource(basePath))
+.AddSingleton<IModelSource>(_ => new JsonModelSource(basePath, appConfig?.McpConfig?.McpBaseUrl))
 .AddSingleton<IModelSource>(_ => new BlobModelSource(appConfig?.BlobAgents))
 .AddHttpClient()
 .AddMcpServers();

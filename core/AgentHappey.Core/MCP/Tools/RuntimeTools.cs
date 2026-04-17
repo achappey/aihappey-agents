@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.ChatClient;
