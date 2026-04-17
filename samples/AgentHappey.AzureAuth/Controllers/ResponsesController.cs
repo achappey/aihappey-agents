@@ -21,6 +21,7 @@ namespace AgentHappey.AzureAuth.Controllers;
 public class ResponsesController(IHttpClientFactory httpClientFactory,
     IOptions<Config> options,
     [FromServices] IChatRuntimeOrchestrator orchestrator,
+    [FromServices] IResponsesNativeMapper responsesMapper,
     IServiceProvider serviceProvider,
     ITokenAcquisition tokenAcquisition) : ControllerBase
 {
@@ -66,72 +67,44 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
             (agentClient, messages) => agentClient.SetHistory(messages),
             cancellationToken);
 
-        var streamingMapper = serviceProvider.GetRequiredService<IStreamingContentMapper>();
-        var serializer = new ResponsesRuntimeStreamSerializer(requestDto, runtimeRequest.Model ?? requestDto.Model);
+        var responseModel = runtimeRequest.Model ?? requestDto.Model;
 
         if (requestDto.Stream == true)
         {
             Response.ContentType = "text/event-stream";
             await using var writer = new StreamWriter(Response.Body);
 
-            foreach (var startEvent in serializer.StartEvents())
-                await WriteEventAsync(writer, startEvent, cancellationToken);
+            var stream = context.Agents.Count > 1
+                ? responsesMapper.MapStreamingAsync(
+                    requestDto,
+                    responseModel,
+                    orchestrator.StreamWorkflowAsync(runtimeRequest, context, emitTurnToken: true, cancellationToken),
+                    cancellationToken)
+                : responsesMapper.MapStreamingAsync(
+                    requestDto,
+                    responseModel,
+                    orchestrator.StreamAgentAsync(context, cancellationToken),
+                    cancellationToken);
 
-            await foreach (var uiPart in CreateUiPartsAsync(runtimeRequest, context, streamingMapper, cancellationToken))
-            {
-                foreach (var streamPart in serializer.Process(uiPart))
-                    await WriteEventAsync(writer, streamPart, cancellationToken);
-            }
-
-            foreach (var finalEvent in serializer.Complete())
-                await WriteEventAsync(writer, finalEvent, cancellationToken);
+            await foreach (var streamPart in stream.WithCancellation(cancellationToken))
+                await WriteEventAsync(writer, streamPart, cancellationToken);
 
             await writer.WriteAsync("data: [DONE]\n\n");
             await writer.FlushAsync(cancellationToken);
             return new EmptyResult();
         }
 
-        await foreach (var uiPart in CreateUiPartsAsync(runtimeRequest, context, streamingMapper, cancellationToken))
-            foreach (var _ in serializer.Process(uiPart))
-            {
-            }
+        var result = context.Agents.Count > 1
+            ? responsesMapper.Map(
+                requestDto,
+                responseModel,
+                await orchestrator.RunWorkflowAsync(runtimeRequest, context, emitTurnToken: true, cancellationToken))
+            : responsesMapper.Map(
+                requestDto,
+                responseModel,
+                await orchestrator.RunAgentAsync(context, cancellationToken));
 
-        foreach (var _ in serializer.Complete())
-        {
-        }
-
-        return Ok(serializer.BuildResult());
-    }
-
-    private async IAsyncEnumerable<AIHappey.Vercel.Models.UIMessagePart> CreateUiPartsAsync(
-        ChatRuntimeRequest runtimeRequest,
-        ChatRuntimeContext context,
-        IStreamingContentMapper streamingMapper,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        if (context.Agents.Count > 1)
-        {
-            var workflow = orchestrator.BuildWorkflow(runtimeRequest, context.Agents);
-            await using var run = await InProcessExecution.RunStreamingAsync(
-                workflow,
-                context.Messages,
-                cancellationToken: cancellationToken);
-
-            await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
-
-            await foreach (var part in streamingMapper.MapAsync(run.WatchStreamAsync(cancellationToken), cancellationToken).WithCancellation(cancellationToken))
-                yield return part;
-
-            yield break;
-        }
-
-        var updates = context.PrimaryAgent.RunStreamingAsync(
-            context.Messages,
-            options: context.SingleAgentRunOptions,
-            cancellationToken: cancellationToken);
-
-        await foreach (var part in streamingMapper.MapAsync(updates, cancellationToken).WithCancellation(cancellationToken))
-            yield return part;
+        return Ok(result);
     }
 
     private static async Task WriteEventAsync(StreamWriter writer, ResponseStreamPart streamPart, CancellationToken cancellationToken)

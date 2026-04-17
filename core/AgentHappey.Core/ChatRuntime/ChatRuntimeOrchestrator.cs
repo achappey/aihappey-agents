@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Runtime.CompilerServices;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.ChatClient;
@@ -6,8 +7,8 @@ using AgentHappey.Core.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.AI;
 using AIHappey.Vercel.Models;
+using Microsoft.Extensions.AI;
 
 namespace AgentHappey.Core.ChatRuntime;
 
@@ -50,6 +51,26 @@ public interface IChatRuntimeOrchestrator
         bool emitTurnToken,
         CancellationToken cancellationToken = default)
         where TInput : notnull;
+
+    Task<AgentResponse> RunAgentAsync(
+        ChatRuntimeContext context,
+        CancellationToken cancellationToken = default);
+
+    IAsyncEnumerable<AgentResponseUpdate> StreamAgentAsync(
+        ChatRuntimeContext context,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<WorkflowEvent>> RunWorkflowAsync(
+        ChatRuntimeRequest chatRequest,
+        ChatRuntimeContext context,
+        bool emitTurnToken,
+        CancellationToken cancellationToken = default);
+
+    IAsyncEnumerable<WorkflowEvent> StreamWorkflowAsync(
+        ChatRuntimeRequest chatRequest,
+        ChatRuntimeContext context,
+        bool emitTurnToken,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record ChatRuntimeContext(
@@ -207,18 +228,66 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
             return;
         }
 
-        var updates = context.PrimaryAgent.RunStreamingAsync(
-            context.Messages,
-            options: context.SingleAgentRunOptions,
-            cancellationToken: cancellationToken);
-
+        var updates = StreamAgentAsync(context, cancellationToken);
         var mapped = mapper.MapAsync(updates, cancellationToken);
         await response.WritePartsAsync(mapped, cancellationToken);
     }
 
+    public Task<AgentResponse> RunAgentAsync(
+        ChatRuntimeContext context,
+        CancellationToken cancellationToken = default)
+        => context.PrimaryAgent.RunAsync(
+            context.Messages,
+            options: context.SingleAgentRunOptions,
+            cancellationToken: cancellationToken);
+
+    public IAsyncEnumerable<AgentResponseUpdate> StreamAgentAsync(
+        ChatRuntimeContext context,
+        CancellationToken cancellationToken = default)
+        => context.PrimaryAgent.RunStreamingAsync(
+            context.Messages,
+            options: context.SingleAgentRunOptions,
+            cancellationToken: cancellationToken);
+
+    public async Task<IReadOnlyList<WorkflowEvent>> RunWorkflowAsync(
+        ChatRuntimeRequest chatRequest,
+        ChatRuntimeContext context,
+        bool emitTurnToken,
+        CancellationToken cancellationToken = default)
+    {
+        var workflow = BuildWorkflow(chatRequest, context.Agents);
+
+        await using var run = await InProcessExecution.RunAsync(
+            workflow,
+            context.Messages,
+            cancellationToken: cancellationToken);
+
+        return run.OutgoingEvents.ToList();
+    }
+
+    public async IAsyncEnumerable<WorkflowEvent> StreamWorkflowAsync(
+        ChatRuntimeRequest chatRequest,
+        ChatRuntimeContext context,
+        bool emitTurnToken,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var workflow = BuildWorkflow(chatRequest, context.Agents);
+
+        await using var run = await InProcessExecution.RunStreamingAsync(
+            workflow,
+            context.Messages,
+            cancellationToken: cancellationToken);
+
+        if (emitTurnToken)
+            await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
+
+        await foreach (var update in run.WatchStreamAsync(cancellationToken).WithCancellation(cancellationToken))
+            yield return update;
+    }
+
     public async Task ExecuteWorkflowAsync<TInput>(
-     HttpResponse response,
-     Workflow workflow,
+      HttpResponse response,
+      Workflow workflow,
      TInput input,
      bool emitTurnToken,
      CancellationToken cancellationToken = default)

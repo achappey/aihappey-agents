@@ -4,6 +4,7 @@ using AgentHappey.Common.Models;
 using AgentHappey.Core;
 using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.MCP;
+using AgentHappey.Core.Responses;
 using AgentHappey.HeaderAuth;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -27,6 +28,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddControllers();
+builder.Services.AddSingleton<IResponsesNativeMapper, ResponsesNativeMapper>();
 builder.Services.AddSingleton<IStreamingContentMapper, StreamingContentMapper>();
 builder.Services.AddSingleton<IChatRuntimeOrchestrator, ChatRuntimeOrchestrator>();
 builder.Services.AddSingleton<IModelCatalog, ModelCatalog>();

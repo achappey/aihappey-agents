@@ -5,6 +5,7 @@ using AgentHappey.Common.Models;
 using AgentHappey.Core;
 using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.MCP;
+using AgentHappey.Core.Responses;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Identity.Web;
 
@@ -36,6 +37,7 @@ builder.Services
     });
 })
 .AddHttpContextAccessor()
+.AddSingleton<IResponsesNativeMapper, ResponsesNativeMapper>()
 .AddSingleton<IStreamingContentMapper, StreamingContentMapper>()
 .AddSingleton<IChatRuntimeOrchestrator, ChatRuntimeOrchestrator>()
 .AddSingleton<IModelCatalog, ModelCatalog>()
