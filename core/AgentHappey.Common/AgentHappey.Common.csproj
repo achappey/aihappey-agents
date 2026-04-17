@@ -16,6 +16,7 @@
       <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.2.0" />		
   </ItemGroup>
    <ItemGroup>
-    <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Common\AIHappey.Common.csproj" />    
+    <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Vercel\AIHappey.Vercel.csproj" />    
+    <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Responses\AIHappey.Responses.csproj" />    
   </ItemGroup>  
 </Project>

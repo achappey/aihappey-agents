@@ -13,6 +13,7 @@
       <PackageReference Include="Microsoft.Agents.AI.Workflows.Declarative" Version="1.1.0-rc1" />
       <PackageReference Include="Microsoft.Extensions.AI" Version="10.5.0" />
       <PackageReference Include="Microsoft.Graph.Beta" Version="5.133.0-preview" />
+      <PackageReference Include="Microsoft.Identity.Web" Version="4.7.0" />
       <PackageReference Include="ModelContextProtocol" Version="1.2.0" />
       <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.2.0" />
       <PackageReference Include="NJsonSchema" Version="11.6.0" />		
@@ -21,7 +22,8 @@
     <ProjectReference Include="..\AgentHappey.Common\AgentHappey.Common.csproj" />
   </ItemGroup>
     <ItemGroup>
-    <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Common\AIHappey.Common.csproj" />    
+    <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Vercel\AIHappey.Vercel.csproj" />    
+    <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Responses\AIHappey.Responses.csproj" />    
   </ItemGroup>  
 
 

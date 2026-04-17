@@ -20,11 +20,26 @@ public interface IChatRuntimeOrchestrator
         Action<AgentChatClient, IReadOnlyList<ChatMessage>>? configureAgentClient = null,
         CancellationToken cancellationToken = default);
 
+    Task<ChatRuntimeContext> PrepareAsync(
+        HttpResponse response,
+        ChatRuntimeRequest chatRequest,
+        Func<Agent, AgentChatClient> agentClientFactory,
+        Action<AgentChatClient, IReadOnlyList<ChatMessage>>? configureAgentClient = null,
+        CancellationToken cancellationToken = default);
+
     Workflow BuildWorkflow(AgentRequest chatRequest, IReadOnlyList<AIAgent> agents);
+
+    Workflow BuildWorkflow(ChatRuntimeRequest chatRequest, IReadOnlyList<AIAgent> agents);
 
     Task ExecuteAsync(
         HttpResponse response,
         AgentRequest chatRequest,
+        ChatRuntimeContext context,
+        CancellationToken cancellationToken = default);
+
+    Task ExecuteAsync(
+        HttpResponse response,
+        ChatRuntimeRequest chatRequest,
         ChatRuntimeContext context,
         CancellationToken cancellationToken = default);
 
@@ -57,12 +72,44 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         Action<AgentChatClient, IReadOnlyList<ChatMessage>>? configureAgentClient = null,
         CancellationToken cancellationToken = default)
     {
+        var runtimeRequest = CreateRuntimeRequest(chatRequest);
+        ConfigureStreamingResponse(response);
+
+        return await PrepareCoreAsync(
+            response,
+            runtimeRequest,
+            agentClientFactory,
+            configureAgentClient,
+            emitConnectionParts: true,
+            cancellationToken);
+    }
+
+    public Task<ChatRuntimeContext> PrepareAsync(
+        HttpResponse response,
+        ChatRuntimeRequest chatRequest,
+        Func<Agent, AgentChatClient> agentClientFactory,
+        Action<AgentChatClient, IReadOnlyList<ChatMessage>>? configureAgentClient = null,
+        CancellationToken cancellationToken = default)
+        => PrepareCoreAsync(
+            response,
+            chatRequest,
+            agentClientFactory,
+            configureAgentClient,
+            emitConnectionParts: false,
+            cancellationToken);
+
+    private async Task<ChatRuntimeContext> PrepareCoreAsync(
+        HttpResponse response,
+        ChatRuntimeRequest chatRequest,
+        Func<Agent, AgentChatClient> agentClientFactory,
+        Action<AgentChatClient, IReadOnlyList<ChatMessage>>? configureAgentClient,
+        bool emitConnectionParts,
+        CancellationToken cancellationToken)
+    {
         var agents = new List<AIAgent>();
         ChatClientAgentRunOptions? runOptions = null;
-        var messages = chatRequest.Messages.ToMessages().ToList();
+        var messages = chatRequest.Messages.ToList();
         var resolvedAgents = await ResolveAgentsAsync(chatRequest, cancellationToken);
-
-        ConfigureStreamingResponse(response);
 
         foreach (var agent in resolvedAgents)
         {
@@ -83,14 +130,15 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
                 Tools = tools
             });
 
-            await WriteConnectionPartsAsync(response, agentClient, cancellationToken);
+            if (emitConnectionParts)
+                await WriteConnectionPartsAsync(response, agentClient, cancellationToken);
         }
 
         return new ChatRuntimeContext(messages, agents, runOptions);
     }
 
     private async Task<IReadOnlyList<Agent>> ResolveAgentsAsync(
-        AgentRequest chatRequest,
+        ChatRuntimeRequest chatRequest,
         CancellationToken cancellationToken)
     {
         var requestedModels = chatRequest.Models?
@@ -117,6 +165,9 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
     }
 
     public Workflow BuildWorkflow(AgentRequest chatRequest, IReadOnlyList<AIAgent> agents) =>
+        BuildWorkflow(CreateRuntimeRequest(chatRequest), agents);
+
+    public Workflow BuildWorkflow(ChatRuntimeRequest chatRequest, IReadOnlyList<AIAgent> agents) =>
         chatRequest.WorkflowType switch
         {
             "sequential" => AgentWorkflowBuilder.BuildSequential(agents),
@@ -135,6 +186,17 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
     public async Task ExecuteAsync(
         HttpResponse response,
         AgentRequest chatRequest,
+        ChatRuntimeContext context,
+        CancellationToken cancellationToken = default)
+        => await ExecuteAsync(
+            response,
+            CreateRuntimeRequest(chatRequest, context.Messages),
+            context,
+            cancellationToken);
+
+    public async Task ExecuteAsync(
+        HttpResponse response,
+        ChatRuntimeRequest chatRequest,
         ChatRuntimeContext context,
         CancellationToken cancellationToken = default)
     {
@@ -180,6 +242,19 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         response.ContentType = "text/event-stream";
         response.Headers["x-vercel-ai-ui-message-stream"] = "v1";
     }
+
+    private static ChatRuntimeRequest CreateRuntimeRequest(
+        AgentRequest chatRequest,
+        IReadOnlyList<ChatMessage>? messages = null)
+        => new(
+            messages ?? chatRequest.Messages.ToMessages().ToList(),
+            chatRequest.Model,
+            chatRequest.Models?
+                .Where(modelId => !string.IsNullOrWhiteSpace(modelId))
+                .ToList(),
+            chatRequest.Agents?.ToList(),
+            chatRequest.WorkflowType,
+            chatRequest.WorkflowMetadata);
 
     private static async Task WriteConnectionPartsAsync(
         HttpResponse response,
