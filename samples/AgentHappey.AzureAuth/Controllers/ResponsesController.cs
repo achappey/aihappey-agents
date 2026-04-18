@@ -1,17 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
-using AgentHappey.Core;
 using AIHappey.Responses;
 using AIHappey.Responses.Streaming;
 using Microsoft.Extensions.Options;
 using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.Responses;
-using Microsoft.Agents.AI.Workflows;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Identity.Web;
-using System.Runtime.CompilerServices;
 using AgentHappey.Core.MCP;
 
 namespace AgentHappey.AzureAuth.Controllers;

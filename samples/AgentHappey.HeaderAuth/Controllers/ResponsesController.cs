@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
-using Microsoft.AspNetCore.Authorization;
 using AIHappey.Responses;
 using Microsoft.Extensions.Options;
 using AgentHappey.Core.ChatClient;

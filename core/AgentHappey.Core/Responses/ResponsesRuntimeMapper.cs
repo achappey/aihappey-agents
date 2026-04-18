@@ -1,12 +1,9 @@
-using System.Text;
 using System.Text.Json;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.ChatRuntime;
 using AIHappey.Responses;
 using AIHappey.Responses.Mapping;
-using AIHappey.Responses.Streaming;
 using AIHappey.Unified.Models;
-using AIHappey.Vercel.Models;
 using Microsoft.Extensions.AI;
 
 namespace AgentHappey.Core.Responses;

@@ -63,7 +63,6 @@ public partial class AgentChatClient
                 {
                     items.Add(new ResponseFunctionCallOutputItem
                     {
-                        Id = message.MessageId ?? result.CallId,
                         CallId = result.CallId,
                         Output = SerializeResponseValue(result.Result),
                         Status = "completed"
@@ -78,7 +77,6 @@ public partial class AgentChatClient
             {
                 items.Add(new ResponseInputMessage
                 {
-                    Id = message.MessageId,
                     Role = ToResponseRole(message.Role),
                     Content = new ResponseMessageContent(contentParts)
                 });
@@ -91,7 +89,6 @@ public partial class AgentChatClient
 
                 items.Add(new ResponseReasoningItem
                 {
-                    Id = message.MessageId,
                     Summary =
                     [
                         new ResponseReasoningSummaryTextPart
@@ -109,7 +106,6 @@ public partial class AgentChatClient
             {
                 items.Add(new ResponseFunctionCallItem
                 {
-                    Id = message.MessageId ?? call.CallId,
                     CallId = call.CallId,
                     Name = call.Name,
                     Arguments = SerializeResponseValue(call.Arguments)

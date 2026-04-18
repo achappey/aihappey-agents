@@ -1,9 +1,5 @@
-using System.Text;
-using System.Text.Json;
 using Microsoft.Extensions.AI;
 using AgentHappey.Common.Models;
-using AgentHappey.Common.Extensions;
-using System.Net.Mime;
 using AIHappey.Responses.Extensions;
 
 namespace AgentHappey.Core.ChatClient;
