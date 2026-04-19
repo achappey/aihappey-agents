@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Common.Models;
+using AgentHappey.Core.Skills;
 using AIHappey.Vercel.Models;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
@@ -9,6 +10,38 @@ namespace AgentHappey.Core.Extensions;
 
 public static class AgentExtensions
 {
+    public static string ComposeInstructions(
+        this Agent agent,
+        IReadOnlyCollection<LoadedAgentSkill>? skills = null)
+    {
+        var sections = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(agent.Instructions))
+            sections.Add(agent.Instructions.Trim());
+
+        if (skills is { Count: > 0 })
+        {
+            sections.Add(JsonSerializer.Serialize(new
+            {
+                availableSkills = new
+                {
+                    activationTool = "activate_skill",
+                    resourceTool = "read_skill_resource",
+                    instructions =
+                        "The following skills provide specialized instructions for specific tasks. When a task matches a skill description, call activate_skill with the exact skill_id to load its instructions. After activation, use read_skill_resource with the same skill_id and a relative path when the instructions reference bundled files.",
+                    skills = skills.Select(skill => new
+                    {
+                        skill_id = skill.SkillId,
+                        name = skill.Name,
+                        description = skill.Description
+                    })
+                }
+            }, JsonSerializerOptions.Web));
+        }
+
+        return string.Join("\n\n", sections.Where(section => !string.IsNullOrWhiteSpace(section)));
+    }
+
  
     public static IEnumerable<AIHappey.Vercel.Models.Tool> ToTools(
             this IEnumerable<AITool> tools) => tools?
@@ -40,7 +73,7 @@ public static class AgentExtensions
             $"You are {agent.Name}. {agent.Description}".ToTextUIPart(),
 
             // Instructions
-            agent.Instructions.ToTextUIPart(),
+            agent.ComposeInstructions().ToTextUIPart(),
 
             // System info (timestamp + tenant)
             JsonSerializer.Serialize(

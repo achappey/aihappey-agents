@@ -138,10 +138,11 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
             configureAgentClient?.Invoke(agentClient, messages);
 
             var tools = await agentClient.ConnectMcp(cancellationToken);
+            var instructions = agentClient.GetComposedInstructions();
 
             agents.Add(new ChatClientAgent(
                 agentClient,
-                instructions: agent.Instructions,
+                instructions: instructions,
                 name: agent.Name,
                 tools: tools,
                 description: agent.Description));

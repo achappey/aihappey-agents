@@ -57,9 +57,10 @@ public class RuntimeTools
                  azureAd.TenantId);
 
         var tools = await agentItem.ConnectMcp(cancellationToken);
+        var instructions = agentItem.GetComposedInstructions();
 
         var aiAgent = new ChatClientAgent(agentItem,
-            instructions: agent.Instructions,
+            instructions: instructions,
             name: agent.Name,
             tools: tools,
             description: agent.Description);
@@ -152,9 +153,10 @@ public class RuntimeTools
                  azureAd.TenantId);
 
         var tools = await agentItem.ConnectMcp(cancellationToken);
+        var composedInstructions = agentItem.GetComposedInstructions();
 
         var aiAgent = new ChatClientAgent(agentItem,
-            instructions: agent.Instructions,
+            instructions: composedInstructions,
             name: agent.Name,
             tools: tools,
             description: agent.Description);

@@ -79,9 +79,10 @@ public class SharePointRuntimeTools
                  azureAd.TenantId);
 
         var tools = await agentItem.ConnectMcp(cancellationToken);
+        var instructions = agentItem.GetComposedInstructions();
 
         var aiAgent = new ChatClientAgent(agentItem,
-            instructions: agent.Instructions,
+            instructions: instructions,
             name: agent.Name,
             tools: tools,
             description: agent.Description);
@@ -172,10 +173,11 @@ public class SharePointRuntimeTools
                 agentChatClientItem.SetHistory(messages);
 
                 var agentTools = await agentChatClientItem.ConnectMcp(cancellationToken);
+                var instructions = agentChatClientItem.GetComposedInstructions();
 
                 tools.AddRange(agentTools);
                 var clientChatAgent = new ChatClientAgent(agentChatClientItem,
-                                instructions: agent.Instructions,
+                                instructions: instructions,
                                 name: agent.Name,
                                 tools: tools,
                                 description: agent.Description);

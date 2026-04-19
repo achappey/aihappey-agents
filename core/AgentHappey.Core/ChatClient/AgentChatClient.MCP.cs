@@ -94,6 +94,7 @@ public partial class AgentChatClient
     public async Task<List<AITool>> ConnectMcp(CancellationToken cancellationToken)
     {
         List<AITool> tools = [];
+        var composedInstructions = GetComposedInstructions();
 
         McpClientOptions options = new()
         {
@@ -170,7 +171,7 @@ public partial class AgentChatClient
                                         text = JsonSerializer.Serialize(new {
                                             agent.Name,
                                             agent.Description,
-                                            agent.Instructions
+                                            Instructions = composedInstructions
                                         }, JsonSerializerOptions.Web)
                                     }
                                    };
@@ -357,6 +358,12 @@ public partial class AgentChatClient
 
         if (!McpServerResources.IsEmpty || !McpServerResourceTemplates.IsEmpty)
             tools.Add(AIFunctionFactory.Create(ReadResourceAsync));
+
+        if (GetEnabledSkills().Count > 0)
+        {
+            tools.Add(AIFunctionFactory.Create(ActivateSkillAsync));
+            tools.Add(AIFunctionFactory.Create(ReadSkillResourceAsync));
+        }
 
         foreach (var tool in tools)
         {

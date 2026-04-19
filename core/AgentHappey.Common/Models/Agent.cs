@@ -32,6 +32,10 @@ public class Agent
     [JsonPropertyName("mcpClient")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public McpClient? McpClient { get; set; }
+
+    [JsonPropertyName("skills")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IEnumerable<AISkill>? Skills { get; set; }
 }
 
 public class OutputSchema
@@ -79,6 +83,34 @@ public class Mcp
     [JsonPropertyName("clientCapabilities")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ClientCapabilities? ClientCapabilities { get; set; }
+}
+
+
+public class AISkill
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = null!;
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = null!;
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "inline";
+
+    [JsonPropertyName("source")]
+    public AISkillSource Source { get; set; } = null!;
+}
+
+public class AISkillSource
+{
+    [JsonPropertyName("data")]
+    public string Data { get; set; } = null!;
+
+    [JsonPropertyName("media_type")]
+    public string MediaType { get; set; } = "application/zip";
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "base64";
 }
 
 public class AIModel
