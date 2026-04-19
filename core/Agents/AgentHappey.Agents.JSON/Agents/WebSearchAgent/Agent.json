@@ -18,9 +18,28 @@
             ],
             "parallel_tool_calls": true,
             "reasoning": {
-                "effort": "low",
+                "effort": "medium",
                 "summary": "auto"
             }
+        }
+    },
+    "mcpServers": {
+        "localhost/websearch": {
+            "type": "http",
+            "url": "https://mcp.aihappey.net/websearch",
+            "disabled": false
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "elicitation": {},
+            "sampling": {}
+        },
+        "policy": {
+            "readOnlyHint": true,
+            "openWorldHint": true,
+            "idempotentHint": false,
+            "destructiveHint": false
         }
     }
 }

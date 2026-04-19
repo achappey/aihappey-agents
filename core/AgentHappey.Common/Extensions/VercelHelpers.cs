@@ -26,6 +26,22 @@ public static class VercelHelpers
         string.Equals(ti.Type, "tool-approval-request", StringComparison.OrdinalIgnoreCase)
         || string.Equals(toolName, "approval-request", StringComparison.OrdinalIgnoreCase);
 
+    public static AIContent? ToUserMessagePart(this UIMessagePart message)
+    {
+        return message switch
+        {
+            TextUIPart textUIPart => new TextContent(textUIPart.Text ?? ""),
+            FileUIPart fileUIPart => new DataContent(fileUIPart.Url, fileUIPart.MediaType),
+            _ => null,
+        };
+    }
+
+    public static IEnumerable<AIContent> ToUserMessageParts(this IEnumerable<UIMessagePart> messages)
+        => [..messages?
+            .Select(p => p.ToUserMessagePart())
+            .OfType<AIContent>()
+            .ToList() ?? []];
+
     public static IEnumerable<ChatMessage> ToMessages(this IEnumerable<UIMessage> messages)
     {
         foreach (var ui in messages)
@@ -41,10 +57,8 @@ public static class VercelHelpers
             if (role != ChatRole.Assistant)
             {
                 List<AIContent> contents = [..ui.Parts?
-                    .OfType<TextUIPart>()
-                    .Select(p => new TextContent(p.Text ?? ""))
-                    .ToList() ?? []];
-
+                    .ToUserMessageParts() ?? []];
+                    
                 yield return new ChatMessage(role, contents) { MessageId = ui.Id };
                 continue;
             }

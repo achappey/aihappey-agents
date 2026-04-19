@@ -6,6 +6,14 @@ public static class AgentHelpers
 {
     public static McpServer ToMcpServer(this string url) => new() { Url = url };
 
+    public static string ToDataUri(this string base64, string mimeType)
+    {
+        if (string.IsNullOrWhiteSpace(base64))
+            return string.Empty;
+
+        return $"data:{mimeType};base64,{base64}";
+    }
+
     public static object? GetCompletionsOutputSchema(this Agent agent)
     {
         if (agent.OutputSchema == null)

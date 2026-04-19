@@ -39,6 +39,26 @@ public partial class AgentChatClient
     {
         switch (part)
         {
+            case ResponseOutputTextAnnotationAdded responseOutputTextAnnotationAdded:
+                var annotated = new TextContent(string.Empty);
+                annotated.Annotations ??= [];
+                annotated.Annotations?.Add(new CitationAnnotation()
+                {
+                    RawRepresentation = responseOutputTextAnnotationAdded.Annotation,
+                    Title = responseOutputTextAnnotationAdded.Annotation.AdditionalProperties?["title"].GetString(),
+                    Url = new Uri(responseOutputTextAnnotationAdded.Annotation.AdditionalProperties?["url"].GetString()!),
+                    AnnotatedRegions = [new TextSpanAnnotatedRegion() {
+                                StartIndex = responseOutputTextAnnotationAdded.Annotation.AdditionalProperties?["start_index"].GetInt32(),
+                                EndIndex = responseOutputTextAnnotationAdded.Annotation.AdditionalProperties?["end_index"].GetInt32(),
+                        }]
+                });
+
+                yield return CreateStreamingUpdate(
+                    ChatRole.Assistant,
+                    [annotated],
+                    responseOutputTextAnnotationAdded.ItemId);
+                yield break;
+
             case ResponseOutputTextDelta textDelta when !string.IsNullOrWhiteSpace(textDelta.Delta):
                 state.MarkTextDelta(textDelta.ItemId, textDelta.ContentIndex);
                 yield return CreateStreamingUpdate(
@@ -110,7 +130,34 @@ public partial class AgentChatClient
                 if (state.TryCreateMcpInputUpdate(mcpArgumentsDone.ItemId, out ChatResponseUpdate mcpInputUpdate))
                     yield return mcpInputUpdate;
                 yield break;
+            case ResponseImageGenerationCallGenerating responseImageGenerationCallGenerating:
+                yield return new ChatResponseUpdate(
+                      ChatRole.Assistant,
+                      [new FunctionCallContent(responseImageGenerationCallGenerating.ItemId, "image_generation", new Dictionary<string, object?>()
+                            {
+                            })
+                            {
+                                InformationalOnly = true
+                            }])
+                {
+                    MessageId = responseImageGenerationCallGenerating.ItemId,
+                };
 
+                yield break;
+
+            case ResponseImageGenerationCallPartialImage responseImageGenerationCallPartialImage:
+                var mimeType = $"image/{responseImageGenerationCallPartialImage.OutputFormat}";
+
+                yield return new ChatResponseUpdate(
+                      ChatRole.Assistant,
+                      [new DataContent(responseImageGenerationCallPartialImage.PartialImageB64.ToDataUri(mimeType), mimeType)
+                            {
+                            }])
+                {
+                    MessageId = responseImageGenerationCallPartialImage.ItemId,
+                };
+
+                yield break;
             case ResponseOutputItemDone done:
                 state.RegisterOutputItem(done.Item);
 
@@ -139,6 +186,9 @@ public partial class AgentChatClient
                     yield break;
                 }
 
+                foreach (var otherDone in ToResponseOutputItemDoneUpdates(done))
+                    yield return otherDone;
+
                 yield break;
 
             case ResponseCompleted completed:
@@ -152,6 +202,7 @@ public partial class AgentChatClient
             case ResponseError error:
                 yield return CreateErrorUpdate(Guid.NewGuid().ToString(), error?.Message ?? "Responses stream failed.");
                 yield break;
+
             default:
                 yield break;
         }
@@ -267,7 +318,7 @@ public partial class AgentChatClient
         IReadOnlyList<AIContent> contents,
         string? messageId = null,
         ChatFinishReason? finishReason = null)
-        => new(role, contents.ToList())
+        => new(role, [.. contents])
         {
             MessageId = messageId ?? Guid.NewGuid().ToString("N"),
             FinishReason = finishReason,

@@ -50,7 +50,7 @@ public static class ResponsesRuntimeMapper
         switch (item.Type)
         {
             case "message":
-                yield return new ChatMessage(ParseRole(item.Role), ToContents(item).ToList())
+                yield return new ChatMessage(ParseRole(item.Role), [.. ToContents(item)])
                 {
                     MessageId = item.Id
                 };
@@ -116,7 +116,7 @@ public static class ResponsesRuntimeMapper
             default:
                 if (item.Content?.Count > 0)
                 {
-                    yield return new ChatMessage(ParseRole(item.Role), ToContents(item).ToList())
+                    yield return new ChatMessage(ParseRole(item.Role), [.. ToContents(item)])
                     {
                         MessageId = item.Id
                     };

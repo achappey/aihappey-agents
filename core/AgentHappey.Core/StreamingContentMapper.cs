@@ -52,17 +52,24 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         var pendingCalls = new Dictionary<string, ToolCallPart>(StringComparer.Ordinal);
         string? authorName = null;
 
+        List<UsageContent> usageContents = [];
+
         await foreach (var update in updates.WithCancellation(cancellationToken))
         {
             if (!string.IsNullOrWhiteSpace(update.AuthorName))
                 authorName = update.AuthorName;
 
             foreach (var content in update.Contents)
-                foreach (var part in MapContent(content, update.MessageId, pendingCalls, text, reasoning, includeFileParts: true))
-                    yield return part;
+            {
+                if (content is UsageContent usageContent)
+                    usageContents.Add(usageContent);
+                else
+                    foreach (var part in MapContent(content, update.MessageId, pendingCalls, text, reasoning, includeFileParts: true))
+                        yield return part;
+            }
         }
 
-        foreach (var part in CloseAndFinish(text, authorName))
+        foreach (var part in CloseAndFinish(text, usageContents, authorName))
             yield return part;
     }
 
@@ -126,18 +133,6 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
     {
         switch (content)
         {
-            case UsageContent usageContent:
-                yield return new MessageMetadataUIPart
-                {
-                    MessageMetadata = new Dictionary<string, object>
-                    {
-                        { "totalTokens", usageContent.Details.TotalTokenCount ?? 0 },
-                        { "inputTokens", usageContent.Details.InputTokenCount ?? 0},
-                        { "outputTokens", usageContent.Details.OutputTokenCount ?? 0}
-                    }
-                };
-
-                break;
             case UriContent uriContent:
                 yield return new SourceUIPart
                 {
@@ -171,7 +166,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
 
                         yield return new SourceUIPart
                         {
-                            SourceId = t.Text, // as in your original code
+                            SourceId = ann.Title ?? url, // as in your original code
                             Url = url,
                             Title = ann.Title
                         };
@@ -217,7 +212,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             case FunctionResultContent fr:
                 {
                     if (string.IsNullOrEmpty(fr.CallId)) yield break;
-                    if (!pendingCalls.TryGetValue(fr.CallId!, out _)) yield break;
+                    if (!pendingCalls.TryGetValue(fr.CallId!, out ToolCallPart? toolCallPart)) yield break;
 
                     var output = fr.Result is AIContent aiContent
                         && aiContent.RawRepresentation is ContentBlock contentBlock
@@ -225,6 +220,57 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                         {
                             Content = [contentBlock],
                         } : fr.Result ?? new { };
+
+                    if (fr.CallId.StartsWith("ws_") &&
+                        toolCallPart.ToolName == "search" &&
+                        fr.Result is Dictionary<string, JsonElement> dict &&
+                        dict.TryGetValue("sources", out var sources) &&
+                        sources.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in sources.EnumerateArray())
+                        {
+                            if (item.ValueKind != JsonValueKind.Object) continue;
+
+                            if (!item.TryGetProperty("url", out var urlEl)) continue;
+                            if (urlEl.ValueKind != JsonValueKind.String) continue;
+
+                            var url = urlEl.GetString();
+                            if (string.IsNullOrEmpty(url)) continue;
+
+                            yield return new SourceUIPart
+                            {
+                                SourceId = url,
+                                Url = url
+                            };
+                        }
+
+                        var structured = JsonSerializer.SerializeToElement(new
+                        {
+                            sources
+                        });
+
+                        output = new CallToolResult()
+                        {
+                            StructuredContent = structured
+                        };
+                    }
+
+                    if (fr.CallId.StartsWith("ci_") &&
+                     toolCallPart.ToolName == "code_interpreter" &&
+                     fr.Result is Dictionary<string, JsonElement> dictCi &&
+                     dictCi.TryGetValue("outputs", out var outputs) &&
+                     outputs.ValueKind == JsonValueKind.Array)
+                    {
+                        var structured = JsonSerializer.SerializeToElement(new
+                        {
+                            outputs
+                        });
+
+                        output = new CallToolResult()
+                        {
+                            StructuredContent = structured
+                        };
+                    }
 
                     yield return new ToolOutputAvailablePart
                     {
@@ -309,10 +355,22 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         text.OpenOrder.Clear();
     }
 
-    private static IEnumerable<UIMessagePart> CloseAndFinish(TextStreamState text, string? author)
+    private static IEnumerable<UIMessagePart> CloseAndFinish(TextStreamState text, List<UsageContent> usages, string? author)
     {
         foreach (var part in CloseAllTextStreams(text))
             yield return part;
+
+        int totalTokens = (int)Math.Min(
+            usages.Sum(a => a.Details.TotalTokenCount ?? 0L),
+            int.MaxValue);
+
+        int inputTokens = (int)Math.Min(
+            usages.Sum(a => a.Details.InputTokenCount ?? 0L),
+            int.MaxValue);
+
+        int outputTokens = (int)Math.Min(
+            usages.Sum(a => a.Details.OutputTokenCount ?? 0L),
+            int.MaxValue);
 
         yield return new FinishUIPart
         {
@@ -320,6 +378,13 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             MessageMetadata = new Dictionary<string, object>
                 {
                     { "timestamp", DateTime.UtcNow },
+                    {"usage", new Usage()
+                        {
+                            TotalTokens = totalTokens,
+                            CompletionTokens = outputTokens,
+                            PromptTokens = inputTokens
+                        }
+                    },
                     { "author", author ?? string.Empty },
                     { "model", author ?? string.Empty }
                 }
