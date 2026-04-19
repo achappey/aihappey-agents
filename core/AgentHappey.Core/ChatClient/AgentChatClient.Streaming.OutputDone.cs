@@ -15,6 +15,17 @@ public partial class AgentChatClient
     {
         switch (done.Item.Type)
         {
+            case "custom_tool_call":
+                yield return new ChatResponseUpdate(
+                      ChatRole.Assistant,
+                      [new FunctionResultContent(done.Item.Id!, new Dictionary<string, JsonElement>
+                        {
+                        })])
+                {
+                    MessageId = done.Item.Id,
+                };
+
+                yield break;
             case "image_generation_call":
                 var resultEl = done.Item.AdditionalProperties?["result"];
                 var formatEl = done.Item.AdditionalProperties?["output_format"];

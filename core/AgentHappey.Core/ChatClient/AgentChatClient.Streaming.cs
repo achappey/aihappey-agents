@@ -114,6 +114,10 @@ public partial class AgentChatClient
             case ResponseFunctionCallArgumentsDelta functionArgumentsDelta:
                 state.AppendArguments(functionArgumentsDelta.ItemId, functionArgumentsDelta.Delta, providerExecuted: false);
                 yield break;
+            case ResponseCustomToolCallInputDelta customToolCallInputDelta:
+                state.AppendArguments(customToolCallInputDelta.ItemId, customToolCallInputDelta.Delta, providerExecuted: false);
+                yield break;
+
 
             case ResponseMcpCallArgumentsDelta mcpArgumentsDelta:
                 state.AppendArguments(mcpArgumentsDelta.ItemId, mcpArgumentsDelta.Delta, providerExecuted: true);
@@ -123,6 +127,12 @@ public partial class AgentChatClient
                 state.SetArguments(functionArgumentsDone.ItemId, functionArgumentsDone.Arguments, providerExecuted: false);
                 if (state.TryCreateFunctionCallUpdate(functionArgumentsDone.ItemId, out ChatResponseUpdate functionCallUpdate))
                     yield return functionCallUpdate;
+                yield break;
+
+            case ResponseCustomToolCallInputDone customToolCallInputDone:
+                state.SetArguments(customToolCallInputDone.ItemId, customToolCallInputDone.Input, providerExecuted: true);
+                if (state.TryCreateCustomToolCallInputUpdate(customToolCallInputDone.ItemId, out ChatResponseUpdate customInputUpdate))
+                    yield return customInputUpdate;
                 yield break;
 
             case ResponseMcpCallArgumentsDone mcpArgumentsDone:
@@ -472,10 +482,12 @@ public partial class AgentChatClient
                 return;
 
             if (!string.Equals(item.Type, "function_call", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(item.Type, "mcp_call", StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(item.Type, "mcp_call", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(item.Type, "custom_tool_call", StringComparison.OrdinalIgnoreCase))
                 return;
 
-            var state = GetOrCreateToolCall(itemId, string.Equals(item.Type, "mcp_call", StringComparison.OrdinalIgnoreCase));
+            var state = GetOrCreateToolCall(itemId,
+                string.Equals(item.Type, "function_call", StringComparison.OrdinalIgnoreCase) != true);
             state.Name = string.IsNullOrWhiteSpace(item.Name) ? state.Name : item.Name;
             state.CallId = GetAdditionalPropertyString(item.AdditionalProperties, "call_id") ?? state.CallId ?? itemId;
             state.ToolTitle = state.IsProviderExecuted
@@ -527,6 +539,35 @@ public partial class AgentChatClient
             update = new ChatResponseUpdate(
                 ChatRole.Assistant,
                 [new FunctionCallContent(callId, state.Name, arguments)])
+            {
+                MessageId = itemId,
+                AuthorName = AuthorName,
+                ModelId = ModelId
+            };
+
+            state.InputEmitted = true;
+            return true;
+        }
+
+        public bool TryCreateCustomToolCallInputUpdate(string? itemId,
+            out ChatResponseUpdate update)
+        {
+            update = null!;
+
+            if (string.IsNullOrWhiteSpace(itemId)
+                || !toolCalls.TryGetValue(itemId, out var state)
+                || !state.IsProviderExecuted
+                || state.InputEmitted)
+            {
+                return false;
+            }
+            update = new ChatResponseUpdate(
+                           ChatRole.Assistant,
+                           [new FunctionCallContent(state.CallId ?? itemId,
+                            "custom_tool_call", DeserializeArguments(state.ArgumentsText))
+                {
+                    InformationalOnly = true
+                }])
             {
                 MessageId = itemId,
                 AuthorName = AuthorName,
