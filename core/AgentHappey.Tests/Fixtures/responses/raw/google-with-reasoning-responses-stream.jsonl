@@ -1,0 +1,16 @@
+data: {"type":"response.output_item.added","item":{"id":"interactions-content-0","type":"reasoning","status":"in_progress","role":null,"phase":null,"name":null,"call_id":null,"arguments":null,"max_output_length":null,"content":null},"output_index":0,"sequence_number":1}
+
+data: {"type":"response.output_item.done","item":{"id":"interactions-content-0","type":"reasoning","status":"completed","role":null,"phase":null,"name":null,"call_id":null,"arguments":null,"max_output_length":null,"content":[{"type":"reasoning_text","text":"","annotations":null}],"provider_metadata":{"google":{"type":"thought_signature","signature":"EjQKMgEMOdbHfAqbDQ0MSWh7OEk5TFqB6kwRrBRu5Ab6tKOZZemhjJdsZRnbtIBISGPMr664"}}},"output_index":0,"sequence_number":1}
+
+data: {"type":"response.output_item.added","item":{"id":"interactions-content-1","type":"message","status":"in_progress","role":"assistant","phase":null,"name":null,"call_id":null,"arguments":null,"max_output_length":null,"content":null},"output_index":0,"sequence_number":1}
+
+data: {"delta":"Zeker, alles goed hier! Bedankt voor het vragen. Hoe","item_id":"interactions-content-1","content_index":0,"output_index":0,"sequence_number":1,"type":"response.output_text.delta"}
+
+data: {"delta":" is het met jou? Kan ik je ergens mee helpen vandaag?","item_id":"interactions-content-1","content_index":0,"output_index":0,"sequence_number":1,"type":"response.output_text.delta"}
+
+data: {"type":"response.output_item.done","item":{"id":"interactions-content-1","type":"message","status":"completed","role":"assistant","phase":null,"name":null,"call_id":null,"arguments":null,"max_output_length":null,"content":[{"type":"output_text","text":"","annotations":null}]},"output_index":0,"sequence_number":1}
+
+data: {"sequence_number":1,"response":{"id":"","object":"response","created_at":1776790726,"completed_at":1776790726,"status":"completed","parallel_tool_calls":null,"model":"google/gemini-flash-lite-latest","temperature":null,"output":[],"usage":{"input_tokens":4,"output_tokens":28,"total_tokens":32},"text":null,"tool_choice":null,"tools":[],"reasoning":null,"store":null,"max_output_tokens":null,"service_tier":null,"error":null,"metadata":null},"type":"response.completed"}
+
+data: [DONE]
+

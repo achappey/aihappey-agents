@@ -10,11 +10,19 @@ namespace AgentHappey.Core.ChatClient;
 
 public partial class AgentChatClient
 {
-    private static IEnumerable<ChatResponseUpdate> ToResponseOutputItemDoneUpdates(
-        ResponseOutputItemDone done)
+    private IEnumerable<ChatResponseUpdate> ToResponseOutputItemDoneUpdates(
+        ResponseOutputItemDone done,
+        StreamingResponseState state)
     {
         switch (done.Item.Type)
         {
+            case "reasoning":
+                var reasoningLifecycleUpdate = CreateReasoningLifecycleUpdate(done.Item, state);
+                if (reasoningLifecycleUpdate is not null)
+                    yield return reasoningLifecycleUpdate;
+
+                yield break;
+
             case "custom_tool_call":
                 var items = done.Item.AdditionalProperties?["output"];
                 
@@ -260,5 +268,25 @@ public partial class AgentChatClient
 
 
         }
+    }
+
+    private ChatResponseUpdate? CreateReasoningLifecycleUpdate(
+        ResponseStreamItem item,
+        StreamingResponseState state)
+    {
+        if (string.IsNullOrWhiteSpace(item.Id))
+            return null;
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["item_id"] = item.Id,
+            ["status"] = item.Status
+        };
+
+        var providerMetadata = BuildReasoningProviderMetadata(item, state.ProviderId);
+        if (providerMetadata is not null)
+            payload["provider_metadata"] = providerMetadata;
+
+        return CreateProviderExecutedUpdate(payload, item.Id, "reasoning-lifecycle");
     }
 }

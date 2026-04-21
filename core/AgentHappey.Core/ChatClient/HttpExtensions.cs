@@ -79,6 +79,18 @@ public static class HttpExtensions
         using var reader = new StreamReader(stream);
         await using var captureSink = ProviderBackendCapture.BeginStreamCapture("responses", resp, capture);
 
+        await foreach (var evt in ReadResponseSseEventsAsync(reader, captureSink, ct))
+            yield return evt;
+    }
+
+
+    private static async IAsyncEnumerable<ResponseStreamPart> ReadResponseSseEventsAsync(
+        StreamReader reader,
+        ProviderBackendCaptureSink? captureSink,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var dataBuilder = new StringBuilder();
+
         string? line;
         while (!ct.IsCancellationRequested &&
                (line = await reader.ReadLineAsync(ct)) != null)
@@ -86,31 +98,72 @@ public static class HttpExtensions
             if (captureSink is not null)
                 await captureSink.WriteLineAsync(line, ct);
 
-            if (line is null) yield break;
+            if (line.Length == 0)
+            {
+                if (!TryTakeSseDataEvent(dataBuilder, out var data))
+                    continue;
 
-            if (line.Length == 0) continue; // keepalive
+                if (string.Equals(data, "[DONE]", StringComparison.OrdinalIgnoreCase))
+                    yield break;
+
+                yield return ParseResponseSseEvent(data);
+                continue;
+            }
 
             if (!line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            var data = line["data:".Length..].Trim();
-            if (data.Length == 0) continue;
-
-            if (data == "[DONE]") yield break;
-
-            ResponseStreamPart? evt;
-            try
-            {
-                evt = JsonSerializer.Deserialize<ResponseStreamPart>(data);
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException($"Failed to parse SSE json event: {data}", ex);
-            }
-
-            if (evt is not null)
-                yield return evt;
+            AppendSseDataLine(dataBuilder, line);
         }
+
+        if (TryTakeSseDataEvent(dataBuilder, out var trailingData)
+            && !string.Equals(trailingData, "[DONE]", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return ParseResponseSseEvent(trailingData);
+        }
+    }
+
+    private static void AppendSseDataLine(StringBuilder builder, string line)
+    {
+        var data = line["data:".Length..];
+        if (data.Length > 0 && data[0] == ' ')
+            data = data[1..];
+
+        if (builder.Length > 0)
+            builder.Append('\n');
+
+        builder.Append(data);
+    }
+
+    private static bool TryTakeSseDataEvent(StringBuilder builder, out string data)
+    {
+        if (builder.Length == 0)
+        {
+            data = string.Empty;
+            return false;
+        }
+
+        data = builder.ToString().Trim();
+        builder.Clear();
+        return data.Length > 0;
+    }
+
+    private static ResponseStreamPart ParseResponseSseEvent(string data)
+    {
+        ResponseStreamPart? evt;
+        try
+        {
+            evt = JsonSerializer.Deserialize<ResponseStreamPart>(data);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Failed to parse SSE json event: {data}", ex);
+        }
+
+        if (evt is null)
+            throw new InvalidOperationException($"Parsed SSE event was null: {data}");
+
+        return evt;
     }
 
 

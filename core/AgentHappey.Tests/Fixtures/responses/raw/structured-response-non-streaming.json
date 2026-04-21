@@ -1,0 +1,34 @@
+{
+  "id": "resp_structured_fixture_1",
+  "object": "response",
+  "created_at": 1735689600,
+  "completed_at": 1735689601,
+  "status": "completed",
+  "model": "openai/gpt-fixture",
+  "output": [
+    {
+      "id": "msg_structured_fixture_1",
+      "type": "message",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "annotations": [],
+          "text": "{\"summary\":\"hello\",\"tone\":\"friendly\"}"
+        }
+      ]
+    }
+  ],
+  "text": {
+    "format": {
+      "type": "json_schema"
+    }
+  },
+  "tools": [],
+  "usage": {
+    "input_tokens": 10,
+    "output_tokens": 6,
+    "total_tokens": 16
+  }
+}

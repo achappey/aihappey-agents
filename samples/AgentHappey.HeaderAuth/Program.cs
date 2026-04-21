@@ -5,11 +5,17 @@ using AgentHappey.Core;
 using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.MCP;
 using AgentHappey.Core.Responses;
+using AIHappey.Abstractions.Http;
 using AgentHappey.HeaderAuth;
 
 var builder = WebApplication.CreateBuilder(args);
 var basePath = Path.Combine(AppContext.BaseDirectory, "Agents");
 var appConfig = builder.Configuration.Get<Config>();
+
+if (builder.Environment.IsDevelopment())
+    ProviderBackendCapture.ConfigureDevelopmentDefaults(builder.Environment.ContentRootPath);
+else
+    ProviderBackendCapture.Disable();
 
 builder.Services.Configure<Config>(builder.Configuration);
 

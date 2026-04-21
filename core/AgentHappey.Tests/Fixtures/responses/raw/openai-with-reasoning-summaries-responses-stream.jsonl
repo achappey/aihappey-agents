@@ -1,0 +1,212 @@
+data: {"sequence_number":0,"response":{"id":"resp_0bbbc0051551abdc0169e7b101e66c819f91258333e0f90719","object":"response","created_at":1776791809,"completed_at":null,"status":"in_progress","parallel_tool_calls":true,"model":"openai/gpt-5.4-nano-2026-03-17","temperature":1,"output":[],"usage":null,"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":"auto","tools":[],"reasoning":{"effort":"high","summary":"detailed"},"store":false,"max_output_tokens":null,"service_tier":"auto","error":null,"metadata":{}},"type":"response.created"}
+
+data: {"sequence_number":1,"response":{"id":"resp_0bbbc0051551abdc0169e7b101e66c819f91258333e0f90719","object":"response","created_at":1776791809,"completed_at":null,"status":"in_progress","parallel_tool_calls":true,"model":"openai/gpt-5.4-nano-2026-03-17","temperature":1,"output":[],"usage":null,"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":"auto","tools":[],"reasoning":{"effort":"high","summary":"detailed"},"store":false,"max_output_tokens":null,"service_tier":"auto","error":null,"metadata":{}},"type":"response.in_progress"}
+
+data: {"type":"response.output_item.added","item":{"id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","type":"reasoning","status":null,"role":null,"phase":null,"name":null,"call_id":null,"arguments":null,"max_output_length":null,"content":null,"encrypted_content":"gAAAAABp57ECebSK_Dz8lDyIolQxcRpG5gH-6Ft0Jwt5euIwsV8Z0oGp3pzUmqaUJBmALvVixxtXYskPtV3UY0EPQiEZT3LX-xRqTzOfskdwQICykcn9EmkJ0tQmYcncoOGWCewzkdGTunswoqNXFsvAMtsnGX0059tJ_aZvsjUlb25gc4cF65L3vDG9UMkos5XOLisXcM9PSFXDTZbo2Fkvd_Tl872VLFDrCFzsAjUIvGXzTFmoX-5SDCDYsi-rlFCEwehXh90BBnvm90BaOZRxDrLQ4IogMZCpkkB8g_YsdVB34n5Sn7b9V36rmYU4oArntwxSTviNruPWJQEFG6DoJjV531xW_7bqlFmBplJSuH-nG7hmRrdlgU4UK1S14F5Khg0QQb8cB2o5D1Z7Mr40XL6edBUtaEPNULOlzJxxzZ3QaDGaCQ00BsifIbkTZEmsAThmShdOifOuj4zpC9e1cExpWpcf8QuO4OAiqkpHWNAaFcu5r3RVim2_vNBPOeOQaUtqdK6ByQhstpNK3k3Rt0BSoAHjj1JLl07bMs1sIj_mHBdqM8J4OOf-MkCcclfa0g3B2qZKXMKp0h0TJXXYBQHyyDWl5iZMVuOU-TroIpiyJyyXR0P6rnluReNF1zTTOvHPoCpJgzJk9gTXwbXZsYozTXYByrXvOJ8Leya2ILA2osdTW4JteA1AVs24u48cUGgNQGIb_D_KevOb8Zb9cpds9p3b1Y3L8M6ad7t7ksxksIhyTSEeyAC-iYhe9gQlE87mX0isX06HVT7QaE9yRPTm0kX51EYUvHnU3sWisBUkn_lU8D8dc83R31EpbUxx_n5cmlYKCoGNSWRAOXFjGlJR49q4D_AzSi7v8tJsPxie7au_xDUzUFP7k-JC-u9reBVdbkOHgF1r6cgZn9t5jzJ5HCoMb9XLAyhcrdR8RgdHrUMaxTI=","summary":[]},"output_index":0,"sequence_number":2}
+
+data: {"part":{"type":"summary_text","text":"","annotations":null},"type":"response.reasoning_summary_part.added","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":3}
+
+data: {"delta":"**Responding to user casually**\n\nThe","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":4}
+
+data: {"delta":" user","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":5}
+
+data: {"delta":" just","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":6}
+
+data: {"delta":" said","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":7}
+
+data: {"delta":" \u0022","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":8}
+
+data: {"delta":"bro","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":9}
+
+data: {"delta":",\u0022","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":10}
+
+data: {"delta":" which","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":11}
+
+data: {"delta":" feels","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":12}
+
+data: {"delta":" pretty","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":13}
+
+data: {"delta":" laid","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":14}
+
+data: {"delta":"-back","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":15}
+
+data: {"delta":"!","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":16}
+
+data: {"delta":" I","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":17}
+
+data: {"delta":" think","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":18}
+
+data: {"delta":" it","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":19}
+
+data: {"delta":" would","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":20}
+
+data: {"delta":" be","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":21}
+
+data: {"delta":" good","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":22}
+
+data: {"delta":" to","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":23}
+
+data: {"delta":" keep","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":24}
+
+data: {"delta":" it","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":25}
+
+data: {"delta":" friendly","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":26}
+
+data: {"delta":" in","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":27}
+
+data: {"delta":" my","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":28}
+
+data: {"delta":" response","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":29}
+
+data: {"delta":".","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":30}
+
+data: {"delta":" I","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":31}
+
+data: {"delta":" should","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":32}
+
+data: {"delta":" ask","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":33}
+
+data: {"delta":" what","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":34}
+
+data: {"delta":" they","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":35}
+
+data: {"delta":" need","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":36}
+
+data: {"delta":" or","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":37}
+
+data: {"delta":" how","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":38}
+
+data: {"delta":" I","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":39}
+
+data: {"delta":" can","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":40}
+
+data: {"delta":" help","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":41}
+
+data: {"delta":" them","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":42}
+
+data: {"delta":" out","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":43}
+
+data: {"delta":".","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":44}
+
+data: {"delta":" It","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":45}
+
+data: {"delta":"\u2019s","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":46}
+
+data: {"delta":" essential","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":47}
+
+data: {"delta":" to","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":48}
+
+data: {"delta":" create","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":49}
+
+data: {"delta":" an","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":50}
+
+data: {"delta":" open","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":51}
+
+data: {"delta":" vibe","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":52}
+
+data: {"delta":" where","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":53}
+
+data: {"delta":" they","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":54}
+
+data: {"delta":" feel","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":55}
+
+data: {"delta":" comfortable","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":56}
+
+data: {"delta":" sharing","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":57}
+
+data: {"delta":" more","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":58}
+
+data: {"delta":".","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":59}
+
+data: {"delta":" I","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":60}
+
+data: {"delta":"\u2019ll","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":61}
+
+data: {"delta":" keep","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":62}
+
+data: {"delta":" it","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":63}
+
+data: {"delta":" casual","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":64}
+
+data: {"delta":" and","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":65}
+
+data: {"delta":" engaging","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":66}
+
+data: {"delta":" to","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":67}
+
+data: {"delta":" encourage","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":68}
+
+data: {"delta":" them","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":69}
+
+data: {"delta":" to","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":70}
+
+data: {"delta":" communicate","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":71}
+
+data: {"delta":" further","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":72}
+
+data: {"delta":"!","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":73}
+
+data: {"delta":" Let\u0027s","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":74}
+
+data: {"delta":" make","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":75}
+
+data: {"delta":" this","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":76}
+
+data: {"delta":" an","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":77}
+
+data: {"delta":" enjoyable","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":78}
+
+data: {"delta":" interaction","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":79}
+
+data: {"delta":"!","type":"response.reasoning_summary_text.delta","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":80}
+
+data: {"text":"**Responding to user casually**\n\nThe user just said \u0022bro,\u0022 which feels pretty laid-back! I think it would be good to keep it friendly in my response. I should ask what they need or how I can help them out. It\u2019s essential to create an open vibe where they feel comfortable sharing more. I\u2019ll keep it casual and engaging to encourage them to communicate further! Let\u0027s make this an enjoyable interaction!","type":"response.reasoning_summary_text.done","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":81}
+
+data: {"part":{"type":"summary_text","text":"**Responding to user casually**\n\nThe user just said \u0022bro,\u0022 which feels pretty laid-back! I think it would be good to keep it friendly in my response. I should ask what they need or how I can help them out. It\u2019s essential to create an open vibe where they feel comfortable sharing more. I\u2019ll keep it casual and engaging to encourage them to communicate further! Let\u0027s make this an enjoyable interaction!","annotations":null},"type":"response.reasoning_summary_part.done","item_id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","content_index":0,"output_index":0,"sequence_number":82}
+
+data: {"type":"response.output_item.done","item":{"id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","type":"reasoning","status":null,"role":null,"phase":null,"name":null,"call_id":null,"arguments":null,"max_output_length":null,"content":null,"encrypted_content":"gAAAAABp57EEOX9CWEPn3IsMBbH6IYQPRo66dAiseld4gDPv9e3jd705OrJVgiyfFIUqtWEuM9dT4KSVdLm9LumZS7HDod4x_-EwYacUoL3N_d6xFg8-NovtiAm5qqfJLyt-yG_OvqJv1UO3ZVnZjp2ASUuXsu2t1VLy1uoduup6ySRy2kGqmgy1L4P__XS9FLmJEYUYuC3dUzrsgXa7jYeMkForYahxF05nMaihuhza8zRsNqvflSwl623upo64JOGTLzW1sEoUoY5BGC2o0Q-B3XXkC0VuNetudhKD3W5rSLDABzoQrZ-iXEousCijKbGb5OJzD7HRJNCkAgEH6hqmEi2XLD7aeFo-3FD3bXNJ2IAh53H2dQUzyr_Id5997QjN6P0E9eEIuidgnRZLJg_2kzxam8iu7RqPAw1NZBsBQfWZ2W4EdaQ2QKP8um32gCD6275eVQpNXhmaq0zkdzk2XbGh1WWiSfldWUnL8WaUOtmCicnaIESsxtJKrbd5TQQuQGP_do5ApABwcIyZsoxg-3IiNXFltikkr3azCT3OCFP5Oy0fyEbWblbnD9VfEzAKXhytXVRvsg3eTcNi7a4EXXm9L-tMAz16sKHwdZxKDwr9BBNEopl0Dx4p-P-NjS5N0chlH0tY9TVi_68BU6pCsCPNnvvZe_GTh_XkpyPg_6PR9lNXZiVgUrqtP7KCxel01oLd48noOiJ0p6VGU_Rgv15KTh6Jx1GSKM5mJgYdX_L6R8USserP7LP4FrczjOjQ4cBspp5teFCpn6kOvss1ZmWCf3J2aZe9RcGot22itzjhwbQbcsK-FO8Gs1yQd5GtqXHI6m-p1nPsM4x51F_NyLvd0JTq-6KF8Q6wkFMNP1HZQlYsbOV5viD5ie5a0OOjv7F0g3DrU-bMbTd90sTTZIOL9VpG1Fyf9EM7M3mWa5te5MmVIGGHmM-QWbm1mLWH9bn0OwHSdq3jlg_fna035t514wINaUnsAlQLarzpjMaV8VwyPXJMBqppSvFLSw0nJVOPEu-0rRVSlg_Q_Ou7G-drNYIRVQ==","summary":[{"type":"summary_text","text":"**Responding to user casually**\n\nThe user just said \u0022bro,\u0022 which feels pretty laid-back! I think it would be good to keep it friendly in my response. I should ask what they need or how I can help them out. It\u2019s essential to create an open vibe where they feel comfortable sharing more. I\u2019ll keep it casual and engaging to encourage them to communicate further! Let\u0027s make this an enjoyable interaction!"}]},"output_index":0,"sequence_number":83}
+
+data: {"type":"response.output_item.added","item":{"id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","type":"message","status":"in_progress","role":"assistant","phase":"final_answer","name":null,"call_id":null,"arguments":null,"max_output_length":null,"content":[]},"output_index":1,"sequence_number":84}
+
+data: {"part":{"type":"output_text","text":"","annotations":[],"logprobs":[]},"type":"response.content_part.added","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":85}
+
+data: {"delta":"Yo","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":86,"type":"response.output_text.delta"}
+
+data: {"delta":" \uD83D\uDE04","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":87,"type":"response.output_text.delta"}
+
+data: {"delta":" What","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":88,"type":"response.output_text.delta"}
+
+data: {"delta":"\u2019s","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":89,"type":"response.output_text.delta"}
+
+data: {"delta":" up","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":90,"type":"response.output_text.delta"}
+
+data: {"delta":",","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":91,"type":"response.output_text.delta"}
+
+data: {"delta":" bro","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":92,"type":"response.output_text.delta"}
+
+data: {"delta":"?","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":93,"type":"response.output_text.delta"}
+
+data: {"delta":" How","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":94,"type":"response.output_text.delta"}
+
+data: {"delta":" can","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":95,"type":"response.output_text.delta"}
+
+data: {"delta":" I","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":96,"type":"response.output_text.delta"}
+
+data: {"delta":" help","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":97,"type":"response.output_text.delta"}
+
+data: {"delta":" you","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":98,"type":"response.output_text.delta"}
+
+data: {"delta":" today","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":99,"type":"response.output_text.delta"}
+
+data: {"delta":"?","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":100,"type":"response.output_text.delta"}
+
+data: {"text":"Yo \uD83D\uDE04 What\u2019s up, bro? How can I help you today?","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":101,"type":"response.output_text.done"}
+
+data: {"part":{"type":"output_text","text":"Yo \uD83D\uDE04 What\u2019s up, bro? How can I help you today?","annotations":[],"logprobs":[]},"type":"response.content_part.done","item_id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","content_index":0,"output_index":1,"sequence_number":102}
+
+data: {"type":"response.output_item.done","item":{"id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","type":"message","status":"completed","role":"assistant","phase":"final_answer","name":null,"call_id":null,"arguments":null,"max_output_length":null,"content":[{"type":"output_text","text":"Yo \uD83D\uDE04 What\u2019s up, bro? How can I help you today?","annotations":[],"logprobs":[]}]},"output_index":1,"sequence_number":103}
+
+data: {"sequence_number":104,"response":{"id":"resp_0bbbc0051551abdc0169e7b101e66c819f91258333e0f90719","object":"response","created_at":1776791809,"completed_at":1776791812,"status":"completed","parallel_tool_calls":true,"model":"openai/gpt-5.4-nano-2026-03-17","temperature":1,"output":[{"id":"rs_0bbbc0051551abdc0169e7b1021c40819f82f112b6228e56e0","type":"reasoning","encrypted_content":"gAAAAABp57EElsmqGX6rwe-A8OM8xOmmbYizEAbxtBvIsbiu0mBUmgdIwnCe6F0pf4sugCnHhQiFAI_MxRQHSshR-dpoYzoOkr_82-se1w2S2dsXRbNVJsCyjIt9VRo4GEEmyVapBUHfujJFvB2vbX3bmtJ49RVKLABfiysKEdQyxoiKoBPHHUT6S342VMfbrFHBUUtIV_beVnWzNFiaPh1YAjanlaxgA7res_bL0rrmJAy7MjR77GmyNEyCOdP2iHnU7vn3VzMysbIw9L8LIRog990YJcIxlG2IAPexnmP_rFOvHD0I0kfaHpcxaW4ZFzE9_135IU3xQjVJCTgKX_zRSatDksqe8P3JV0fQFp6_4QdwwETZBMQsvEpSzzyqVG91z9wjGAFI4PVqXasEbeK1LNHvDvnHsVhY1VHR7JxoU3gTeSKX3xefYSTsV8XrwMJYZyJImrb4B2DE3RsJ9pM74lsdOO1LN7ppZ1wIlFGN4H0OFYxmHxL1j2xr9yfrGTgWSUYnB6qlOOdZ7W5oGSEW9_NKMS1SNojvXr32Y6clGHQXpRgmhlNPANXH-SymUaUSfhbxp1N8IBPf56XR34tce2ZuAU4jwQ2A2pS8yxD8SLNPotxJ3QS73HcW8JgjVNNyDWPXJL-Bbf-Z_yDmHSllY5h7ca-1SKiCqsyhL41h_UYMKNcXKFXWsGn8ibmzaGeB_qQ4-C6xhhoVZ7VHKMsfmw_XpSLYmIXqcbA30eH9R6seCjf_B2MloX3_NQpPOhn_RpzZPJRlsfF-638BfKBueVVUeNenWsflJ2AVZ5gdqhTA56D9f7r6PAplC73DM-Fl2wF2lS4Nnj1XmedfhC0xXvflLKOWWRjwlMD615752mU4Peld0eFpe4D3pUi3ptNJSo4lnbFslAyEPP5Ny8XRRKAPQswuczBUAcDnwJMoXloxhlJfBnMNLj7R1cZ8WXxA-yGg0-tmYMSKvT0J0jEwwpoC0WoKRH4IhRdZJHREz5HHNEi8d8uulh5R_EWBoecNtZNCEuBcwKIfUhgXO_3a8XWfrhuquw==","summary":[{"type":"summary_text","text":"**Responding to user casually**\n\nThe user just said \u0022bro,\u0022 which feels pretty laid-back! I think it would be good to keep it friendly in my response. I should ask what they need or how I can help them out. It\u2019s essential to create an open vibe where they feel comfortable sharing more. I\u2019ll keep it casual and engaging to encourage them to communicate further! Let\u0027s make this an enjoyable interaction!"}]},{"id":"msg_0bbbc0051551abdc0169e7b1041958819f9ed0997bd65eeb2e","type":"message","status":"completed","content":[{"type":"output_text","annotations":[],"logprobs":[],"text":"Yo \uD83D\uDE04 What\u2019s up, bro? How can I help you today?"}],"phase":"final_answer","role":"assistant"}],"usage":{"input_tokens":7,"input_tokens_details":{"cached_tokens":0},"output_tokens":42,"output_tokens_details":{"reasoning_tokens":20},"total_tokens":49},"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":"auto","tools":[],"reasoning":{"effort":"high","summary":"detailed"},"store":false,"max_output_tokens":null,"service_tier":"default","error":null,"metadata":{"gateway":{"cost":0.00005390}}},"type":"response.completed"}
+
+data: [DONE]
+

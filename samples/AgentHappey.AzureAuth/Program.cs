@@ -6,11 +6,17 @@ using AgentHappey.Core;
 using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.MCP;
 using AgentHappey.Core.Responses;
+using AIHappey.Abstractions.Http;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Identity.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 var appConfig = builder.Configuration.Get<Config>();
+
+if (builder.Environment.IsDevelopment())
+    ProviderBackendCapture.ConfigureDevelopmentDefaults(builder.Environment.ContentRootPath);
+else
+    ProviderBackendCapture.Disable();
 
 builder.Services.Configure<Config>(builder.Configuration);
 

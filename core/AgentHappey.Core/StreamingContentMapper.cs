@@ -69,7 +69,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             }
         }
 
-        foreach (var part in CloseAndFinish(text, usageContents, authorName))
+        foreach (var part in CloseAndFinish(text, reasoning, usageContents, authorName))
             yield return part;
     }
 
@@ -97,6 +97,9 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             }
             else if (update is WorkflowOutputEvent)
             {
+                foreach (var part in CloseAllReasoningStreams(reasoning))
+                    yield return part;
+
                 foreach (var part in CloseAllTextStreams(text))
                     yield return part;
             }
@@ -109,6 +112,9 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                     };
             }
         }
+
+        foreach (var part in CloseAllReasoningStreams(reasoning))
+            yield return part;
 
         foreach (var part in CloseAllTextStreams(text))
             yield return part;
@@ -177,6 +183,21 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
 
             case DataContent d when includeFileParts:
                 {
+                    if (TryReadReasoningLifecycle(d, out var reasoningLifecycle))
+                    {
+                        var reasoningId = reasoningLifecycle.ItemId ?? messageId;
+                        if (!string.IsNullOrEmpty(reasoningId))
+                        {
+                            foreach (var part in EnsureReasoningStream(reasoningId!, reasoning))
+                                yield return part;
+
+                            foreach (var part in CloseReasoningStream(reasoningId!, reasoning, reasoningLifecycle.ProviderMetadata))
+                                yield return part;
+                        }
+
+                        break;
+                    }
+
                     if (d.MediaType.StartsWith("image/") && !string.IsNullOrEmpty(d.Uri))
                         yield return new FileUIPart { MediaType = d.MediaType, Url = d.Uri };
 
@@ -318,6 +339,10 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         public List<string> OpenOrder { get; } = []; // stable end-order
     }
 
+    private sealed record ReasoningLifecyclePayload(
+        string? ItemId,
+        Dictionary<string, Dictionary<string, object>>? ProviderMetadata);
+
     private static IEnumerable<UIMessagePart> EnsureTextStream(string messageId, TextStreamState text)
     {
         if (text.OpenSet.Add(messageId))
@@ -345,6 +370,22 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         text.OpenOrder.Clear();
     }
 
+    private static IEnumerable<UIMessagePart> CloseReasoningStream(
+        string messageId,
+        ReasoningStreamState text,
+        Dictionary<string, Dictionary<string, object>>? providerMetadata)
+    {
+        if (!text.OpenSet.Remove(messageId))
+            yield break;
+
+        text.OpenOrder.Remove(messageId);
+        yield return new ReasoningEndUIPart
+        {
+            Id = messageId,
+            ProviderMetadata = providerMetadata
+        };
+    }
+
 
     private static IEnumerable<UIMessagePart> CloseAllTextStreams(TextStreamState text)
     {
@@ -355,8 +396,15 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         text.OpenOrder.Clear();
     }
 
-    private static IEnumerable<UIMessagePart> CloseAndFinish(TextStreamState text, List<UsageContent> usages, string? author)
+    private static IEnumerable<UIMessagePart> CloseAndFinish(
+        TextStreamState text,
+        ReasoningStreamState reasoning,
+        List<UsageContent> usages,
+        string? author)
     {
+        foreach (var part in CloseAllReasoningStreams(reasoning))
+            yield return part;
+
         foreach (var part in CloseAllTextStreams(text))
             yield return part;
 
@@ -456,4 +504,62 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             }
         }
     }
+
+    private static bool TryReadReasoningLifecycle(
+        DataContent dataContent,
+        out ReasoningLifecyclePayload payload)
+    {
+        payload = default!;
+
+        if (!string.Equals(dataContent.Name, "reasoning-lifecycle", StringComparison.Ordinal)
+            || !dataContent.MediaType.Equals(MediaTypeNames.Application.Json, StringComparison.InvariantCultureIgnoreCase))
+        {
+            return false;
+        }
+
+        using var document = JsonDocument.Parse(dataContent.Data.ToArray());
+        var root = document.RootElement;
+        var itemId = root.TryGetProperty("item_id", out var itemIdElement) && itemIdElement.ValueKind == JsonValueKind.String
+            ? itemIdElement.GetString()
+            : null;
+
+        var providerMetadata = root.TryGetProperty("provider_metadata", out var providerMetadataElement)
+            && providerMetadataElement.ValueKind == JsonValueKind.Object
+                ? ToProviderMetadata(providerMetadataElement)
+                : null;
+
+        payload = new ReasoningLifecyclePayload(itemId, providerMetadata);
+        return true;
+    }
+
+    private static Dictionary<string, Dictionary<string, object>> ToProviderMetadata(JsonElement element)
+        => element.EnumerateObject().ToDictionary(
+            provider => provider.Name,
+            provider => provider.Value.ValueKind == JsonValueKind.Object
+                ? provider.Value.EnumerateObject()
+                    .Select(value => new KeyValuePair<string, object?>(value.Name, ToPlainObject(value.Value)))
+                    .Where(value => value.Value is not null)
+                    .ToDictionary(value => value.Key, value => value.Value!, StringComparer.Ordinal)
+                : new Dictionary<string, object>(StringComparer.Ordinal),
+            StringComparer.Ordinal);
+
+    private static object? ToPlainObject(JsonElement value)
+        => value.ValueKind switch
+        {
+            JsonValueKind.Object => value.EnumerateObject()
+                .Select(property => new KeyValuePair<string, object?>(property.Name, ToPlainObject(property.Value)))
+                .ToDictionary(property => property.Key, property => property.Value, StringComparer.Ordinal),
+            JsonValueKind.Array => value.EnumerateArray().Select(ToPlainObject).ToList(),
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.TryGetInt64(out var longValue)
+                ? longValue
+                : value.TryGetDouble(out var doubleValue)
+                    ? doubleValue
+                    : value.GetRawText(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            JsonValueKind.Undefined => null,
+            _ => value.GetRawText()
+        };
 }
