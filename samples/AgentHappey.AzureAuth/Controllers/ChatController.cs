@@ -46,8 +46,7 @@ public class ChatController(IHttpClientFactory httpClientFactory,
                 httpClientFactory,
                 agent,
                 new Dictionary<string, string?>(),
-                serviceProvider.GetMcpTokenAsync,
-                options.Value.AzureAd.TenantId),
+                serviceProvider.GetMcpTokenAsync),
             (agentClient, messages) => agentClient.SetHistory(messages),
             cancellationToken);
 

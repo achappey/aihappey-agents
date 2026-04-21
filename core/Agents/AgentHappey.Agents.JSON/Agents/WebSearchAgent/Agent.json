@@ -24,7 +24,7 @@
         }
     },
     "mcpServers": {
-        "localhost/websearch": {
+        "net.aihappey.mcp/websearch": {
             "type": "http",
             "url": "https://mcp.aihappey.net/websearch",
             "disabled": false

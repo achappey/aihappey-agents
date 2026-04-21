@@ -16,11 +16,11 @@ public partial class AgentChatClient
         switch (done.Item.Type)
         {
             case "custom_tool_call":
+                var items = done.Item.AdditionalProperties?["output"];
+                
                 yield return new ChatResponseUpdate(
                       ChatRole.Assistant,
-                      [new FunctionResultContent(done.Item.Id!, new Dictionary<string, JsonElement>
-                        {
-                        })])
+                      [new FunctionResultContent(done.Item.Id!, items)])
                 {
                     MessageId = done.Item.Id,
                 };

@@ -75,8 +75,7 @@ public class SharePointRuntimeTools
         var agentItem = new AgentChatClient(client, httpClientFactory, agent,
              context.HttpContext?.Request.Headers.Where(a => a.Key.StartsWith("X-", StringComparison.OrdinalIgnoreCase))
                  .ToDictionary(a => a.Key, a => a.Value.FirstOrDefault()) ?? [],
-                 services.GetMcpTokenAsync,
-                 azureAd.TenantId);
+                 services.GetMcpTokenAsync);
 
         var tools = await agentItem.ConnectMcp(cancellationToken);
         var instructions = agentItem.GetComposedInstructions();
@@ -167,8 +166,7 @@ public class SharePointRuntimeTools
                                 httpClientFactory,
                                 agent,
                                 new Dictionary<string, string?>(),
-                                services.GetMcpTokenAsync,
-                                azureAd.TenantId);
+                                services.GetMcpTokenAsync);
 
                 agentChatClientItem.SetHistory(messages);
 

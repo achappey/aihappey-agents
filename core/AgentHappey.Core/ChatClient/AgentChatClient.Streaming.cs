@@ -2,7 +2,6 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using AIHappey.Responses;
-using AIHappey.Responses.Extensions;
 using AIHappey.Responses.Streaming;
 using AgentHappey.Common.Extensions;
 using Microsoft.Extensions.AI;
@@ -39,25 +38,65 @@ public partial class AgentChatClient
     {
         switch (part)
         {
-            case ResponseOutputTextAnnotationAdded responseOutputTextAnnotationAdded:
-                var annotated = new TextContent(string.Empty);
-                annotated.Annotations ??= [];
-                annotated.Annotations?.Add(new CitationAnnotation()
+            case ResponseOutputTextAnnotationAdded e:
                 {
-                    RawRepresentation = responseOutputTextAnnotationAdded.Annotation,
-                    Title = responseOutputTextAnnotationAdded.Annotation.AdditionalProperties?["title"].GetString(),
-                    Url = new Uri(responseOutputTextAnnotationAdded.Annotation.AdditionalProperties?["url"].GetString()!),
-                    AnnotatedRegions = [new TextSpanAnnotatedRegion() {
-                                StartIndex = responseOutputTextAnnotationAdded.Annotation.AdditionalProperties?["start_index"].GetInt32(),
-                                EndIndex = responseOutputTextAnnotationAdded.Annotation.AdditionalProperties?["end_index"].GetInt32(),
-                        }]
-                });
+                    var ann = e.Annotation;
+                    var props = ann?.AdditionalProperties;
 
-                yield return CreateStreamingUpdate(
-                    ChatRole.Assistant,
-                    [annotated],
-                    responseOutputTextAnnotationAdded.ItemId);
-                yield break;
+                    string? title = null;
+                    string? urlStr = null;
+                    int? start = null;
+                    int? end = null;
+
+                    if (props is not null)
+                    {
+                        if (props.TryGetValue("title", out var t) && t.ValueKind == JsonValueKind.String)
+                            title = t.GetString();
+
+                        if (props.TryGetValue("url", out var u) && u.ValueKind == JsonValueKind.String)
+                            urlStr = u.GetString();
+
+                        if (props.TryGetValue("start_index", out var s) && s.ValueKind == JsonValueKind.Number && s.TryGetInt32(out var si))
+                            start = si;
+
+                        if (props.TryGetValue("end_index", out var en) && en.ValueKind == JsonValueKind.Number && en.TryGetInt32(out var ei))
+                            end = ei;
+                    }
+
+                    Uri? uri = null;
+                    if (!string.IsNullOrWhiteSpace(urlStr) && Uri.TryCreate(urlStr, UriKind.Absolute, out var parsed))
+                        uri = parsed;
+
+                    var citation = new CitationAnnotation
+                    {
+                        RawRepresentation = ann,
+                        Title = title,
+                        Url = uri
+                    };
+
+                    if (start.HasValue && end.HasValue)
+                    {
+                        citation.AnnotatedRegions =
+                        [
+                            new TextSpanAnnotatedRegion
+                            {
+                                StartIndex = start.Value,
+                                EndIndex = end.Value
+                            }
+                        ];
+                    }
+
+                    var annotated = new TextContent(string.Empty);
+                    annotated.Annotations ??= [];
+                    annotated.Annotations.Add(citation);
+
+                    yield return CreateStreamingUpdate(
+                        ChatRole.Assistant,
+                        [annotated],
+                        e.ItemId);
+
+                    yield break;
+                }
 
             case ResponseOutputTextDelta textDelta when !string.IsNullOrWhiteSpace(textDelta.Delta):
                 state.MarkTextDelta(textDelta.ItemId, textDelta.ContentIndex);

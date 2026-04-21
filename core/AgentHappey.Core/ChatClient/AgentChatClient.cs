@@ -1,6 +1,5 @@
 using Microsoft.Extensions.AI;
 using AgentHappey.Common.Models;
-using AIHappey.Responses.Extensions;
 
 namespace AgentHappey.Core.ChatClient;
 
@@ -9,8 +8,7 @@ public partial class AgentChatClient(
     IHttpClientFactory httpClientFactory,
     Agent agent,
     IDictionary<string, string?> headers,
-    Func<string, CancellationToken, Task<string?>>? getMcpToken = null,
-    string? tenantId = null) : IChatClient
+    Func<string, CancellationToken, Task<string?>>? getMcpToken = null) : IChatClient
 {
     public async void EnsureHeaders()
     {

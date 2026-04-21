@@ -29,17 +29,6 @@ public partial class AgentChatClient
     private bool HasProviderOption(string optionName)
         => agent.Model.ProviderMetadata?.ContainsKey(optionName) == true;
 
-    private Dictionary<string, Dictionary<string, object>> BuildStreamingProviderMetadata()
-    {
-        if (agent.Model.ProviderMetadata is not { Count: > 0 } providerMetadata)
-            return [];
-
-        return new Dictionary<string, Dictionary<string, object>>
-        {
-            [GetProviderKey()] = new Dictionary<string, object>(providerMetadata)
-        };
-    }
-
     private Dictionary<string, object?>? BuildResponsesProviderMetadata()
     {
         if (agent.Model.ProviderMetadata is not { Count: > 0 } providerMetadata)
