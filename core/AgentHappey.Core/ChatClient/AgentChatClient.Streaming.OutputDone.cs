@@ -25,16 +25,13 @@ public partial class AgentChatClient
                                             ? value.ToString()
                                             : null;
 
-                    if (!string.IsNullOrWhiteSpace(protectedData))
-                    {
-                        yield return CreateStreamingUpdate(
-                            ChatRole.Assistant,
-                            [new TextReasoningContent(string.Empty)
-                            {
-                                ProtectedData = protectedData
-                            }],
-                            done.Item.Id);
-                    }
+                    yield return CreateStreamingUpdate(
+                        ChatRole.Assistant,
+                        [new TextReasoningContent(string.Empty)
+                        {
+                            ProtectedData = protectedData
+                        }],
+                        done.Item.Id);
 
                     yield break;
                 }

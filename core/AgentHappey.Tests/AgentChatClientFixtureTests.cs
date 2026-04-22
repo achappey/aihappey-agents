@@ -137,9 +137,7 @@ public sealed class AgentChatClientFixtureTests
         Assert.Null(reasoningStartPart.ProviderMetadata);
 
         var reasoningEndPart = Assert.IsType<ReasoningEndUIPart>(uiParts.Single(part => part.Type == "reasoning-end"));
-        var providerMetadata = Assert.Contains("StructuredAgent", reasoningEndPart.ProviderMetadata ?? []);
-
-        Assert.Equal("EjQKMgEMOdbHfAqbDQ0MSWh7OEk5TFqB6kwRrBRu5Ab6tKOZZemhjJdsZRnbtIBISGPMr664", Assert.IsType<string>(providerMetadata["signature"]));
+        Assert.Null(reasoningEndPart.ProviderMetadata);
     }
 
     [Fact]
@@ -154,12 +152,9 @@ public sealed class AgentChatClientFixtureTests
         var reasoningEndPart = Assert.IsType<ReasoningEndUIPart>(uiParts.Single(part => part.Type == "reasoning-end"));
         var providerMetadata = Assert.Contains("StructuredAgent", reasoningEndPart.ProviderMetadata ?? []);
 
-        Assert.Equal("rs_075d7856f483de1b0169e7b03774108195b3cde6d425e20f38", Assert.IsType<string>(providerMetadata["item_id"]));
         Assert.True(providerMetadata.ContainsKey("encrypted_content"));
-        Assert.True(providerMetadata.ContainsKey("summary"));
-
-        var summary = Assert.IsAssignableFrom<IEnumerable<object?>>(providerMetadata["summary"]);
-        Assert.Empty(summary);
+        Assert.Single(providerMetadata);
+        Assert.False(string.IsNullOrWhiteSpace(Assert.IsType<string>(providerMetadata["encrypted_content"])));
     }
 
     [Fact]
@@ -178,9 +173,8 @@ public sealed class AgentChatClientFixtureTests
         var providerMetadata = Assert.Contains("StructuredAgent", reasoningEndPart.ProviderMetadata ?? []);
 
         Assert.True(providerMetadata.ContainsKey("encrypted_content"));
-
-        var summary = Assert.IsAssignableFrom<IEnumerable<object?>>(providerMetadata["summary"]);
-        Assert.NotEmpty(summary);
+        Assert.Single(providerMetadata);
+        Assert.False(string.IsNullOrWhiteSpace(Assert.IsType<string>(providerMetadata["encrypted_content"])));
     }
 
     [Fact]
@@ -214,6 +208,7 @@ public sealed class AgentChatClientFixtureTests
         Assert.Contains("\"encrypted_content\":\"encrypted-payload\"", requestBody);
         Assert.Contains("Visible reasoning summary", requestBody);
         Assert.DoesNotContain("reasoning-lifecycle", requestBody);
+        Assert.DoesNotContain("\"type\":\"input_file\"", requestBody);
     }
 
     [Fact]

@@ -184,21 +184,6 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
 
             case DataContent d when includeFileParts:
                 {
-                    if (TryReadReasoningLifecycle(d, out var reasoningLifecycle))
-                    {
-                        var reasoningId = reasoningLifecycle.ItemId ?? messageId;
-                        if (!string.IsNullOrEmpty(reasoningId))
-                        {
-                            foreach (var part in EnsureReasoningStream(reasoningId!, reasoning))
-                                yield return part;
-
-                            foreach (var part in CloseReasoningStream(reasoningId!, reasoning, reasoningLifecycle.ProviderMetadata, authorName))
-                                yield return part;
-                        }
-
-                        break;
-                    }
-
                     if (d.MediaType.StartsWith("image/") && !string.IsNullOrEmpty(d.Uri))
                         yield return new FileUIPart { MediaType = d.MediaType, Url = d.Uri };
 
@@ -210,12 +195,21 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
 
             case TextReasoningContent textReasoningContent:
                 {
-                    if (!string.IsNullOrEmpty(textReasoningContent.Text) && !string.IsNullOrEmpty(messageId))
-                    {
-                        foreach (var part in EnsureReasoningStream(messageId!, reasoning))
-                            yield return part;
+                    if (string.IsNullOrEmpty(messageId))
+                        break;
 
+                    foreach (var part in EnsureReasoningStream(messageId!, reasoning))
+                        yield return part;
+
+                    if (!string.IsNullOrEmpty(textReasoningContent.Text))
+                    {
                         yield return new ReasoningDeltaUIPart { Id = messageId!, Delta = textReasoningContent.Text };
+                    }
+
+                    if (string.IsNullOrEmpty(textReasoningContent.Text))
+                    {
+                        foreach (var part in CloseReasoningStream(messageId!, reasoning, textReasoningContent.ProtectedData, authorName))
+                            yield return part;
                     }
 
                     break;
@@ -340,10 +334,6 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         public List<string> OpenOrder { get; } = []; // stable end-order
     }
 
-    private sealed record ReasoningLifecyclePayload(
-        string? ItemId,
-        Dictionary<string, Dictionary<string, object>>? ProviderMetadata);
-
     private static IEnumerable<UIMessagePart> EnsureTextStream(string messageId, TextStreamState text)
     {
         if (text.OpenSet.Add(messageId))
@@ -374,14 +364,14 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
     private static IEnumerable<UIMessagePart> CloseReasoningStream(
         string messageId,
         ReasoningStreamState text,
-        Dictionary<string, Dictionary<string, object>>? providerMetadata,
+        string? protectedData,
         string? authorName)
     {
         if (!text.OpenSet.Remove(messageId))
             yield break;
 
         text.OpenOrder.Remove(messageId);
-        var agentScopedProviderMetadata = ToAgentScopedProviderMetadata(providerMetadata, authorName);
+        var agentScopedProviderMetadata = ToAgentScopedProviderMetadata(protectedData, authorName);
 
         yield return new ReasoningEndUIPart
         {
@@ -391,26 +381,18 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
     }
 
     private static Dictionary<string, Dictionary<string, object>>? ToAgentScopedProviderMetadata(
-        Dictionary<string, Dictionary<string, object>>? providerMetadata,
+        string? protectedData,
         string? authorName)
     {
-        if (providerMetadata is null || providerMetadata.Count == 0 || string.IsNullOrWhiteSpace(authorName))
-            return null;
-
-        var normalized = new Dictionary<string, object>(StringComparer.Ordinal);
-
-        foreach (var values in providerMetadata.Values)
-        {
-            foreach (var value in values)
-                normalized[value.Key] = value.Value;
-        }
-
-        if (normalized.Count == 0)
+        if (string.IsNullOrWhiteSpace(protectedData) || string.IsNullOrWhiteSpace(authorName))
             return null;
 
         return new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal)
         {
-            [authorName] = normalized
+            [authorName] = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["encrypted_content"] = protectedData
+            }
         };
     }
 
@@ -533,61 +515,4 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         }
     }
 
-    private static bool TryReadReasoningLifecycle(
-        DataContent dataContent,
-        out ReasoningLifecyclePayload payload)
-    {
-        payload = default!;
-
-        if (!string.Equals(dataContent.Name, "reasoning-lifecycle", StringComparison.Ordinal)
-            || !dataContent.MediaType.Equals(MediaTypeNames.Application.Json, StringComparison.InvariantCultureIgnoreCase))
-        {
-            return false;
-        }
-
-        using var document = JsonDocument.Parse(dataContent.Data.ToArray());
-        var root = document.RootElement;
-        var itemId = root.TryGetProperty("item_id", out var itemIdElement) && itemIdElement.ValueKind == JsonValueKind.String
-            ? itemIdElement.GetString()
-            : null;
-
-        var providerMetadata = root.TryGetProperty("provider_metadata", out var providerMetadataElement)
-            && providerMetadataElement.ValueKind == JsonValueKind.Object
-                ? ToProviderMetadata(providerMetadataElement)
-                : null;
-
-        payload = new ReasoningLifecyclePayload(itemId, providerMetadata);
-        return true;
-    }
-
-    private static Dictionary<string, Dictionary<string, object>> ToProviderMetadata(JsonElement element)
-        => element.EnumerateObject().ToDictionary(
-            provider => provider.Name,
-            provider => provider.Value.ValueKind == JsonValueKind.Object
-                ? provider.Value.EnumerateObject()
-                    .Select(value => new KeyValuePair<string, object?>(value.Name, ToPlainObject(value.Value)))
-                    .Where(value => value.Value is not null)
-                    .ToDictionary(value => value.Key, value => value.Value!, StringComparer.Ordinal)
-                : new Dictionary<string, object>(StringComparer.Ordinal),
-            StringComparer.Ordinal);
-
-    private static object? ToPlainObject(JsonElement value)
-        => value.ValueKind switch
-        {
-            JsonValueKind.Object => value.EnumerateObject()
-                .Select(property => new KeyValuePair<string, object?>(property.Name, ToPlainObject(property.Value)))
-                .ToDictionary(property => property.Key, property => property.Value, StringComparer.Ordinal),
-            JsonValueKind.Array => value.EnumerateArray().Select(ToPlainObject).ToList(),
-            JsonValueKind.String => value.GetString(),
-            JsonValueKind.Number => value.TryGetInt64(out var longValue)
-                ? longValue
-                : value.TryGetDouble(out var doubleValue)
-                    ? doubleValue
-                    : value.GetRawText(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
-            JsonValueKind.Undefined => null,
-            _ => value.GetRawText()
-        };
 }

@@ -32,7 +32,10 @@ public static class VercelHelpers
         return message switch
         {
             TextUIPart textUIPart => new TextContent(textUIPart.Text ?? ""),
-            FileUIPart fileUIPart => new DataContent(fileUIPart.Url, fileUIPart.MediaType),
+            FileUIPart fileUIPart => new DataContent(fileUIPart.Url, fileUIPart.MediaType)
+            {
+                Name = fileUIPart.Filename
+            },
             _ => null,
         };
     }
@@ -66,7 +69,7 @@ public static class VercelHelpers
             {
                 List<AIContent> contents = [..ui.Parts?
                     .ToUserMessageParts() ?? []];
-                    
+
                 yield return new ChatMessage(role, contents) { MessageId = ui.Id };
                 continue;
             }
@@ -85,43 +88,26 @@ public static class VercelHelpers
                         assistantContents.Add(new TextContent(t.Text ?? ""));
                         break;
 
-                    // streaming delta treated as assistant text
-                    case TextDeltaUIMessageStreamPart td:
-                        assistantContents.Add(new TextContent(td.Delta ?? ""));
-                        break;
-
-                    case ReasoningDeltaUIPart reasoningDelta when !string.IsNullOrWhiteSpace(reasoningDelta.Id):
+                    case ReasoningUIPart reasoningEnd:
                         {
-                            if (!reasoningById.TryGetValue(reasoningDelta.Id!, out var builder))
+                            foreach (var kvp in reasoningEnd.ProviderMetadata ?? [])
                             {
-                                builder = new StringBuilder();
-                                reasoningById[reasoningDelta.Id!] = builder;
+                                var key = kvp.Key;
+
+                                if (!activeAgentNameSet.Contains(key))
+                                    continue;
+
+                                if (kvp.Value is JsonElement json &&
+                                    json.TryGetProperty("encrypted_content", out var encryptedProp))
+                                {
+                                    var encryptedContent = encryptedProp.GetString();
+
+                                    assistantContents.Add(new TextReasoningContent(reasoningEnd.Text)
+                                    {
+                                        ProtectedData = encryptedContent
+                                    });
+                                }
                             }
-
-                            builder.Append(reasoningDelta.Delta ?? string.Empty);
-                            break;
-                        }
-
-                    case ReasoningEndUIPart reasoningEnd:
-                        {
-                            if (!TryGetMatchingReasoningMetadata(reasoningEnd, activeAgentNameSet, out var metadata))
-                                break;
-
-                            var reasoningText = !string.IsNullOrWhiteSpace(reasoningEnd.Id)
-                                && reasoningById.TryGetValue(reasoningEnd.Id!, out var builder)
-                                    ? builder.ToString()
-                                    : string.Empty;
-
-                            metadata.TryGetValue("encrypted_content", out var protectedDataValue);
-                            var protectedData = protectedDataValue as string;
-
-                            if (string.IsNullOrWhiteSpace(reasoningText) && string.IsNullOrWhiteSpace(protectedData))
-                                break;
-
-                            assistantContents.Add(new TextReasoningContent(reasoningText)
-                            {
-                                ProtectedData = protectedData
-                            });
                             break;
                         }
 
@@ -186,28 +172,6 @@ public static class VercelHelpers
             foreach (var tm in toolMessages)
                 yield return tm;
         }
-    }
-
-    private static bool TryGetMatchingReasoningMetadata(
-        ReasoningEndUIPart reasoningEnd,
-        HashSet<string> activeAgentNames,
-        out Dictionary<string, object> metadata)
-    {
-        metadata = [];
-
-        if (activeAgentNames.Count == 0 || reasoningEnd.ProviderMetadata is not { Count: > 0 } providerMetadata)
-            return false;
-
-        foreach (var agentName in activeAgentNames)
-        {
-            if (providerMetadata.TryGetValue(agentName, out var value) && value is { Count: > 0 })
-            {
-                metadata = value;
-                return true;
-            }
-        }
-
-        return false;
     }
 
 }

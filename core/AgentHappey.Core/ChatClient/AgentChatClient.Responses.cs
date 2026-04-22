@@ -177,21 +177,22 @@ public partial class AgentChatClient
                     break;
 
                 case DataContent data when data.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase):
-                    yield return new InputImagePart
-                    {
-                        ImageUrl = string.IsNullOrWhiteSpace(data.Uri)
-                            ? ToDataUrl(data)
-                            : data.Uri
-                    };
+                    if (message.Role == ChatRole.User)
+                        yield return new InputImagePart
+                        {
+                            ImageUrl = string.IsNullOrWhiteSpace(data.Uri)
+                                ? ToDataUrl(data)
+                                : data.Uri
+                        };
                     break;
 
                 case DataContent data when !ShouldIgnoreDataContent(data):
-                    yield return new InputFilePart
-                    {
-                        Filename = data.Name,
-                        FileUrl = string.IsNullOrWhiteSpace(data.Uri) ? null : data.Uri,
-                        FileData = string.IsNullOrWhiteSpace(data.Uri) ? ToDataUrl(data) : null
-                    };
+                    if (message.Role == ChatRole.User)
+                        yield return new InputFilePart
+                        {
+                            Filename = data.Name,
+                            FileData = data.Uri
+                        };
                     break;
             }
         }
@@ -507,7 +508,6 @@ public partial class AgentChatClient
         var name = content.Name?.Trim();
         return name is not null
             && (name.StartsWith("elicitation-", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("reasoning-lifecycle", StringComparison.OrdinalIgnoreCase)
                 || name.Equals("model-context-log", StringComparison.OrdinalIgnoreCase));
     }
 
