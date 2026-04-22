@@ -18,6 +18,7 @@ public partial class AgentChatClient
             Tools = options?.Tools?.OfType<AIFunctionDeclaration>().Select(ToResponseToolDefinition).ToList(),
             Text = agent.GetCompletionsOutputSchema(),
             Metadata = BuildResponsesProviderMetadata(),
+            Instructions = options?.Instructions,
             Stream = false,
             ToolChoice = "auto",
             ParallelToolCalls = HasProviderOption("parallel_tool_calls") ? null : true,
