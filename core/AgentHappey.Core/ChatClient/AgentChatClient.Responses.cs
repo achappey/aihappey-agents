@@ -130,11 +130,12 @@ public partial class AgentChatClient
 
             foreach (var reasoning in message.Contents.OfType<TextReasoningContent>())
             {
-                if (string.IsNullOrWhiteSpace(reasoning.Text))
+                if (string.IsNullOrWhiteSpace(reasoning.ProtectedData))
                     continue;
 
                 items.Add(new ResponseReasoningItem
                 {
+                    EncryptedContent = reasoning.ProtectedData,
                     Summary =
                     [
                         new ResponseReasoningSummaryTextPart
@@ -360,18 +361,18 @@ public partial class AgentChatClient
 
     private static void AppendReasoningContent(List<AIContent> parts, JsonElement reasoning)
     {
-        if (!reasoning.TryGetProperty("summary", out var summary) || summary.ValueKind != JsonValueKind.Array)
+        if (!reasoning.TryGetProperty("encrypted_content", out var encryptedContent)
+            || encryptedContent.ValueKind != JsonValueKind.String)
             return;
 
-        foreach (var item in summary.EnumerateArray())
-        {
-            var text = item.TryGetProperty("text", out var textProperty)
-                ? textProperty.GetString()
-                : null;
+        var protectedData = encryptedContent.GetString();
+        if (string.IsNullOrWhiteSpace(protectedData))
+            return;
 
-            if (!string.IsNullOrWhiteSpace(text))
-                parts.Add(new TextReasoningContent(text));
-        }
+        parts.Add(new TextReasoningContent(string.Empty)
+        {
+            ProtectedData = protectedData
+        });
     }
 
     private static void AppendFunctionCall(List<AIContent> parts, JsonElement functionCall)
@@ -506,6 +507,7 @@ public partial class AgentChatClient
         var name = content.Name?.Trim();
         return name is not null
             && (name.StartsWith("elicitation-", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("reasoning-lifecycle", StringComparison.OrdinalIgnoreCase)
                 || name.Equals("model-context-log", StringComparison.OrdinalIgnoreCase));
     }
 

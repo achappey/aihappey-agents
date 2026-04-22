@@ -246,7 +246,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             {
                 UsageContent usageContent => SetUsageAndReturn(usageContent.Details),
                 ErrorContent errorContent => SetErrorAndReturn(errorContent.Message),
-                TextReasoningContent reasoning => AppendReasoning(itemId, reasoning.Text),
+                TextReasoningContent reasoning => AppendReasoning(itemId, reasoning),
                 TextContent text => AppendMessageText(itemId, text.Text),
                 FunctionCallContent functionCall => AddToolCall(functionCall),
                 FunctionResultContent functionResult => AddToolResult(functionResult),
@@ -334,13 +334,16 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             return parts;
         }
 
-        private IEnumerable<ResponseStreamPart> AppendReasoning(string itemId, string? delta)
+        private IEnumerable<ResponseStreamPart> AppendReasoning(string itemId, TextReasoningContent reasoning)
         {
-            if (string.IsNullOrEmpty(delta))
+            if (string.IsNullOrWhiteSpace(reasoning.Text) && string.IsNullOrWhiteSpace(reasoning.ProtectedData))
                 return [];
 
             var state = GetOrCreateReasoning(itemId);
             var parts = new List<ResponseStreamPart>();
+
+            if (!string.IsNullOrWhiteSpace(reasoning.ProtectedData))
+                state.ProtectedData = reasoning.ProtectedData;
 
             if (!state.Started)
             {
@@ -359,15 +362,18 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                 });
             }
 
-            state.Text.Append(delta);
-            parts.Add(new ResponseReasoningTextDelta
+            if (!string.IsNullOrEmpty(reasoning.Text))
             {
-                SequenceNumber = NextSequence(),
-                OutputIndex = state.OutputIndex,
-                ItemId = state.ItemId,
-                ContentIndex = 0,
-                Delta = delta
-            });
+                state.Text.Append(reasoning.Text);
+                parts.Add(new ResponseReasoningTextDelta
+                {
+                    SequenceNumber = NextSequence(),
+                    OutputIndex = state.OutputIndex,
+                    ItemId = state.ItemId,
+                    ContentIndex = 0,
+                    Delta = reasoning.Text
+                });
+            }
 
             return parts;
         }
@@ -569,6 +575,23 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
 
             state.IsClosed = true;
             var text = state.Text.ToString();
+            var summary = string.IsNullOrWhiteSpace(text)
+                ? Array.Empty<ResponseReasoningSummaryTextPart>()
+                :
+                [
+                    new ResponseReasoningSummaryTextPart
+                    {
+                        Text = text
+                    }
+                ];
+
+            var additionalProperties = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["summary"] = JsonSerializer.SerializeToElement(summary, JsonSerializerOptions.Web)
+            };
+
+            if (!string.IsNullOrWhiteSpace(state.ProtectedData))
+                additionalProperties["encrypted_content"] = JsonSerializer.SerializeToElement(state.ProtectedData, JsonSerializerOptions.Web);
 
             return
             [
@@ -589,7 +612,10 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                         Id = state.ItemId,
                         Type = "reasoning",
                         Status = "completed",
-                        Content = [new ResponseStreamContentPart { Type = "summary_text", Text = text }]
+                        Content = string.IsNullOrWhiteSpace(text)
+                            ? null
+                            : [new ResponseStreamContentPart { Type = "summary_text", Text = text }],
+                        AdditionalProperties = additionalProperties
                     }
                 }
             ];
@@ -695,13 +721,16 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             ReasoningOutputState reasoning => new ResponseReasoningItem
             {
                 Id = reasoning.ItemId,
-                Summary =
-                [
-                    new ResponseReasoningSummaryTextPart
-                    {
-                        Text = reasoning.Text.ToString()
-                    }
-                ]
+                EncryptedContent = reasoning.ProtectedData,
+                Summary = string.IsNullOrWhiteSpace(reasoning.Text.ToString())
+                    ? []
+                    :
+                    [
+                        new ResponseReasoningSummaryTextPart
+                        {
+                            Text = reasoning.Text.ToString()
+                        }
+                    ]
             },
             ToolCallOutputState toolCall => new ResponseFunctionCallItem
             {
@@ -867,6 +896,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             public bool Started { get; set; }
             public bool IsClosed { get; set; }
             public StringBuilder Text { get; } = new();
+            public string? ProtectedData { get; set; }
         }
 
         private sealed record ToolCallOutputState(int OutputIndex, string ItemId) : ResponseOutputState(OutputIndex, ItemId)

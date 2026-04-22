@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using AIHappey.Vercel.Models;
 using Microsoft.Extensions.AI;
@@ -42,8 +43,15 @@ public static class VercelHelpers
             .OfType<AIContent>()
             .ToList() ?? []];
 
-    public static IEnumerable<ChatMessage> ToMessages(this IEnumerable<UIMessage> messages)
+    public static IEnumerable<ChatMessage> ToMessages(
+        this IEnumerable<UIMessage> messages,
+        IEnumerable<string>? activeAgentNames = null)
     {
+        var activeAgentNameSet = activeAgentNames?
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToHashSet(StringComparer.Ordinal)
+            ?? [];
+
         foreach (var ui in messages)
         {
             var role = ui.Role switch
@@ -66,6 +74,7 @@ public static class VercelHelpers
             // Assistant UIMessage: build assistant message content, and emit tool messages after when needed
             var assistantContents = new List<AIContent>();
             var toolMessages = new List<ChatMessage>();
+            var reasoningById = new Dictionary<string, StringBuilder>(StringComparer.Ordinal);
 
             foreach (var part in ui.Parts ?? [])
             {
@@ -80,6 +89,41 @@ public static class VercelHelpers
                     case TextDeltaUIMessageStreamPart td:
                         assistantContents.Add(new TextContent(td.Delta ?? ""));
                         break;
+
+                    case ReasoningDeltaUIPart reasoningDelta when !string.IsNullOrWhiteSpace(reasoningDelta.Id):
+                        {
+                            if (!reasoningById.TryGetValue(reasoningDelta.Id!, out var builder))
+                            {
+                                builder = new StringBuilder();
+                                reasoningById[reasoningDelta.Id!] = builder;
+                            }
+
+                            builder.Append(reasoningDelta.Delta ?? string.Empty);
+                            break;
+                        }
+
+                    case ReasoningEndUIPart reasoningEnd:
+                        {
+                            if (!TryGetMatchingReasoningMetadata(reasoningEnd, activeAgentNameSet, out var metadata))
+                                break;
+
+                            var reasoningText = !string.IsNullOrWhiteSpace(reasoningEnd.Id)
+                                && reasoningById.TryGetValue(reasoningEnd.Id!, out var builder)
+                                    ? builder.ToString()
+                                    : string.Empty;
+
+                            metadata.TryGetValue("encrypted_content", out var protectedDataValue);
+                            var protectedData = protectedDataValue as string;
+
+                            if (string.IsNullOrWhiteSpace(reasoningText) && string.IsNullOrWhiteSpace(protectedData))
+                                break;
+
+                            assistantContents.Add(new TextReasoningContent(reasoningText)
+                            {
+                                ProtectedData = protectedData
+                            });
+                            break;
+                        }
 
                     // Explicit approval envelope/control messages are transport-only,
                     // never executable tools in the agents runtime.
@@ -142,6 +186,28 @@ public static class VercelHelpers
             foreach (var tm in toolMessages)
                 yield return tm;
         }
+    }
+
+    private static bool TryGetMatchingReasoningMetadata(
+        ReasoningEndUIPart reasoningEnd,
+        HashSet<string> activeAgentNames,
+        out Dictionary<string, object> metadata)
+    {
+        metadata = [];
+
+        if (activeAgentNames.Count == 0 || reasoningEnd.ProviderMetadata is not { Count: > 0 } providerMetadata)
+            return false;
+
+        foreach (var agentName in activeAgentNames)
+        {
+            if (providerMetadata.TryGetValue(agentName, out var value) && value is { Count: > 0 })
+            {
+                metadata = value;
+                return true;
+            }
+        }
+
+        return false;
     }
 
 }

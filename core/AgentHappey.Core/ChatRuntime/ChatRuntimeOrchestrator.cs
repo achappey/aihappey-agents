@@ -317,7 +317,7 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         AgentRequest chatRequest,
         IReadOnlyList<ChatMessage>? messages = null)
         => new(
-            messages ?? chatRequest.Messages.ToMessages().ToList(),
+            messages ?? chatRequest.Messages.ToMessages(chatRequest.Agents?.Select(agent => agent.Name)).ToList(),
             chatRequest.Model,
             chatRequest.Models?
                 .Where(modelId => !string.IsNullOrWhiteSpace(modelId))

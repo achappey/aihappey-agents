@@ -5,10 +5,6 @@
     "model": {
         "id": "openai/gpt-5.4-mini",
         "providerMetadata": {
-            "capture": {
-                "enabled": true,
-                "relativeDirectory": "agents/WebSearchAgent"
-            },
             "tools": [
                 {
                     "type": "web_search",
@@ -28,11 +24,7 @@
         }
     },
     "mcpServers": {
-        "net.aihappey.mcp/websearch": {
-            "type": "http",
-            "url": "https://mcp.aihappey.net/websearch",
-            "disabled": false
-        }
+      
     },
     "mcpClient": {
         "capabilities": {

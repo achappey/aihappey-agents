@@ -137,7 +137,7 @@ public sealed class AgentChatClientFixtureTests
         Assert.Null(reasoningStartPart.ProviderMetadata);
 
         var reasoningEndPart = Assert.IsType<ReasoningEndUIPart>(uiParts.Single(part => part.Type == "reasoning-end"));
-        var providerMetadata = Assert.Contains("google", reasoningEndPart.ProviderMetadata ?? []);
+        var providerMetadata = Assert.Contains("StructuredAgent", reasoningEndPart.ProviderMetadata ?? []);
 
         Assert.Equal("EjQKMgEMOdbHfAqbDQ0MSWh7OEk5TFqB6kwRrBRu5Ab6tKOZZemhjJdsZRnbtIBISGPMr664", Assert.IsType<string>(providerMetadata["signature"]));
     }
@@ -152,7 +152,7 @@ public sealed class AgentChatClientFixtureTests
         Assert.Single(uiParts.OfType<ReasoningEndUIPart>());
 
         var reasoningEndPart = Assert.IsType<ReasoningEndUIPart>(uiParts.Single(part => part.Type == "reasoning-end"));
-        var providerMetadata = Assert.Contains("openai", reasoningEndPart.ProviderMetadata ?? []);
+        var providerMetadata = Assert.Contains("StructuredAgent", reasoningEndPart.ProviderMetadata ?? []);
 
         Assert.Equal("rs_075d7856f483de1b0169e7b03774108195b3cde6d425e20f38", Assert.IsType<string>(providerMetadata["item_id"]));
         Assert.True(providerMetadata.ContainsKey("encrypted_content"));
@@ -175,12 +175,76 @@ public sealed class AgentChatClientFixtureTests
         Assert.Contains("Responding to user casually", reasoningText);
 
         var reasoningEndPart = Assert.IsType<ReasoningEndUIPart>(uiParts.Single(part => part.Type == "reasoning-end"));
-        var providerMetadata = Assert.Contains("openai", reasoningEndPart.ProviderMetadata ?? []);
+        var providerMetadata = Assert.Contains("StructuredAgent", reasoningEndPart.ProviderMetadata ?? []);
 
         Assert.True(providerMetadata.ContainsKey("encrypted_content"));
 
         var summary = Assert.IsAssignableFrom<IEnumerable<object?>>(providerMetadata["summary"]);
         Assert.NotEmpty(summary);
+    }
+
+    [Fact]
+    public async Task Reasoning_ui_parts_roundtrip_back_to_responses_input_when_agent_name_matches()
+    {
+        var requestBody = await CaptureRequestBodyAsync(
+            [new UIMessage
+            {
+                Id = "assistant-1",
+                Role = Role.assistant,
+                Parts =
+                [
+                    new ReasoningStartUIPart { Id = "reasoning-1" },
+                    new ReasoningDeltaUIPart { Id = "reasoning-1", Delta = "Visible reasoning summary" },
+                    new ReasoningEndUIPart
+                    {
+                        Id = "reasoning-1",
+                        ProviderMetadata = new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal)
+                        {
+                            ["StructuredAgent"] = new(StringComparer.Ordinal)
+                            {
+                                ["encrypted_content"] = "encrypted-payload"
+                            }
+                        }
+                    }
+                ]
+            }],
+            activeAgentNames: ["StructuredAgent"]);
+
+        Assert.Contains("\"type\":\"reasoning\"", requestBody);
+        Assert.Contains("\"encrypted_content\":\"encrypted-payload\"", requestBody);
+        Assert.Contains("Visible reasoning summary", requestBody);
+        Assert.DoesNotContain("reasoning-lifecycle", requestBody);
+    }
+
+    [Fact]
+    public async Task Reasoning_ui_parts_are_dropped_on_roundtrip_when_agent_name_does_not_match()
+    {
+        var requestBody = await CaptureRequestBodyAsync(
+            [new UIMessage
+            {
+                Id = "assistant-1",
+                Role = Role.assistant,
+                Parts =
+                [
+                    new ReasoningStartUIPart { Id = "reasoning-1" },
+                    new ReasoningDeltaUIPart { Id = "reasoning-1", Delta = "Visible reasoning summary" },
+                    new ReasoningEndUIPart
+                    {
+                        Id = "reasoning-1",
+                        ProviderMetadata = new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal)
+                        {
+                            ["OtherAgent"] = new(StringComparer.Ordinal)
+                            {
+                                ["encrypted_content"] = "encrypted-payload"
+                            }
+                        }
+                    }
+                ]
+            }],
+            activeAgentNames: ["StructuredAgent"]);
+
+        Assert.DoesNotContain("\"type\":\"reasoning\"", requestBody);
+        Assert.DoesNotContain("\"encrypted_content\":\"encrypted-payload\"", requestBody);
     }
 
     private static IEnumerable<ChatMessage> CreateUserMessages(string text)
@@ -271,6 +335,27 @@ public sealed class AgentChatClientFixtureTests
         var updates = agent.RunStreamingAsync(CreateUserMessages("Say hello"));
 
         return await CollectAsync(mapper.MapAsync(updates));
+    }
+
+    private static async Task<string> CaptureRequestBodyAsync(
+        IEnumerable<UIMessage> uiMessages,
+        IEnumerable<string> activeAgentNames)
+    {
+        var fixture = LoadFixture(StructuredFixturePath);
+        string requestBody = string.Empty;
+
+        using var httpClient = CreateHttpClient(request =>
+        {
+            requestBody = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+            return CreateJsonResponse(fixture);
+        });
+
+        using var client = CreateClient(httpClient, CreateAgent(modelId: "openai/gpt-fixture"));
+
+        var messages = uiMessages.ToMessages(activeAgentNames).ToList();
+        await client.GetResponseAsync(messages);
+
+        return requestBody;
     }
 
     private sealed class StaticHttpClientFactory(HttpClient client) : IHttpClientFactory

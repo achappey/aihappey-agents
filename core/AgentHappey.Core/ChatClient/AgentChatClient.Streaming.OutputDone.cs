@@ -1,6 +1,5 @@
 using System.Text.Json;
 using AgentHappey.Common.Extensions;
-using AIHappey.Responses;
 using AIHappey.Responses.Streaming;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
@@ -17,15 +16,32 @@ public partial class AgentChatClient
         switch (done.Item.Type)
         {
             case "reasoning":
-                var reasoningLifecycleUpdate = CreateReasoningLifecycleUpdate(done.Item, state);
-                if (reasoningLifecycleUpdate is not null)
-                    yield return reasoningLifecycleUpdate;
+                {
+                    if (done.Item is null)
+                        yield break;
 
-                yield break;
+                    var protectedData = done.Item.AdditionalProperties != null &&
+                                        done.Item.AdditionalProperties.TryGetValue("encrypted_content", out var value)
+                                            ? value.ToString()
+                                            : null;
+
+                    if (!string.IsNullOrWhiteSpace(protectedData))
+                    {
+                        yield return CreateStreamingUpdate(
+                            ChatRole.Assistant,
+                            [new TextReasoningContent(string.Empty)
+                            {
+                                ProtectedData = protectedData
+                            }],
+                            done.Item.Id);
+                    }
+
+                    yield break;
+                }
 
             case "custom_tool_call":
                 var items = done.Item.AdditionalProperties?["output"];
-                
+
                 yield return new ChatResponseUpdate(
                       ChatRole.Assistant,
                       [new FunctionResultContent(done.Item.Id!, items)])
@@ -270,23 +286,4 @@ public partial class AgentChatClient
         }
     }
 
-    private ChatResponseUpdate? CreateReasoningLifecycleUpdate(
-        ResponseStreamItem item,
-        StreamingResponseState state)
-    {
-        if (string.IsNullOrWhiteSpace(item.Id))
-            return null;
-
-        var payload = new Dictionary<string, object?>
-        {
-            ["item_id"] = item.Id,
-            ["status"] = item.Status
-        };
-
-        var providerMetadata = BuildReasoningProviderMetadata(item, state.ProviderId);
-        if (providerMetadata is not null)
-            payload["provider_metadata"] = providerMetadata;
-
-        return CreateProviderExecutedUpdate(payload, item.Id, "reasoning-lifecycle");
-    }
 }

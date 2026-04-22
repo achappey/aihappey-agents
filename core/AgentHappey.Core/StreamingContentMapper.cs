@@ -64,7 +64,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                 if (content is UsageContent usageContent)
                     usageContents.Add(usageContent);
                 else
-                    foreach (var part in MapContent(content, update.MessageId, pendingCalls, text, reasoning, includeFileParts: true))
+                    foreach (var part in MapContent(content, update.MessageId, update.AuthorName, pendingCalls, text, reasoning, includeFileParts: true))
                         yield return part;
             }
         }
@@ -92,7 +92,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                     authorNames.Add(u.AuthorName);
 
                 foreach (var content in u.Contents)
-                    foreach (var part in MapContent(content, u.MessageId, pendingCalls, text, reasoning, includeFileParts: false))
+                    foreach (var part in MapContent(content, u.MessageId, u.AuthorName, pendingCalls, text, reasoning, includeFileParts: false))
                         yield return part;
             }
             else if (update is WorkflowOutputEvent)
@@ -132,6 +132,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
     private static IEnumerable<UIMessagePart> MapContent(
         object content,
         string? messageId,
+        string? authorName,
         Dictionary<string, ToolCallPart> pendingCalls,
         TextStreamState text,
         ReasoningStreamState reasoning,
@@ -191,7 +192,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                             foreach (var part in EnsureReasoningStream(reasoningId!, reasoning))
                                 yield return part;
 
-                            foreach (var part in CloseReasoningStream(reasoningId!, reasoning, reasoningLifecycle.ProviderMetadata))
+                            foreach (var part in CloseReasoningStream(reasoningId!, reasoning, reasoningLifecycle.ProviderMetadata, authorName))
                                 yield return part;
                         }
 
@@ -373,16 +374,43 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
     private static IEnumerable<UIMessagePart> CloseReasoningStream(
         string messageId,
         ReasoningStreamState text,
-        Dictionary<string, Dictionary<string, object>>? providerMetadata)
+        Dictionary<string, Dictionary<string, object>>? providerMetadata,
+        string? authorName)
     {
         if (!text.OpenSet.Remove(messageId))
             yield break;
 
         text.OpenOrder.Remove(messageId);
+        var agentScopedProviderMetadata = ToAgentScopedProviderMetadata(providerMetadata, authorName);
+
         yield return new ReasoningEndUIPart
         {
             Id = messageId,
-            ProviderMetadata = providerMetadata
+            ProviderMetadata = agentScopedProviderMetadata
+        };
+    }
+
+    private static Dictionary<string, Dictionary<string, object>>? ToAgentScopedProviderMetadata(
+        Dictionary<string, Dictionary<string, object>>? providerMetadata,
+        string? authorName)
+    {
+        if (providerMetadata is null || providerMetadata.Count == 0 || string.IsNullOrWhiteSpace(authorName))
+            return null;
+
+        var normalized = new Dictionary<string, object>(StringComparer.Ordinal);
+
+        foreach (var values in providerMetadata.Values)
+        {
+            foreach (var value in values)
+                normalized[value.Key] = value.Value;
+        }
+
+        if (normalized.Count == 0)
+            return null;
+
+        return new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal)
+        {
+            [authorName] = normalized
         };
     }
 
