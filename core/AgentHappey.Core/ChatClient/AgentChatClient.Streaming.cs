@@ -250,7 +250,7 @@ public partial class AgentChatClient
                 yield break;
 
             case ResponseCompleted completed:
-                state.RegisterModel(completed.Response?.Model);
+                state.RegisterModel(completed.Response.Model);
                 yield return CreateCompletionUpdate(completed.Response, "stop");
                 yield break;
 
