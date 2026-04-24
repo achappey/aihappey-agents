@@ -20,6 +20,7 @@ public sealed class AgentChatClientFixtureTests
     private const string GoogleEmptyReasoningFixturePath = "Fixtures/responses/raw/google-with-reasoning-responses-stream.jsonl";
     private const string OpenAiEmptyReasoningFixturePath = "Fixtures/responses/raw/openai-with-reasoning-responses-stream.jsonl";
     private const string OpenAiReasoningSummaryFixturePath = "Fixtures/responses/raw/openai-with-reasoning-summaries-responses-stream.jsonl";
+    private const string OpenAiShellAndFileFixturePath = "Fixtures/responses/raw/openai-with-shell-calls-and-file-output-stream.jsonl";
 
     [Fact]
     public async Task Streaming_responses_are_captured_when_configured_in_agent_provider_metadata()
@@ -175,6 +176,54 @@ public sealed class AgentChatClientFixtureTests
         Assert.True(providerMetadata.ContainsKey("encrypted_content"));
         Assert.Single(providerMetadata);
         Assert.False(string.IsNullOrWhiteSpace(Assert.IsType<string>(providerMetadata["encrypted_content"])));
+    }
+
+    [Fact]
+    public async Task Streaming_openai_shell_calls_download_file_and_output_file_roundtrip_to_visible_ui_parts()
+    {
+        var uiParts = await CollectUiPartsAsync(OpenAiShellAndFileFixturePath, "openai/gpt-fixture");
+
+        var shellInputs = uiParts
+            .OfType<ToolCallPart>()
+            .Where(part => string.Equals(part.ToolName, "shell_call", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.Equal(2, shellInputs.Count);
+        Assert.All(shellInputs, part => Assert.True(part.ProviderExecuted));
+
+        var shellOutputs = uiParts
+            .OfType<ToolOutputAvailablePart>()
+            .Where(part => shellInputs.Any(input => string.Equals(input.ToolCallId, part.ToolCallId, StringComparison.Ordinal)))
+            .ToList();
+
+        Assert.Contains(shellOutputs, part => part.Preliminary == true);
+        Assert.Equal(2, shellOutputs.Count(part => part.Preliminary is false or null));
+
+        var finalShellOutputJson = JsonSerializer.SerializeToElement(
+            shellOutputs.Last(part => part.Preliminary is false or null).Output,
+            JsonSerializerOptions.Web);
+
+        Assert.Contains("zeer_simpel.docx", finalShellOutputJson.GetRawText());
+
+        var downloadInput = Assert.Single(uiParts
+            .OfType<ToolCallPart>()
+            .Where(part => string.Equals(part.ToolName, "download_file", StringComparison.Ordinal)));
+
+        Assert.True(downloadInput.ProviderExecuted);
+
+        var downloadOutput = Assert.Single(uiParts
+            .OfType<ToolOutputAvailablePart>()
+            .Where(part => string.Equals(part.ToolCallId, downloadInput.ToolCallId, StringComparison.Ordinal)));
+
+        Assert.True(downloadOutput.ProviderExecuted);
+        Assert.Contains("openai", downloadOutput.ProviderMetadata ?? []);
+
+        var filePart = Assert.Single(uiParts
+            .OfType<FileUIPart>()
+            .Where(part => string.Equals(part.Filename, "zeer_simpel.docx", StringComparison.Ordinal)));
+
+        Assert.Equal("application/vnd.openxmlformats-officedocument.wordprocessingml.document", filePart.MediaType);
+        Assert.StartsWith("data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,", filePart.Url);
     }
 
 

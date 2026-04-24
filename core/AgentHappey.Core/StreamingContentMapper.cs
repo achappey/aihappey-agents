@@ -184,8 +184,21 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
 
             case DataContent d when includeFileParts:
                 {
-                    if (d.MediaType.StartsWith("image/") && !string.IsNullOrEmpty(d.Uri))
-                        yield return new FileUIPart { MediaType = d.MediaType, Url = d.Uri };
+                    if (!string.IsNullOrEmpty(d.Uri))
+                        yield return new FileUIPart
+                        {
+                            MediaType = d.MediaType,
+                            Url = d.Uri,
+                            ProviderMetadata = !string.IsNullOrEmpty(authorName) &&
+                              !string.IsNullOrEmpty(d.Name) ? new Dictionary<string, Dictionary<string, object>?>()
+                            {
+                                {authorName, new Dictionary<string, object>()
+                                {
+                                    {"filename", d.Name}
+                                }
+                                }
+                            } : null
+                        };
 
                     if (d.MediaType.Equals(MediaTypeNames.Application.Json, StringComparison.InvariantCultureIgnoreCase))
                         yield return d.ToDataUIPart();
@@ -288,10 +301,24 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                         };
                     }
 
+                    var providerExecuted = true;
+                    bool? preliminary = null;
+                    Dictionary<string, Dictionary<string, object>?>? providerMetadata = null;
+
+                    if (TryUnwrapToolOutputEnvelope(output, out var unwrappedOutput, out var envelopePreliminary, out var envelopeProviderExecuted, out var envelopeProviderMetadata))
+                    {
+                        output = unwrappedOutput ?? new { };
+                        preliminary = envelopePreliminary;
+                        providerExecuted = envelopeProviderExecuted;
+                        providerMetadata = envelopeProviderMetadata;
+                    }
+
                     yield return new ToolOutputAvailablePart
                     {
                         ToolCallId = fr.CallId,
-                        ProviderExecuted = true,
+                        ProviderExecuted = providerExecuted,
+                        Preliminary = preliminary,
+                        ProviderMetadata = providerMetadata,
                         Output = output
                     };
 
@@ -496,6 +523,67 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         {
             return null;
         }
+    }
+
+    private static bool TryUnwrapToolOutputEnvelope(
+        object? result,
+        out object? output,
+        out bool? preliminary,
+        out bool providerExecuted,
+        out Dictionary<string, Dictionary<string, object>?>? providerMetadata)
+    {
+        output = result;
+        preliminary = null;
+        providerExecuted = true;
+        providerMetadata = null;
+
+        JsonElement envelope;
+        try
+        {
+            envelope = result switch
+            {
+                JsonElement jsonElement => jsonElement,
+                null => default,
+                _ => JsonSerializer.SerializeToElement(result, JsonWeb)
+            };
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (envelope.ValueKind != JsonValueKind.Object
+            || !envelope.TryGetProperty("__aihappey_tool_output", out var marker)
+            || marker.ValueKind != JsonValueKind.True)
+        {
+            return false;
+        }
+
+        output = envelope.TryGetProperty("output", out var outputElement)
+            ? outputElement.Clone()
+            : new { };
+
+        if (envelope.TryGetProperty("preliminary", out var preliminaryElement)
+            && preliminaryElement.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            preliminary = preliminaryElement.GetBoolean();
+        }
+
+        if (envelope.TryGetProperty("provider_executed", out var providerExecutedElement)
+            && providerExecutedElement.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            providerExecuted = providerExecutedElement.GetBoolean();
+        }
+
+        if (envelope.TryGetProperty("provider_metadata", out var providerMetadataElement)
+            && providerMetadataElement.ValueKind == JsonValueKind.Object)
+        {
+            providerMetadata = JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, object>?>>(
+                providerMetadataElement.GetRawText(),
+                JsonWeb);
+        }
+
+        return true;
     }
 
     private static IEnumerable<UIMessagePart> MapCallToolResultSources(CallToolResult callToolResult)

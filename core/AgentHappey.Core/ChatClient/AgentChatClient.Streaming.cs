@@ -156,7 +156,19 @@ public partial class AgentChatClient
                 yield break;
 
             case ResponseOutputItemAdded added:
-                state.RegisterOutputItem(added.Item);
+                state.RegisterOutputItem(added.Item, added.OutputIndex);
+                yield break;
+
+            case ResponseShellCallCommandAdded shellCommandAdded:
+                state.AddShellCommand(shellCommandAdded.OutputIndex, shellCommandAdded.CommandIndex, shellCommandAdded.Command);
+                yield break;
+
+            case ResponseShellCallCommandDelta shellCommandDelta:
+                state.AppendShellCommand(shellCommandDelta.OutputIndex, shellCommandDelta.CommandIndex, shellCommandDelta.Delta);
+                yield break;
+
+            case ResponseShellCallCommandDone shellCommandDone:
+                state.CompleteShellCommand(shellCommandDone.OutputIndex, shellCommandDone.CommandIndex, shellCommandDone.Command);
                 yield break;
 
             case ResponseFunctionCallArgumentsDelta functionArgumentsDelta:
@@ -217,7 +229,21 @@ public partial class AgentChatClient
 
                 yield break;
             case ResponseOutputItemDone done:
-                state.RegisterOutputItem(done.Item);
+                state.RegisterOutputItem(done.Item, done.OutputIndex);
+
+                if (string.Equals(done.Item.Type, "shell_call", StringComparison.OrdinalIgnoreCase)
+                    && state.TryCreateShellInputUpdate(done.Item, done.OutputIndex, out ChatResponseUpdate shellInputUpdate))
+                {
+                    yield return shellInputUpdate;
+                    yield break;
+                }
+
+                if (string.Equals(done.Item.Type, "shell_call_output", StringComparison.OrdinalIgnoreCase)
+                    && state.TryCreateShellOutputFinalUpdate(done.Item, done.OutputIndex, out ChatResponseUpdate shellOutputUpdate))
+                {
+                    yield return shellOutputUpdate;
+                    yield break;
+                }
 
                 if (string.Equals(done.Item.Type, "function_call", StringComparison.OrdinalIgnoreCase)
                     && state.TryCreateFunctionCallUpdate(done.Item.Id, out ChatResponseUpdate functionCallDoneUpdate))
@@ -244,6 +270,12 @@ public partial class AgentChatClient
                     yield break;
                 }
 
+                if (string.Equals(done.Item.Type, "custom_tool_call", StringComparison.OrdinalIgnoreCase)
+                    && state.HasToolOutputEmitted(done.Item.Id))
+                {
+                    yield break;
+                }
+
                 foreach (var otherDone in ToResponseOutputItemDoneUpdates(done, state))
                     yield return otherDone;
 
@@ -262,9 +294,59 @@ public partial class AgentChatClient
                 yield return CreateErrorUpdate(Guid.NewGuid().ToString(), error?.Message ?? "Responses stream failed.");
                 yield break;
 
+            case ResponseUnknownEvent unknown
+                when string.Equals(unknown.Type, "response.shell_call_output_content.delta", StringComparison.OrdinalIgnoreCase):
+                if (state.TryCreateShellOutputPreliminaryUpdate(unknown, isCompletedChunk: false, out ChatResponseUpdate shellOutputDeltaUpdate))
+                    yield return shellOutputDeltaUpdate;
+                yield break;
+
+            case ResponseUnknownEvent unknown
+                when string.Equals(unknown.Type, "response.shell_call_output_content.done", StringComparison.OrdinalIgnoreCase):
+                if (state.TryCreateShellOutputPreliminaryUpdate(unknown, isCompletedChunk: true, out ChatResponseUpdate shellOutputDoneChunkUpdate))
+                    yield return shellOutputDoneChunkUpdate;
+                yield break;
+
+            case ResponseUnknownEvent unknown
+                when string.Equals(unknown.Type, "response.custom_tool_call.input", StringComparison.OrdinalIgnoreCase):
+                if (state.TryCreateCustomToolCallInputUpdate(unknown, out ChatResponseUpdate customToolInputUnknownUpdate))
+                    yield return customToolInputUnknownUpdate;
+                yield break;
+
+            case ResponseUnknownEvent unknown
+                when string.Equals(unknown.Type, "response.custom_tool_call.output", StringComparison.OrdinalIgnoreCase):
+                if (state.TryCreateCustomToolCallOutputUpdate(unknown, out ChatResponseUpdate customToolOutputUnknownUpdate))
+                    yield return customToolOutputUnknownUpdate;
+                yield break;
+
+            case ResponseUnknownEvent unknown
+                when string.Equals(unknown.Type, "response.output_file.done", StringComparison.OrdinalIgnoreCase):
+                if (TryCreateOutputFileUpdate(unknown, out ChatResponseUpdate outputFileUpdate))
+                    yield return outputFileUpdate;
+                yield break;
+
             default:
                 yield break;
         }
+    }
+
+    private bool TryCreateOutputFileUpdate(ResponseUnknownEvent unknown, out ChatResponseUpdate update)
+    {
+        update = null!;
+
+        var mediaType = GetUnknownEventString(unknown, "media_type") ?? MediaTypeNames.Application.Octet;
+        var url = GetUnknownEventString(unknown, "url");
+        if (string.IsNullOrWhiteSpace(url))
+            return false;
+
+        update = CreateStreamingUpdate(
+            ChatRole.Assistant,
+            [new DataContent(url, mediaType)
+            {
+                Name = GetUnknownEventString(unknown, "filename")
+            }],
+            GetUnknownEventString(unknown, "item_id") ?? Guid.NewGuid().ToString("N"));
+
+        return true;
     }
 
     private ChatResponseUpdate CreateCompletionUpdate(ResponseResult response, string finishReason)
@@ -450,6 +532,24 @@ public partial class AgentChatClient
         return property.Clone();
     }
 
+    private static string? GetUnknownEventString(ResponseUnknownEvent unknown, string propertyName)
+    {
+        if (unknown.Data?.TryGetValue(propertyName, out var property) != true)
+            return null;
+
+        return property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : property.GetRawText();
+    }
+
+    private static JsonElement? GetUnknownEventProperty(ResponseUnknownEvent unknown, string propertyName)
+    {
+        if (unknown.Data?.TryGetValue(propertyName, out var property) != true)
+            return null;
+
+        return property.Clone();
+    }
+
     private static object ToFunctionResult(object? output)
     {
         if (output is JsonElement element)
@@ -518,6 +618,11 @@ public partial class AgentChatClient
     private sealed class StreamingResponseState(string modelId, string authorName)
     {
         private readonly Dictionary<string, StreamingToolCallState> toolCalls = new(StringComparer.Ordinal);
+        private readonly Dictionary<int, StreamingShellInputState> shellInputsByOutputIndex = [];
+        private readonly Dictionary<string, StreamingShellInputState> shellInputsByCallId = new(StringComparer.Ordinal);
+        private readonly Dictionary<int, StreamingShellOutputState> shellOutputsByOutputIndex = [];
+        private readonly Dictionary<string, string> shellToolItemIdsByCallId = new(StringComparer.Ordinal);
+        private readonly HashSet<string> emittedToolOutputs = new(StringComparer.Ordinal);
         private readonly HashSet<string> streamedTextKeys = new(StringComparer.Ordinal);
         private readonly HashSet<string> streamedReasoningKeys = new(StringComparer.Ordinal);
 
@@ -534,7 +639,7 @@ public partial class AgentChatClient
             ProviderId = separatorIndex > 0 ? model[..separatorIndex] : model;
         }
 
-        public void RegisterOutputItem(ResponseStreamItem item)
+        public void RegisterOutputItem(ResponseStreamItem item, int? outputIndex = null)
         {
             var itemId = item.Id;
             if (string.IsNullOrWhiteSpace(itemId))
@@ -542,8 +647,22 @@ public partial class AgentChatClient
 
             if (!string.Equals(item.Type, "function_call", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(item.Type, "mcp_call", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(item.Type, "custom_tool_call", StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(item.Type, "custom_tool_call", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(item.Type, "shell_call", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(item.Type, "shell_call_output", StringComparison.OrdinalIgnoreCase))
                 return;
+
+            if (string.Equals(item.Type, "shell_call", StringComparison.OrdinalIgnoreCase))
+            {
+                RegisterShellCall(item, outputIndex ?? -1);
+                return;
+            }
+
+            if (string.Equals(item.Type, "shell_call_output", StringComparison.OrdinalIgnoreCase))
+            {
+                RegisterShellCallOutput(item, outputIndex ?? -1);
+                return;
+            }
 
             var state = GetOrCreateToolCall(itemId,
                 string.Equals(item.Type, "function_call", StringComparison.OrdinalIgnoreCase) != true);
@@ -558,6 +677,206 @@ public partial class AgentChatClient
                 state.Arguments.Clear();
                 state.Arguments.Append(item.Arguments);
             }
+        }
+
+        public bool HasToolOutputEmitted(string? itemId)
+            => !string.IsNullOrWhiteSpace(itemId) && emittedToolOutputs.Contains(itemId);
+
+        public void MarkToolOutputEmitted(string? itemId)
+        {
+            if (!string.IsNullOrWhiteSpace(itemId))
+                emittedToolOutputs.Add(itemId);
+        }
+
+        public void AddShellCommand(int outputIndex, int commandIndex, string? command)
+        {
+            var input = GetOrCreateShellInput(outputIndex);
+            var builder = GetShellCommandBuilder(input, commandIndex);
+            builder.Clear();
+            builder.Append(command ?? string.Empty);
+        }
+
+        public void AppendShellCommand(int outputIndex, int commandIndex, string? delta)
+        {
+            if (string.IsNullOrEmpty(delta))
+                return;
+
+            GetShellCommandBuilder(GetOrCreateShellInput(outputIndex), commandIndex).Append(delta);
+        }
+
+        public void CompleteShellCommand(int outputIndex, int commandIndex, string? command)
+        {
+            var builder = GetShellCommandBuilder(GetOrCreateShellInput(outputIndex), commandIndex);
+            var completed = command ?? string.Empty;
+            if (completed.Length == 0 || string.Equals(builder.ToString(), completed, StringComparison.Ordinal))
+                return;
+
+            builder.Clear();
+            builder.Append(completed);
+        }
+
+        public bool TryCreateShellInputUpdate(ResponseStreamItem item, int outputIndex, out ChatResponseUpdate update)
+        {
+            update = null!;
+
+            var input = ResolveShellInput(outputIndex, item.CallId)
+                ?? GetOrCreateShellInput(outputIndex);
+
+            input.ItemId = item.Id ?? input.ItemId;
+            input.OutputIndex = outputIndex;
+            input.CallId = item.CallId ?? input.CallId;
+
+            var completedCommands = ExtractShellCommands(item);
+            if (completedCommands.Count > 0)
+                SyncShellCommands(input, completedCommands);
+
+            if (input.InputEmitted || string.IsNullOrWhiteSpace(input.ItemId))
+                return false;
+
+            var commands = input.CommandBuilders.Select(builder => builder.ToString()).ToArray();
+            var arguments = new Dictionary<string, object?>
+            {
+                ["commands"] = commands
+            };
+
+            update = new ChatResponseUpdate(
+                ChatRole.Assistant,
+                [new FunctionCallContent(input.ItemId, "shell_call", arguments)
+                {
+                    InformationalOnly = true
+                }])
+            {
+                MessageId = input.ItemId,
+                AuthorName = AuthorName,
+                ModelId = ModelId
+            };
+
+            input.InputEmitted = true;
+
+            if (!string.IsNullOrWhiteSpace(input.CallId))
+            {
+                shellInputsByCallId[input.CallId] = input;
+                shellToolItemIdsByCallId[input.CallId] = input.ItemId;
+            }
+
+            return true;
+        }
+
+        public bool TryCreateShellOutputPreliminaryUpdate(ResponseUnknownEvent unknown, bool isCompletedChunk, out ChatResponseUpdate update)
+        {
+            update = null!;
+
+            var outputIndexElement = GetUnknownEventProperty(unknown, "output_index");
+            if (outputIndexElement is null || !TryGetInt32(outputIndexElement.Value, out var outputIndex))
+                return false;
+
+            var output = GetOrCreateShellOutput(outputIndex);
+            output.OutputItemId = GetUnknownEventString(unknown, "item_id") ?? output.OutputItemId;
+
+            var commandIndexElement = GetUnknownEventProperty(unknown, "command_index");
+            if (commandIndexElement is not null && TryGetInt32(commandIndexElement.Value, out var commandIndex))
+            {
+                if (!isCompletedChunk)
+                {
+                    var delta = GetUnknownEventProperty(unknown, "delta");
+                    if (delta is not null && delta.Value.ValueKind == JsonValueKind.Object)
+                        AppendShellOutputChunkDelta(GetShellOutputChunk(output, commandIndex), delta.Value);
+                }
+                else
+                {
+                    var completedOutput = GetUnknownEventProperty(unknown, "output");
+                    if (completedOutput is not null && completedOutput.Value.ValueKind == JsonValueKind.Array)
+                        ApplyShellOutputChunks(output, completedOutput.Value, commandIndex);
+                }
+            }
+
+            return TryCreateShellOutputUpdate(output, preliminary: true, out update);
+        }
+
+        public bool TryCreateShellOutputFinalUpdate(ResponseStreamItem item, int outputIndex, out ChatResponseUpdate update)
+        {
+            update = null!;
+
+            var output = ResolveShellOutput(outputIndex) ?? GetOrCreateShellOutput(outputIndex);
+            output.OutputIndex = outputIndex;
+            output.OutputItemId = item.Id ?? output.OutputItemId;
+            output.CallId = item.CallId ?? output.CallId;
+            output.Status = item.Status ?? output.Status;
+            output.MaxOutputLength = item.MaxOutputLength ?? output.MaxOutputLength;
+
+            ResolveShellToolItemId(output);
+
+            if (item.AdditionalProperties?.TryGetValue("output", out var completedOutput) == true
+                && completedOutput.ValueKind == JsonValueKind.Array)
+            {
+                ApplyShellOutputChunks(output, completedOutput);
+            }
+
+            if (output.FinalOutputEmitted)
+                return false;
+
+            output.FinalOutputEmitted = true;
+            return TryCreateShellOutputUpdate(output, preliminary: false, out update);
+        }
+
+        public bool TryCreateCustomToolCallInputUpdate(ResponseUnknownEvent unknown, out ChatResponseUpdate update)
+        {
+            update = null!;
+
+            var itemId = GetUnknownEventString(unknown, "item_id");
+            if (string.IsNullOrWhiteSpace(itemId))
+                return false;
+
+            var toolName = GetUnknownEventString(unknown, "tool_name")
+                ?? GetUnknownEventString(unknown, "title")
+                ?? "custom_tool";
+
+            var input = GetUnknownEventProperty(unknown, "input")
+                ?? JsonSerializer.SerializeToElement(new { }, JsonSerializerOptions.Web);
+
+            var arguments = DeserializeArguments(input.GetRawText());
+
+            update = new ChatResponseUpdate(
+                ChatRole.Assistant,
+                [new FunctionCallContent(itemId, toolName, arguments)
+                {
+                    InformationalOnly = IsProviderExecuted(unknown)
+                }])
+            {
+                MessageId = itemId,
+                AuthorName = AuthorName,
+                ModelId = ModelId
+            };
+
+            return true;
+        }
+
+        public bool TryCreateCustomToolCallOutputUpdate(ResponseUnknownEvent unknown, out ChatResponseUpdate update)
+        {
+            update = null!;
+
+            var itemId = GetUnknownEventString(unknown, "item_id");
+            if (string.IsNullOrWhiteSpace(itemId))
+                return false;
+
+            var output = GetUnknownEventProperty(unknown, "output")
+                ?? JsonSerializer.SerializeToElement(new { }, JsonSerializerOptions.Web);
+
+            update = new ChatResponseUpdate(
+                ChatRole.Tool,
+                [new FunctionResultContent(itemId, CreateToolOutputEnvelope(
+                    output,
+                    preliminary: false,
+                    providerExecuted: IsProviderExecuted(unknown),
+                    providerMetadata: GetProviderMetadata(unknown)))])
+            {
+                MessageId = itemId,
+                AuthorName = AuthorName,
+                ModelId = ModelId
+            };
+
+            MarkToolOutputEmitted(itemId);
+            return true;
         }
 
         public void AppendArguments(string? itemId, string? delta, bool providerExecuted)
@@ -732,6 +1051,286 @@ public partial class AgentChatClient
                 }, JsonSerializerOptions.Web);
             }
         }
+
+        private StreamingShellInputState GetOrCreateShellInput(int outputIndex)
+        {
+            if (shellInputsByOutputIndex.TryGetValue(outputIndex, out var existing))
+                return existing;
+
+            var created = new StreamingShellInputState
+            {
+                OutputIndex = outputIndex
+            };
+
+            shellInputsByOutputIndex[outputIndex] = created;
+            return created;
+        }
+
+        private StreamingShellInputState? ResolveShellInput(int outputIndex, string? callId)
+            => shellInputsByOutputIndex.TryGetValue(outputIndex, out var byIndex)
+                ? byIndex
+                : !string.IsNullOrWhiteSpace(callId) && shellInputsByCallId.TryGetValue(callId, out var byCallId)
+                    ? byCallId
+                    : null;
+
+        private void RegisterShellCall(ResponseStreamItem item, int outputIndex)
+        {
+            var input = outputIndex >= 0 ? GetOrCreateShellInput(outputIndex) : new StreamingShellInputState { OutputIndex = outputIndex };
+            input.ItemId = item.Id ?? input.ItemId;
+            input.CallId = item.CallId ?? input.CallId;
+
+            var commands = ExtractShellCommands(item);
+            if (commands.Count > 0)
+                SyncShellCommands(input, commands);
+
+            if (!string.IsNullOrWhiteSpace(input.CallId))
+            {
+                shellInputsByCallId[input.CallId] = input;
+                if (!string.IsNullOrWhiteSpace(input.ItemId))
+                    shellToolItemIdsByCallId[input.CallId] = input.ItemId;
+            }
+        }
+
+        private void RegisterShellCallOutput(ResponseStreamItem item, int outputIndex)
+        {
+            if (outputIndex < 0)
+                return;
+
+            var output = GetOrCreateShellOutput(outputIndex);
+            output.OutputItemId = item.Id ?? output.OutputItemId;
+            output.CallId = item.CallId ?? output.CallId;
+            output.Status = item.Status ?? output.Status;
+            output.MaxOutputLength = item.MaxOutputLength ?? output.MaxOutputLength;
+            ResolveShellToolItemId(output);
+        }
+
+        private StreamingShellOutputState GetOrCreateShellOutput(int outputIndex)
+        {
+            if (shellOutputsByOutputIndex.TryGetValue(outputIndex, out var existing))
+                return existing;
+
+            var created = new StreamingShellOutputState { OutputIndex = outputIndex };
+            shellOutputsByOutputIndex[outputIndex] = created;
+            return created;
+        }
+
+        private StreamingShellOutputState? ResolveShellOutput(int outputIndex)
+            => shellOutputsByOutputIndex.TryGetValue(outputIndex, out var output) ? output : null;
+
+        private bool TryCreateShellOutputUpdate(StreamingShellOutputState output, bool preliminary, out ChatResponseUpdate update)
+        {
+            update = null!;
+            ResolveShellToolItemId(output);
+
+            if (string.IsNullOrWhiteSpace(output.ToolItemId))
+                return false;
+
+            update = new ChatResponseUpdate(
+                ChatRole.Tool,
+                [new FunctionResultContent(output.ToolItemId, CreateToolOutputEnvelope(
+                    CreateShellCallToolResult(output),
+                    preliminary,
+                    providerExecuted: true,
+                    providerMetadata: CreateShellProviderMetadata(output)))])
+            {
+                MessageId = output.OutputItemId ?? output.ToolItemId,
+                AuthorName = AuthorName,
+                ModelId = ModelId
+            };
+
+            if (!preliminary)
+                MarkToolOutputEmitted(output.ToolItemId);
+
+            return true;
+        }
+
+        private void ResolveShellToolItemId(StreamingShellOutputState output)
+        {
+            if (!string.IsNullOrWhiteSpace(output.ToolItemId))
+                return;
+
+            if (!string.IsNullOrWhiteSpace(output.CallId)
+                && shellInputsByCallId.TryGetValue(output.CallId, out var input)
+                && !string.IsNullOrWhiteSpace(input.ItemId))
+            {
+                output.ToolItemId = input.ItemId;
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(output.CallId)
+                && shellToolItemIdsByCallId.TryGetValue(output.CallId, out var toolItemId))
+            {
+                output.ToolItemId = toolItemId;
+            }
+        }
+
+        private static StringBuilder GetShellCommandBuilder(StreamingShellInputState input, int commandIndex)
+        {
+            while (input.CommandBuilders.Count <= commandIndex)
+                input.CommandBuilders.Add(new StringBuilder());
+
+            return input.CommandBuilders[commandIndex];
+        }
+
+        private static StreamingShellOutputChunkState GetShellOutputChunk(StreamingShellOutputState output, int commandIndex)
+        {
+            if (output.Chunks.TryGetValue(commandIndex, out var existing))
+                return existing;
+
+            var created = new StreamingShellOutputChunkState();
+            output.Chunks[commandIndex] = created;
+            return created;
+        }
+
+        private static void AppendShellOutputChunkDelta(StreamingShellOutputChunkState chunk, JsonElement delta)
+        {
+            if (delta.TryGetProperty("stdout", out var stdout))
+                chunk.Stdout.Append(stdout.GetString() ?? stdout.ToString());
+
+            if (delta.TryGetProperty("stderr", out var stderr))
+                chunk.Stderr.Append(stderr.GetString() ?? stderr.ToString());
+
+            if (delta.TryGetProperty("created_by", out var createdBy))
+                chunk.CreatedBy = createdBy.GetString() ?? createdBy.ToString();
+        }
+
+        private static void ApplyShellOutputChunks(StreamingShellOutputState output, JsonElement outputArray, int? startIndex = null)
+        {
+            if (outputArray.ValueKind != JsonValueKind.Array)
+                return;
+
+            var index = 0;
+            foreach (var item in outputArray.EnumerateArray())
+            {
+                var commandIndex = startIndex.HasValue && outputArray.GetArrayLength() == 1
+                    ? startIndex.Value
+                    : index;
+                var chunk = GetShellOutputChunk(output, commandIndex);
+                chunk.Stdout.Clear();
+                chunk.Stderr.Clear();
+
+                if (item.TryGetProperty("stdout", out var stdout))
+                    chunk.Stdout.Append(stdout.GetString() ?? stdout.ToString());
+
+                if (item.TryGetProperty("stderr", out var stderr))
+                    chunk.Stderr.Append(stderr.GetString() ?? stderr.ToString());
+
+                if (item.TryGetProperty("created_by", out var createdBy))
+                    chunk.CreatedBy = createdBy.GetString() ?? createdBy.ToString();
+
+                chunk.Outcome = item.TryGetProperty("outcome", out var outcome) ? outcome.Clone() : null;
+                index++;
+            }
+        }
+
+        private static object CreateShellCallToolResult(StreamingShellOutputState output)
+            => new Dictionary<string, object?>
+            {
+                ["call_id"] = output.CallId,
+                ["status"] = output.Status,
+                ["max_output_length"] = output.MaxOutputLength,
+                ["output"] = output.Chunks
+                    .OrderBy(chunk => chunk.Key)
+                    .Select(chunk => new Dictionary<string, object?>
+                    {
+                        ["stdout"] = chunk.Value.Stdout.ToString(),
+                        ["stderr"] = chunk.Value.Stderr.ToString(),
+                        ["created_by"] = chunk.Value.CreatedBy,
+                        ["outcome"] = chunk.Value.Outcome
+                    })
+                    .ToList()
+            };
+
+        private static Dictionary<string, Dictionary<string, object>?> CreateShellProviderMetadata(StreamingShellOutputState output)
+            => new(StringComparer.Ordinal)
+            {
+                ["openai"] = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["type"] = "tool_result",
+                    ["tool_name"] = "shell_call",
+                    ["title"] = "shell_call",
+                    ["tool_use_id"] = output.ToolItemId ?? string.Empty,
+                    ["call_id"] = output.CallId ?? string.Empty,
+                    ["output_item_id"] = output.OutputItemId ?? string.Empty
+                }
+            };
+
+        private static List<string> ExtractShellCommands(ResponseStreamItem item)
+        {
+            if (item.AdditionalProperties?.TryGetValue("action", out var action) != true
+                || action.ValueKind != JsonValueKind.Object
+                || !action.TryGetProperty("commands", out var commands)
+                || commands.ValueKind != JsonValueKind.Array)
+                return [];
+
+            return [.. commands.EnumerateArray().Select(command => command.GetString() ?? command.ToString())];
+        }
+
+        private static void SyncShellCommands(StreamingShellInputState input, IReadOnlyList<string> commands)
+        {
+            for (var i = 0; i < commands.Count; i++)
+            {
+                var builder = GetShellCommandBuilder(input, i);
+                builder.Clear();
+                builder.Append(commands[i]);
+            }
+        }
+
+        private static int? TryGetItemInt(ResponseStreamItem item, string key)
+            => item.AdditionalProperties?.TryGetValue(key, out var value) == true && TryGetInt32(value, out var number)
+                ? number
+                : null;
+
+        private static bool TryGetInt32(JsonElement value, out int number)
+        {
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out number))
+                return true;
+
+            if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out number))
+                return true;
+
+            number = 0;
+            return false;
+        }
+
+        private static bool IsProviderExecuted(ResponseUnknownEvent unknown)
+        {
+            var providerExecuted = GetUnknownEventProperty(unknown, "provider_executed");
+            return providerExecuted is null
+                || providerExecuted.Value.ValueKind != JsonValueKind.False;
+        }
+
+        private static Dictionary<string, Dictionary<string, object>?>? GetProviderMetadata(ResponseUnknownEvent unknown)
+        {
+            var providerMetadata = GetUnknownEventProperty(unknown, "provider_metadata");
+            if (providerMetadata is null || providerMetadata.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+                return null;
+
+            try
+            {
+                return JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, object>?>>(
+                    providerMetadata.Value.GetRawText(),
+                    JsonSerializerOptions.Web);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Dictionary<string, object?> CreateToolOutputEnvelope(
+            object? output,
+            bool preliminary,
+            bool providerExecuted,
+            Dictionary<string, Dictionary<string, object>?>? providerMetadata)
+            => new(StringComparer.Ordinal)
+            {
+                ["__aihappey_tool_output"] = true,
+                ["output"] = output,
+                ["preliminary"] = preliminary,
+                ["provider_executed"] = providerExecuted,
+                ["provider_metadata"] = providerMetadata
+            };
     }
 
     private sealed class StreamingToolCallState(string itemId, bool isProviderExecuted)
@@ -744,5 +1343,34 @@ public partial class AgentChatClient
         public bool InputEmitted { get; set; }
         public StringBuilder Arguments { get; } = new();
         public string ArgumentsText => Arguments.Length == 0 ? "{}" : Arguments.ToString();
+    }
+
+    private sealed class StreamingShellInputState
+    {
+        public string ItemId { get; set; } = string.Empty;
+        public int OutputIndex { get; set; }
+        public string? CallId { get; set; }
+        public bool InputEmitted { get; set; }
+        public List<StringBuilder> CommandBuilders { get; } = [];
+    }
+
+    private sealed class StreamingShellOutputState
+    {
+        public int OutputIndex { get; set; }
+        public string? OutputItemId { get; set; }
+        public string? ToolItemId { get; set; }
+        public string? CallId { get; set; }
+        public string? Status { get; set; }
+        public int? MaxOutputLength { get; set; }
+        public bool FinalOutputEmitted { get; set; }
+        public SortedDictionary<int, StreamingShellOutputChunkState> Chunks { get; } = [];
+    }
+
+    private sealed class StreamingShellOutputChunkState
+    {
+        public StringBuilder Stdout { get; } = new();
+        public StringBuilder Stderr { get; } = new();
+        public string? CreatedBy { get; set; }
+        public JsonElement? Outcome { get; set; }
     }
 }
