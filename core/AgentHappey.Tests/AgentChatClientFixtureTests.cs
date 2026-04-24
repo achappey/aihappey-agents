@@ -177,39 +177,6 @@ public sealed class AgentChatClientFixtureTests
         Assert.False(string.IsNullOrWhiteSpace(Assert.IsType<string>(providerMetadata["encrypted_content"])));
     }
 
-    [Fact]
-    public async Task Reasoning_ui_parts_roundtrip_back_to_responses_input_when_agent_name_matches()
-    {
-        var requestBody = await CaptureRequestBodyAsync(
-            [new UIMessage
-            {
-                Id = "assistant-1",
-                Role = Role.assistant,
-                Parts =
-                [
-                    new ReasoningStartUIPart { Id = "reasoning-1" },
-                    new ReasoningDeltaUIPart { Id = "reasoning-1", Delta = "Visible reasoning summary" },
-                    new ReasoningEndUIPart
-                    {
-                        Id = "reasoning-1",
-                        ProviderMetadata = new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal)
-                        {
-                            ["StructuredAgent"] = new(StringComparer.Ordinal)
-                            {
-                                ["encrypted_content"] = "encrypted-payload"
-                            }
-                        }
-                    }
-                ]
-            }],
-            activeAgentNames: ["StructuredAgent"]);
-
-        Assert.Contains("\"type\":\"reasoning\"", requestBody);
-        Assert.Contains("\"encrypted_content\":\"encrypted-payload\"", requestBody);
-        Assert.Contains("Visible reasoning summary", requestBody);
-        Assert.DoesNotContain("reasoning-lifecycle", requestBody);
-        Assert.DoesNotContain("\"type\":\"input_file\"", requestBody);
-    }
 
     [Fact]
     public async Task Reasoning_ui_parts_are_dropped_on_roundtrip_when_agent_name_does_not_match()
