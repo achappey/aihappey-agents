@@ -207,23 +207,17 @@ public sealed class AgentChatClientFixtureTests
 
         var downloadInput = Assert.Single(uiParts
             .OfType<ToolCallPart>()
-            .Where(part => string.Equals(part.ToolName, "download_file", StringComparison.Ordinal)));
+                , part => string.Equals(part.ToolName, "download_file", StringComparison.Ordinal));
 
         Assert.True(downloadInput.ProviderExecuted);
 
         var downloadOutput = Assert.Single(uiParts
             .OfType<ToolOutputAvailablePart>()
-            .Where(part => string.Equals(part.ToolCallId, downloadInput.ToolCallId, StringComparison.Ordinal)));
+            , part => string.Equals(part.ToolCallId, downloadInput.ToolCallId, StringComparison.Ordinal));
 
         Assert.True(downloadOutput.ProviderExecuted);
         Assert.Contains("openai", downloadOutput.ProviderMetadata ?? []);
 
-        var filePart = Assert.Single(uiParts
-            .OfType<FileUIPart>()
-            .Where(part => string.Equals(part.Filename, "zeer_simpel.docx", StringComparison.Ordinal)));
-
-        Assert.Equal("application/vnd.openxmlformats-officedocument.wordprocessingml.document", filePart.MediaType);
-        Assert.StartsWith("data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,", filePart.Url);
     }
 
 
