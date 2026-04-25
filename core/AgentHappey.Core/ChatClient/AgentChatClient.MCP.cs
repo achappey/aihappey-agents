@@ -10,6 +10,7 @@ using AgentHappey.Common.Extensions;
 using AgentHappey.Core.Extensions;
 using System.Text.Json.Serialization;
 using System.Text.Json.Nodes;
+using System.ComponentModel.DataAnnotations;
 
 namespace AgentHappey.Core.ChatClient;
 
@@ -383,7 +384,12 @@ public partial class AgentChatClient
            [Description("URL of the MCP server. Must be the URL of a connected MCP server (not the resource URI).")]
         string serverUrl,
            [Description("URI of the resource to read (the MCP resource URI).")]
-        string uri,
+            string uri,
+            [Description("Optional opaque pagination cursor returned by a previous read_resource call.")]
+           string? cursor,
+            [Description("Optional maximum number of lines to return for text-based resources.")]
+            [Range(1, 1000)]
+            int? limit,
            CancellationToken cancellationToken)
     {
         try
@@ -398,7 +404,18 @@ public partial class AgentChatClient
             if (string.IsNullOrWhiteSpace(uri))
                 throw new ArgumentException("uri is required.");
 
-            var result = await client.ReadResourceAsync(new Uri(uri), cancellationToken: cancellationToken);
+            var meta = new JsonObject();
+
+            if (!string.IsNullOrWhiteSpace(cursor))
+                meta["cursor"] = cursor;
+
+            if (limit.HasValue)
+                meta["limit"] = limit.Value;
+
+            var result = await client.ReadResourceAsync(new Uri(uri), new ModelContextProtocol.RequestOptions()
+            {
+                Meta = meta
+            }, cancellationToken: cancellationToken);
 
             return new CallToolResult
             {
