@@ -1,6 +1,7 @@
 
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Linq;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.AspNetCore.Http;
@@ -322,6 +323,13 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                         Output = output
                     };
 
+                    if (providerExecuted
+                        && IsDownloadFileToolOutput(toolCallPart.ToolName, providerMetadata, authorName)
+                        && TryCreateDownloadFilePart(output, providerMetadata, authorName, out var filePart))
+                    {
+                        yield return filePart;
+                    }
+
                     var callToolResult = TryDeserializeCallToolResult(output);
                     if (callToolResult is null) yield break;
 
@@ -501,13 +509,74 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         var normalizedInput = JsonSerializer.Deserialize<object>(
             JsonSerializer.Serialize(inputPayload, JsonWeb))!;
 
+        var raw = TryGetFunctionCallRawRepresentation(fc);
+        var providerMetadata = raw is not null && raw.TryGetValue("provider_metadata", out var metadata)
+            ? ExtractProviderMetadata(metadata)
+            : null;
+        var title = raw is not null && raw.TryGetValue("title", out var titleValue)
+            ? titleValue?.ToString()
+            : null;
+
         return new ToolCallPart
         {
             ToolCallId = fc.CallId!,
             ProviderExecuted = true,
             ToolName = fc.Name,
-            Input = normalizedInput
+            Title = title,
+            Input = normalizedInput,
+            ProviderMetadata = providerMetadata
         };
+    }
+
+    private static Dictionary<string, object?>? TryGetFunctionCallRawRepresentation(FunctionCallContent fc)
+    {
+        if (fc.RawRepresentation is Dictionary<string, object?> nullableDictionary)
+            return nullableDictionary;
+
+        if (fc.RawRepresentation is Dictionary<string, object> dictionary)
+            return dictionary.ToDictionary(entry => entry.Key, entry => (object?)entry.Value, StringComparer.Ordinal);
+
+        if (fc.RawRepresentation is null)
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                JsonSerializer.Serialize(fc.RawRepresentation, JsonWeb),
+                JsonWeb);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Dictionary<string, Dictionary<string, object>?>? ExtractProviderMetadata(object? value)
+    {
+        if (value is null)
+            return null;
+
+        if (value is Dictionary<string, Dictionary<string, object>?> typed)
+            return typed;
+
+        if (value is Dictionary<string, Dictionary<string, object>> nonNullable)
+            return nonNullable.ToDictionary(
+                entry => entry.Key,
+                entry => (Dictionary<string, object>?)entry.Value,
+                StringComparer.Ordinal);
+
+        try
+        {
+            return value is JsonElement json
+                ? JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, object>?>>(json.GetRawText(), JsonWeb)
+                : JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, object>?>>(
+                    JsonSerializer.Serialize(value, JsonWeb),
+                    JsonWeb);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static CallToolResult? TryDeserializeCallToolResult(object? result)
@@ -601,6 +670,185 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                 yield return new SourceUIPart { SourceId = rlb.Uri, Url = rlb.Uri, Title = rlb.Name };
             }
         }
+    }
+
+    private static bool IsDownloadFileToolOutput(
+        string? toolName,
+        Dictionary<string, Dictionary<string, object>?>? providerMetadata,
+        string? providerId)
+    {
+        if (string.Equals(toolName, "download_file", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (providerMetadata is null || providerMetadata.Count == 0)
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(providerId)
+            && providerMetadata.TryGetValue(providerId, out var scoped)
+            && IsDownloadFileProviderMetadata(scoped))
+        {
+            return true;
+        }
+
+        return providerMetadata.Values.Any(IsDownloadFileProviderMetadata);
+    }
+
+    private static bool IsDownloadFileProviderMetadata(Dictionary<string, object>? metadata)
+        => metadata is not null
+           && (HasMetadataValue(metadata, "name", "download_file")
+               || HasMetadataValue(metadata, "tool_name", "download_file")
+               || HasMetadataValue(metadata, "download_tool", true));
+
+    private static bool TryCreateDownloadFilePart(
+        object? output,
+        Dictionary<string, Dictionary<string, object>?>? providerMetadata,
+        string? providerId,
+        out FileUIPart filePart)
+    {
+        filePart = default!;
+
+        if (!TryExtractDownloadFilePayload(output, out var url, out var mediaType, out var filename, out var fileId)
+            || string.IsNullOrWhiteSpace(url))
+        {
+            return false;
+        }
+
+        filePart = new FileUIPart
+        {
+            MediaType = mediaType ?? MediaTypeNames.Application.Octet,
+            Url = url,
+            ProviderMetadata = EnsureDownloadFileProviderMetadata(providerMetadata, providerId, filename, mediaType, fileId)
+        };
+
+        return true;
+    }
+
+    private static bool TryExtractDownloadFilePayload(
+        object? output,
+        out string? url,
+        out string? mediaType,
+        out string? filename,
+        out string? fileId)
+    {
+        url = null;
+        mediaType = null;
+        filename = null;
+        fileId = null;
+
+        var callToolResult = TryDeserializeCallToolResult(output);
+        JsonElement payload;
+        if (callToolResult?.IsError != true
+            && callToolResult?.StructuredContent is JsonElement structuredContent
+            && structuredContent.ValueKind == JsonValueKind.Object)
+        {
+            payload = structuredContent;
+        }
+        else
+        {
+            try
+            {
+                payload = output switch
+                {
+                    JsonElement jsonElement => jsonElement,
+                    null => default,
+                    _ => JsonSerializer.SerializeToElement(output, JsonWeb)
+                };
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        if (payload.ValueKind != JsonValueKind.Object)
+            return false;
+
+        url = GetJsonString(payload, "data_url")
+            ?? GetJsonString(payload, "dataUrl")
+            ?? GetJsonString(payload, "url");
+        mediaType = GetJsonString(payload, "media_type")
+            ?? GetJsonString(payload, "mediaType")
+            ?? MediaTypeNames.Application.Octet;
+        filename = GetJsonString(payload, "filename")
+            ?? GetJsonString(payload, "file_name")
+            ?? GetJsonString(payload, "fileId")
+            ?? GetJsonString(payload, "file_id");
+        fileId = GetJsonString(payload, "file_id")
+            ?? GetJsonString(payload, "fileId");
+
+        return !string.IsNullOrWhiteSpace(url);
+    }
+
+    private static Dictionary<string, Dictionary<string, object>?>? EnsureDownloadFileProviderMetadata(
+        Dictionary<string, Dictionary<string, object>?>? providerMetadata,
+        string? providerId,
+        string? filename,
+        string? mediaType,
+        string? fileId)
+    {
+        var normalized = providerMetadata is null
+            ? new Dictionary<string, Dictionary<string, object>?>(StringComparer.Ordinal)
+            : providerMetadata.ToDictionary(
+                entry => entry.Key,
+                entry => entry.Value is null
+                    ? null
+                    : new Dictionary<string, object>(entry.Value, StringComparer.Ordinal),
+                StringComparer.Ordinal);
+
+        var targetProviderId = !string.IsNullOrWhiteSpace(providerId)
+            ? providerId
+            : normalized.Keys.FirstOrDefault(key => !string.IsNullOrWhiteSpace(key)) ?? "provider";
+
+        if (!normalized.TryGetValue(targetProviderId, out var scoped) || scoped is null)
+        {
+            scoped = new Dictionary<string, object>(StringComparer.Ordinal);
+            normalized[targetProviderId] = scoped;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filename) && !scoped.ContainsKey("filename"))
+            scoped["filename"] = filename;
+
+        if (!string.IsNullOrWhiteSpace(mediaType) && !scoped.ContainsKey("media_type"))
+            scoped["media_type"] = mediaType;
+
+        if (!string.IsNullOrWhiteSpace(fileId) && !scoped.ContainsKey("file_id"))
+            scoped["file_id"] = fileId;
+
+        return normalized.Count == 0 ? null : normalized;
+    }
+
+    private static bool HasMetadataValue<T>(Dictionary<string, object> metadata, string key, T expected)
+    {
+        if (!metadata.TryGetValue(key, out var value) || value is null)
+            return false;
+
+        if (value is JsonElement json)
+        {
+            if (expected is string expectedText && json.ValueKind == JsonValueKind.String)
+                return string.Equals(json.GetString(), expectedText, StringComparison.OrdinalIgnoreCase);
+
+            if (expected is bool expectedBool && json.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                return json.GetBoolean() == expectedBool;
+        }
+
+        if (expected is string text)
+            return string.Equals(value.ToString(), text, StringComparison.OrdinalIgnoreCase);
+
+        return value.Equals(expected);
+    }
+
+    private static string? GetJsonString(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind != JsonValueKind.Object
+            || !element.TryGetProperty(propertyName, out var value)
+            || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        return value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : value.ToString();
     }
 
 }

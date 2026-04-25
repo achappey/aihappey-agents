@@ -668,6 +668,7 @@ public partial class AgentChatClient
                 string.Equals(item.Type, "function_call", StringComparison.OrdinalIgnoreCase) != true);
             state.Name = string.IsNullOrWhiteSpace(item.Name) ? state.Name : item.Name;
             state.CallId = GetAdditionalPropertyString(item.AdditionalProperties, "call_id") ?? state.CallId ?? itemId;
+            state.ProviderMetadata = GetAdditionalPropertyProviderMetadata(item.AdditionalProperties) ?? state.ProviderMetadata;
             state.ToolTitle = state.IsProviderExecuted
                 ? BuildMcpToolTitle(item)
                 : state.Name;
@@ -836,12 +837,19 @@ public partial class AgentChatClient
 
             var arguments = DeserializeArguments(input.GetRawText());
 
+            var call = new FunctionCallContent(itemId, toolName, arguments)
+            {
+                InformationalOnly = IsProviderExecuted(unknown),
+                RawRepresentation = new Dictionary<string, object?>
+                {
+                    ["provider_metadata"] = GetProviderMetadata(unknown),
+                    ["title"] = GetUnknownEventString(unknown, "title")
+                }
+            };
+
             update = new ChatResponseUpdate(
                 ChatRole.Assistant,
-                [new FunctionCallContent(itemId, toolName, arguments)
-                {
-                    InformationalOnly = IsProviderExecuted(unknown)
-                }])
+                [call])
             {
                 MessageId = itemId,
                 AuthorName = AuthorName,
@@ -939,13 +947,22 @@ public partial class AgentChatClient
             {
                 return false;
             }
+            var call = new FunctionCallContent(
+                state.CallId ?? itemId,
+                state.Name ?? "custom_tool_call",
+                DeserializeArguments(state.ArgumentsText))
+            {
+                InformationalOnly = true,
+                RawRepresentation = new Dictionary<string, object?>
+                {
+                    ["provider_metadata"] = state.ProviderMetadata,
+                    ["title"] = state.ToolTitle
+                }
+            };
+
             update = new ChatResponseUpdate(
                            ChatRole.Assistant,
-                           [new FunctionCallContent(state.CallId ?? itemId,
-                            "custom_tool_call", DeserializeArguments(state.ArgumentsText))
-                {
-                    InformationalOnly = true
-                }])
+                           [call])
             {
                 MessageId = itemId,
                 AuthorName = AuthorName,
@@ -1318,6 +1335,28 @@ public partial class AgentChatClient
             }
         }
 
+        private static Dictionary<string, Dictionary<string, object>?>? GetAdditionalPropertyProviderMetadata(
+            Dictionary<string, JsonElement>? additionalProperties)
+        {
+            if (additionalProperties is null
+                || !additionalProperties.TryGetValue("provider_metadata", out var providerMetadata)
+                || providerMetadata.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                return null;
+            }
+
+            try
+            {
+                return JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, object>?>>(
+                    providerMetadata.GetRawText(),
+                    JsonSerializerOptions.Web);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private static Dictionary<string, object?> CreateToolOutputEnvelope(
             object? output,
             bool preliminary,
@@ -1340,6 +1379,7 @@ public partial class AgentChatClient
         public string? CallId { get; set; }
         public string? Name { get; set; }
         public string? ToolTitle { get; set; }
+        public Dictionary<string, Dictionary<string, object>?>? ProviderMetadata { get; set; }
         public bool InputEmitted { get; set; }
         public StringBuilder Arguments { get; } = new();
         public string ArgumentsText => Arguments.Length == 0 ? "{}" : Arguments.ToString();
