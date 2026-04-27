@@ -27,6 +27,10 @@ public static class VercelHelpers
         string.Equals(ti.Type, "tool-approval-request", StringComparison.OrdinalIgnoreCase)
         || string.Equals(toolName, "approval-request", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsConnectMcpControlPart(ToolInvocationPart ti, string toolName) =>
+        string.Equals(ti.Type, "tool-connect_mcp", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(toolName, "connect_mcp", StringComparison.OrdinalIgnoreCase);
+
     public static AIContent? ToUserMessagePart(this UIMessagePart message)
     {
         return message switch
@@ -76,7 +80,6 @@ public static class VercelHelpers
 
             // Assistant UIMessage: build assistant message content, and emit tool messages after when needed
             var assistantContents = new List<AIContent>();
-            var toolMessages = new List<ChatMessage>();
             var reasoningById = new Dictionary<string, StringBuilder>(StringComparer.Ordinal);
 
             foreach (var part in ui.Parts ?? [])
@@ -137,7 +140,8 @@ public static class VercelHelpers
 
                             // Approval control parts belong to the UI approval handshake.
                             // Agents auto-approve and never execute these as functions.
-                            if (IsApprovalControlPart(ti, toolName))
+                            if (IsApprovalControlPart(ti, toolName)
+                                || IsConnectMcpControlPart(ti, toolName))
                                 break;
 
                             var args = JsonSerializer.Deserialize<Dictionary<string, object?>>(
@@ -154,10 +158,7 @@ public static class VercelHelpers
                                 || string.Equals(ti.State, "output-available", StringComparison.OrdinalIgnoreCase)
                                 || string.Equals(ti.State, "output-error", StringComparison.OrdinalIgnoreCase))
                             {
-                                toolMessages.Add(new ChatMessage(ChatRole.Tool,
-                                [
-                                    new FunctionResultContent(ti.ToolCallId, ti.Output ?? new { })
-                                ]));
+                                assistantContents.Add(new FunctionResultContent(ti.ToolCallId, ti.Output ?? new { }));
                             }
 
                             break;
@@ -165,12 +166,7 @@ public static class VercelHelpers
                 }
             }
 
-            // emit assistant message first (even if only tool calls)
             yield return new ChatMessage(ChatRole.Assistant, assistantContents) { MessageId = ui.Id };
-
-            // then emit tool results (in-order)
-            foreach (var tm in toolMessages)
-                yield return tm;
         }
     }
 

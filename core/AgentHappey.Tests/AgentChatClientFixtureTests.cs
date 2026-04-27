@@ -65,6 +65,51 @@ public sealed class AgentChatClientFixtureTests
     }
 
     [Fact]
+    public async Task Assistant_tool_invocations_are_sent_as_interleaved_function_calls_and_outputs()
+    {
+        var requestBody = await CaptureRequestBodyAsync(
+            [new UIMessage
+            {
+                Id = "assistant-1",
+                Role = Role.assistant,
+                Parts =
+                [
+                    new ToolInvocationPart
+                    {
+                        ToolCallId = "call-1",
+                        Type = "tool-get_weather",
+                        Input = new { city = "Amsterdam" },
+                        Output = new { temperature = 18 },
+                        State = "output-available"
+                    },
+                    new ToolInvocationPart
+                    {
+                        ToolCallId = "call-2",
+                        Type = "tool-get_time",
+                        Input = new { timezone = "Europe/Amsterdam" },
+                        Output = new { hour = 16 },
+                        State = "output-available"
+                    }
+                ]
+            }],
+            activeAgentNames: ["StructuredAgent"]);
+
+        using var document = JsonDocument.Parse(requestBody);
+        var input = document.RootElement.GetProperty("input").EnumerateArray().ToList();
+
+        var functionItems = input
+            .Where(item => item.TryGetProperty("type", out var type)
+                && (type.GetString() == "function_call" || type.GetString() == "function_call_output"))
+            .ToList();
+
+        Assert.Equal(4, functionItems.Count);
+        AssertFunctionItem(functionItems[0], "function_call", "call-1");
+        AssertFunctionItem(functionItems[1], "function_call_output", "call-1");
+        AssertFunctionItem(functionItems[2], "function_call", "call-2");
+        AssertFunctionItem(functionItems[3], "function_call_output", "call-2");
+    }
+
+    [Fact]
     public async Task Streaming_responses_are_captured_when_configured_in_agent_provider_metadata()
     {
         var captureRoot = Path.Combine(Path.GetTempPath(), "agenthappey-tests", Guid.NewGuid().ToString("N"));
@@ -354,6 +399,12 @@ public sealed class AgentChatClientFixtureTests
 
     private static string LoadFixture(string relativePath)
         => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+    private static void AssertFunctionItem(JsonElement item, string expectedType, string expectedCallId)
+    {
+        Assert.Equal(expectedType, item.GetProperty("type").GetString());
+        Assert.Equal(expectedCallId, item.GetProperty("call_id").GetString());
+    }
 
     private static async Task<List<T>> CollectAsync<T>(IAsyncEnumerable<T> source, CancellationToken cancellationToken = default)
     {
