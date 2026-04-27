@@ -375,7 +375,7 @@ public partial class AgentChatClient
                 );
         }
 
-        return tools;
+        return [.. tools.DistinctBy(a => a.Name)];
     }
 
     [DisplayName("read_resource")]
