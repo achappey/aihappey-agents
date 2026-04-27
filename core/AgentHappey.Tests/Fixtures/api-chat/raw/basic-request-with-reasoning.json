@@ -1,0 +1,116 @@
+{
+    "tools": [],
+    "agents": [
+        {
+            "name": "ANTTESTAgent",
+            "description": "ANTTESTAgent",
+            "instructions": "ANTTESTAgent",
+            "model": {
+                "id": "anthropic/claude-haiku-4-5-20251001",
+                "providerMetadata": {
+                    "max_tokens": 32000,
+                    "anthropic-beta": "skills-2025-10-02,code-execution-2025-05-22",
+                    "tools": [
+                        {
+                            "name": "code_execution",
+                            "type": "code_execution_20260120",
+                            "allowed_callers": [
+                                "direct"
+                            ]
+                        }
+                    ],
+                    "thinking": {
+                        "type": "enabled",
+                        "budget_tokens": 8000,
+                        "display": "summarized"
+                    }
+                }
+            },
+            "mcpClient": {
+                "capabilities": {
+                    "elicitation": {},
+                    "sampling": {}
+                },
+                "policy": {
+                    "readOnlyHint": false,
+                    "openWorldHint": true,
+                    "idempotentHint": false,
+                    "destructiveHint": true
+                }
+            }
+        }
+    ],
+    "workflowType": "concurrent",
+    "workflowMetadata": {
+        "groupchat": {
+            "maximumIterationCount": 5
+        },
+        "handoff": {
+            "handoffs": []
+        }
+    },
+    "temperature": 1,
+    "id": "195ef0c1-7581-4b37-b786-aae31f7d952d",
+    "messages": [
+        {
+            "id": "2a43a998-ae73-45c5-9468-bb29f9b46b21",
+            "role": "user",
+            "parts": [
+                {
+                    "type": "text",
+                    "text": "alles ok?"
+                }
+            ],
+            "metadata": {
+                "timestamp": "2026-04-27T13:44:36.178Z"
+            }
+        },
+        {
+            "id": "GjYujVHYLgcKaS0b",
+            "metadata": {
+                "model": "ANTTESTAgent",
+                "usage": {
+                    "promptTokens": 2284,
+                    "completionTokens": 104,
+                    "totalTokens": 2388
+                },
+                "timestamp": "2026-04-27T13:44:41.5981149+00:00",
+                "temperature": null,
+                "gateway": null,
+                "author": "ANTTESTAgent"
+            },
+            "role": "assistant",
+            "parts": [
+                {
+                    "type": "reasoning",
+                    "text": "The user is asking \"alles ok?\" which is German for \"everything ok?\" or \"is everything okay?\". This is a casual greeting/check-in question that doesn't require any tool usage. I should respond in a friendly manner, confirming that I'm ready to help.",
+                    "providerMetadata": {
+                        "ANTTESTAgent": {
+                            "encrypted_content": "Er4DCmMIDRgCKkC00kZtJVwuqKaKB/6uv/YAD2ZtYUmzDUSbfoZQJqOk/IGanATRYcxo2DS2IK3+nYcr+CIexss2mX2V6d26RWpzMhljbGF1ZGUtaGFpa3UtNC01LTIwMjUxMDAxOAASDGGwCsxhPcZhK3TfCRoMvreTC2bNRhmgUI75IjDMdX8NE92hjDBqIlbJyv7ToH67Hv46UgzOwyMA/36J5PGM+sP8bvrM0raG9xf5gvEqiAK4sRqJUwY8beuv2X9Q+0c54w6lmTFO4BeBFwmsHBcQGsD6+GGw9hDVzswKhPADpEBj/4ZGpAXWFZTl/vMaQD+sigoAISS+rzrl7o5Us1IccTOvJW2cZ78fjWUPjm6UDskdSx5tjiizrcP+X6iId4fjsP5rxWeIAo0BAwnYUYkMbIRZj+li1xlqsADN3CfP5WHORacUGq29h/nN+kXaabBm8fiGWfOtWTcrEeaj3aEyr9wHvxz/7R0UlVypNbRYV9t/+M6JqauVq75o7RfuM25P2fFMj8W8n2tfRgIiCacurLhh5C1XHC2zx/kSqWkli0DUAfmJS/cvum88MmIcRjEzN7AvdO20uNMYAQ=="
+                        }
+                    },
+                    "state": "done"
+                },
+                {
+                    "type": "text",
+                    "text": "Ja, alles ok! 👍 Ich bin bereit und funktioniere einwandfrei. Wie kann ich dir helfen?",
+                    "state": "done"
+                }
+            ]
+        },
+        {
+            "id": "4457f273-e15f-4a7a-8c7f-f9224024d48a",
+            "role": "user",
+            "parts": [
+                {
+                    "type": "text",
+                    "text": "mooi"
+                }
+            ],
+            "metadata": {
+                "timestamp": "2026-04-27T13:44:46.485Z"
+            }
+        }
+    ],
+    "trigger": "submit-message"
+}

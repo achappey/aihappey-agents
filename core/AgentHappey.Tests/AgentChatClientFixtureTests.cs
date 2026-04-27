@@ -23,6 +23,48 @@ public sealed class AgentChatClientFixtureTests
     private const string OpenAiShellAndFileFixturePath = "Fixtures/responses/raw/openai-with-shell-calls-and-file-output-stream.jsonl";
 
     [Fact]
+    public async Task Assistant_reasoning_is_sent_before_assistant_text_when_ui_part_order_has_reasoning_first()
+    {
+        var requestBody = await CaptureRequestBodyAsync(
+            [new UIMessage
+            {
+                Id = "assistant-1",
+                Role = Role.assistant,
+                Parts =
+                [
+                    new ReasoningUIPart
+                    {
+                        Id = "reasoning-1",
+                        Text = "Visible reasoning summary",
+                        ProviderMetadata = new Dictionary<string, object>(StringComparer.Ordinal)
+                        {
+                            ["StructuredAgent"] = JsonSerializer.SerializeToElement(new
+                            {
+                                encrypted_content = "encrypted-payload"
+                            }, JsonSerializerOptions.Web)
+                        }
+                    },
+                    new TextUIPart { Text = "Final assistant response" }
+                ]
+            }],
+            activeAgentNames: ["StructuredAgent"]);
+
+        using var document = JsonDocument.Parse(requestBody);
+        var input = document.RootElement.GetProperty("input").EnumerateArray().ToList();
+
+        var reasoningIndex = input.FindIndex(item => item.GetProperty("type").GetString() == "reasoning");
+        var assistantMessageIndex = input.FindIndex(item =>
+            item.GetProperty("type").GetString() == "message"
+            && item.GetProperty("role").GetString() == "assistant");
+
+        Assert.InRange(reasoningIndex, 0, input.Count - 1);
+        Assert.InRange(assistantMessageIndex, 0, input.Count - 1);
+        Assert.True(reasoningIndex < assistantMessageIndex);
+        Assert.Equal("encrypted-payload", input[reasoningIndex].GetProperty("encrypted_content").GetString());
+        Assert.Contains("Final assistant response", input[assistantMessageIndex].GetRawText());
+    }
+
+    [Fact]
     public async Task Streaming_responses_are_captured_when_configured_in_agent_provider_metadata()
     {
         var captureRoot = Path.Combine(Path.GetTempPath(), "agenthappey-tests", Guid.NewGuid().ToString("N"));

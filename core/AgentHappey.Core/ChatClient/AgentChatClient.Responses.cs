@@ -118,84 +118,120 @@ public partial class AgentChatClient
                 continue;
             }
 
-            var contentParts = ToResponseContentParts(message).ToList();
-            if (contentParts.Count > 0)
-            {
-                items.Add(new ResponseInputMessage
-                {
-                    Role = ToResponseRole(message.Role),
-                    Content = new ResponseMessageContent(contentParts)
-                });
-            }
-
-            foreach (var reasoning in message.Contents.OfType<TextReasoningContent>())
-            {
-                if (string.IsNullOrWhiteSpace(reasoning.ProtectedData))
-                    continue;
-
-                items.Add(new ResponseReasoningItem
-                {
-                    EncryptedContent = reasoning.ProtectedData,
-                    Summary =
-                    [
-                        new ResponseReasoningSummaryTextPart
-                        {
-                            Text = reasoning.Text
-                        }
-                    ]
-                });
-            }
-
-            if (message.Role != ChatRole.Assistant)
-                continue;
-
-            foreach (var call in message.Contents.OfType<FunctionCallContent>())
-            {
-                items.Add(new ResponseFunctionCallItem
-                {
-                    CallId = call.CallId,
-                    Name = call.Name,
-                    Arguments = SerializeResponseValue(call.Arguments)
-                });
-            }
+            foreach (var item in ToResponseInputItems(message))
+                items.Add(item);
         }
 
         return items;
+    }
+
+    private IEnumerable<ResponseInputItem> ToResponseInputItems(ChatMessage message)
+    {
+        var contentParts = new List<ResponseContentPart>();
+
+        foreach (var content in message.Contents)
+        {
+            switch (content)
+            {
+                case TextReasoningContent reasoning when !string.IsNullOrWhiteSpace(reasoning.ProtectedData):
+                    foreach (var item in FlushResponseInputMessage(message, contentParts))
+                        yield return item;
+
+                    yield return new ResponseReasoningItem
+                    {
+                        EncryptedContent = reasoning.ProtectedData,
+                        Summary =
+                        [
+                            new ResponseReasoningSummaryTextPart
+                            {
+                                Text = reasoning.Text
+                            }
+                        ]
+                    };
+                    break;
+
+                case FunctionCallContent call when message.Role == ChatRole.Assistant:
+                    foreach (var item in FlushResponseInputMessage(message, contentParts))
+                        yield return item;
+
+                    yield return new ResponseFunctionCallItem
+                    {
+                        CallId = call.CallId,
+                        Name = call.Name,
+                        Arguments = SerializeResponseValue(call.Arguments)
+                    };
+                    break;
+
+                default:
+                    var contentPart = ToResponseContentPart(message, content);
+                    if (contentPart is not null)
+                        contentParts.Add(contentPart);
+                    break;
+            }
+        }
+
+        foreach (var item in FlushResponseInputMessage(message, contentParts))
+            yield return item;
+    }
+
+    private static IEnumerable<ResponseInputItem> FlushResponseInputMessage(
+        ChatMessage message,
+        List<ResponseContentPart> contentParts)
+    {
+        if (contentParts.Count == 0)
+            yield break;
+
+        yield return new ResponseInputMessage
+        {
+            Role = ToResponseRole(message.Role),
+            Content = new ResponseMessageContent(contentParts.ToList())
+        };
+
+        contentParts.Clear();
     }
 
     private static IEnumerable<ResponseContentPart> ToResponseContentParts(ChatMessage message)
     {
         foreach (var content in message.Contents)
         {
-            switch (content)
-            {
-                case TextContent text when !string.IsNullOrWhiteSpace(text.Text):
-                    if (message.Role == ChatRole.Assistant)
-                        yield return new OutputTextPart(text.Text);
-                    else
-                        yield return new InputTextPart(text.Text);
-                    break;
-
-                case DataContent data when data.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase):
-                    if (message.Role == ChatRole.User)
-                        yield return new InputImagePart
-                        {
-                            ImageUrl = string.IsNullOrWhiteSpace(data.Uri)
-                                ? ToDataUrl(data)
-                                : data.Uri
-                        };
-                    break;
-
-                case DataContent data when !ShouldIgnoreDataContent(data):
-                    if (message.Role == ChatRole.User)
-                        yield return new InputFilePart
-                        {
-                            Filename = data.Name,
-                            FileData = data.Uri
-                        };
-                    break;
-            }
+            var part = ToResponseContentPart(message, content);
+            if (part is not null)
+                yield return part;
         }
+    }
+
+    private static ResponseContentPart? ToResponseContentPart(ChatMessage message, AIContent content)
+    {
+        switch (content)
+        {
+            case TextContent text when !string.IsNullOrWhiteSpace(text.Text):
+                return message.Role == ChatRole.Assistant
+                    ? new OutputTextPart(text.Text)
+                    : new InputTextPart(text.Text);
+
+            case DataContent data when data.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase):
+                if (message.Role == ChatRole.User)
+                    return new InputImagePart
+                    {
+                        ImageUrl = string.IsNullOrWhiteSpace(data.Uri)
+                            ? ToDataUrl(data)
+                            : data.Uri
+                    };
+
+                break;
+
+            case DataContent data when !ShouldIgnoreDataContent(data):
+                if (message.Role == ChatRole.User)
+                    return new InputFilePart
+                    {
+                        Filename = data.Name,
+                        FileData = data.Uri
+                    };
+
+                break;
+        }
+
+        return null;
     }
 
     private static ResponseToolDefinition ToResponseToolDefinition(AIFunctionDeclaration declaration)
