@@ -1,0 +1,65 @@
+{
+    "name": "OpenAIAgent",
+    "description": "Has access to all OpenAI capabilities.",
+    "instructions": "You are OpenAIAgent.",
+    "model": {
+        "id": "openai/gpt-5.4-mini",
+        "providerMetadata": {
+            "tools": [
+                {
+                    "type": "web_search",
+                    "user_location": null,
+                    "search_context_size": "high"
+                },
+                {
+                    "type": "image_generation",
+                    "model": "gpt-image-2",
+                    "partial_images": 3,
+                    "quality": "auto",
+                    "action": "auto",
+                    "moderation": "auto",
+                    "output_compression": 100,
+                    "background": "auto",
+                    "size": "auto"
+                },
+                {
+                    "type": "shell",
+                    "environment": {
+                        "type": "container_auto",
+                        "skills": [
+                            {
+                                "type": "skill_reference",
+                                "skill_id": "openai-spreadsheets"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "include": [
+                "web_search_call.action.sources",
+                "reasoning.encrypted_content",
+                "code_interpreter_call.outputs",
+                "file_search_call.results"
+            ],
+            "truncation": "auto",
+            "service_tier": "auto",
+            "reasoning": {
+                "effort": "high",
+                "summary": "auto"
+            },
+            "parallel_tool_calls": true
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "elicitation": {},
+            "sampling": {}
+        },
+        "policy": {
+            "readOnlyHint": false,
+            "openWorldHint": true,
+            "idempotentHint": false,
+            "destructiveHint": true
+        }
+    }
+}

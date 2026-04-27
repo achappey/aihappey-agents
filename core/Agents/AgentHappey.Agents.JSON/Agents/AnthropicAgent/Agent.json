@@ -1,0 +1,93 @@
+{
+    "name": "AnthropicAgent",
+    "description": "Has access to all Anthropic capabilities.",
+    "instructions": "You are Anthropic Agent.",
+    "model": {
+        "id": "anthropic/claude-haiku-4-5-20251001",
+        "providerMetadata": {
+            "tools": [
+                {
+                    "name": "bash",
+                    "type": "bash_20250124",
+                    "allowed_callers": [
+                        "direct"
+                    ]
+                },
+                {
+                    "name": "code_execution",
+                    "allowed_callers": [
+                        "direct"
+                    ],
+                    "type": "code_execution_20260120"
+                },
+                {
+                    "name": "web_fetch",
+                    "type": "web_fetch_20260309",
+                    "max_uses": 5,
+                    "allowed_domains": null,
+                    "blocked_domains": null,
+                    "citations": {
+                        "enabled": true
+                    },
+                    "allowed_callers": [
+                        "direct"
+                    ]
+                },
+                {
+                    "name": "web_search",
+                    "type": "web_search_20260209",
+                    "max_uses": 5,
+                    "allowed_callers": [
+                        "direct"
+                    ],
+                    "allowed_domains": null,
+                    "blocked_domains": null,
+                    "user_location": null
+                }
+            ],
+            "anthropic-beta": "skills-2025-10-02,code-execution-2025-05-22",
+            "max_tokens": 64000,
+            "thinking": {
+                "type": "enabled",
+                "budget_tokens": 16000,
+                "display": "summarized"
+            },
+            "container": {
+                "skills": [
+                    {
+                        "skill_id": "pptx",
+                        "type": "anthropic",
+                        "version": "latest"
+                    },
+                    {
+                        "skill_id": "xlsx",
+                        "type": "anthropic",
+                        "version": "latest"
+                    },
+                    {
+                        "skill_id": "docx",
+                        "type": "anthropic",
+                        "version": "latest"
+                    },
+                    {
+                        "skill_id": "pdf",
+                        "type": "anthropic",
+                        "version": "latest"
+                    }
+                ]
+            }
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "elicitation": {},
+            "sampling": {}
+        },
+        "policy": {
+            "readOnlyHint": false,
+            "openWorldHint": true,
+            "idempotentHint": false,
+            "destructiveHint": true
+        }
+    }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "GoogleMapsAgent",
+  "description": "Use Google Maps for grounding.",
+  "instructions": "You are GoogleMapsAgent.",
+  "model": {
+    "id": "google/gemini-flash-lite-latest",
+    "providerMetadata": {
+      "response_modalities": [
+        "text"
+      ],
+      "generation_config": {
+        "thinking_level": "low",
+        "thinking_summaries": "auto"
+      },
+      "tools": [
+        {
+          "type": "google_maps"
+        }
+      ]
+    }
+  },
+  "mcpClient": {
+    "capabilities": {
+      "elicitation": {},
+      "sampling": {}
+    },
+    "policy": {
+      "readOnlyHint": true,
+      "openWorldHint": true,
+      "idempotentHint": false,
+      "destructiveHint": false
+    }
+  }
+}
