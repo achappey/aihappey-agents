@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using AIHappey.Vercel.Models;
 using Microsoft.Extensions.AI;
@@ -30,6 +29,19 @@ public static class VercelHelpers
     private static bool IsConnectMcpControlPart(ToolInvocationPart ti, string toolName) =>
         string.Equals(ti.Type, "tool-connect_mcp", StringComparison.OrdinalIgnoreCase)
         || string.Equals(toolName, "connect_mcp", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsToolOutputPart(UIMessagePart part, string toolCallId) =>
+        part is ToolOutputAvailablePart outputAvailable
+            && string.Equals(outputAvailable.ToolCallId, toolCallId, StringComparison.Ordinal)
+        || part is ToolOutputErrorPart outputError
+            && string.Equals(outputError.ToolCallId, toolCallId, StringComparison.Ordinal);
+
+    private static object? GetToolOutput(UIMessagePart part) => part switch
+    {
+        ToolOutputAvailablePart outputAvailable => outputAvailable.Output,
+        ToolOutputErrorPart outputError => new { error = outputError.ErrorText },
+        _ => null
+    };
 
     public static AIContent? ToUserMessagePart(this UIMessagePart message)
     {
@@ -78,12 +90,26 @@ public static class VercelHelpers
                 continue;
             }
 
-            // Assistant UIMessage: build assistant message content, and emit tool messages after when needed
+            // Assistant UIMessage: build assistant message content, and emit tool messages after when needed.
+            // Agent Framework expects tool results as ChatRole.Tool messages, not assistant content.
+            var mappedMessages = new List<ChatMessage>();
             var assistantContents = new List<AIContent>();
-            var reasoningById = new Dictionary<string, StringBuilder>(StringComparer.Ordinal);
 
-            foreach (var part in ui.Parts ?? [])
+            void FlushAssistantContents()
             {
+                if (assistantContents.Count == 0)
+                    return;
+
+                mappedMessages.Add(new ChatMessage(ChatRole.Assistant, [.. assistantContents]) { MessageId = ui.Id });
+                assistantContents.Clear();
+            }
+
+            var parts = ui.Parts?.ToList() ?? [];
+
+            for (var partIndex = 0; partIndex < parts.Count; partIndex++)
+            {
+                var part = parts[partIndex];
+
                 switch (part)
                 {
                     // normal assistant text
@@ -130,6 +156,21 @@ public static class VercelHelpers
                             ) ?? [];
 
                             assistantContents.Add(new FunctionCallContent(tc.ToolCallId, tc.ToolName, args));
+
+                            if (partIndex + 1 < parts.Count && IsToolOutputPart(parts[partIndex + 1], tc.ToolCallId))
+                            {
+                                FlushAssistantContents();
+
+                                mappedMessages.Add(new ChatMessage(
+                                    ChatRole.Tool,
+                                    [new FunctionResultContent(tc.ToolCallId, GetToolOutput(parts[partIndex + 1]) ?? new { })])
+                                {
+                                    MessageId = tc.ToolCallId
+                                });
+
+                                partIndex++;
+                            }
+
                             break;
                         }
 
@@ -151,14 +192,21 @@ public static class VercelHelpers
                             // 1) assistant function call
                             assistantContents.Add(new FunctionCallContent(ti.ToolCallId, toolName, args));
 
-                            // 2) tool function result (separate message) only when concrete output exists.
+                            // 2) tool function result as separate tool-role message only when concrete output exists.
                             // If output is not present yet (approval-requested/approval-responded flow),
                             // let the agents runtime execute the tool call.
                             if (HasConcreteOutput(ti.Output)
                                 || string.Equals(ti.State, "output-available", StringComparison.OrdinalIgnoreCase)
                                 || string.Equals(ti.State, "output-error", StringComparison.OrdinalIgnoreCase))
                             {
-                                assistantContents.Add(new FunctionResultContent(ti.ToolCallId, ti.Output ?? new { }));
+                                FlushAssistantContents();
+
+                                mappedMessages.Add(new ChatMessage(
+                                    ChatRole.Tool,
+                                    [new FunctionResultContent(ti.ToolCallId, ti.Output ?? new { })])
+                                {
+                                    MessageId = ti.ToolCallId
+                                });
                             }
 
                             break;
@@ -166,7 +214,10 @@ public static class VercelHelpers
                 }
             }
 
-            yield return new ChatMessage(ChatRole.Assistant, assistantContents) { MessageId = ui.Id };
+            FlushAssistantContents();
+
+            foreach (var mappedMessage in mappedMessages)
+                yield return mappedMessage;
         }
     }
 
