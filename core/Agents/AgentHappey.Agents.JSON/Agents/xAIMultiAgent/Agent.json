@@ -1,0 +1,45 @@
+{
+    "name": "xAIMultiAgent",
+    "description": "Realtime Multi-agent Research enables Grok to orchestrate multiple AI agents that work together in real time to perform deep, multi-step research tasks.",
+    "instructions": "You are xAIMultiAgent.",
+    "model": {
+        "id": "xai/grok-4.20-multi-agent-0309",
+        "providerMetadata": {
+            "tools": [
+                {
+                    "type": "web_search",
+                    "allowed_domains": [],
+                    "excluded_domains": [],
+                    "enable_image_understanding": true
+                },
+                {
+                    "type": "x_search",
+                    "enable_image_understanding": true,
+                    "enable_video_understanding": true,
+                    "allowed_x_handles": [],
+                    "excluded_x_handles": []
+                },
+                {
+                    "type": "code_execution"
+                }
+            ],
+            "include": [
+                "reasoning.encrypted_content"
+            ],
+            "reasoning": {},
+            "parallel_tool_calls": true
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "elicitation": {},
+            "sampling": {}
+        },
+        "policy": {
+            "readOnlyHint": false,
+            "openWorldHint": true,
+            "idempotentHint": false,
+            "destructiveHint": true
+        }
+    }
+}
