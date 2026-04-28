@@ -190,7 +190,7 @@ public static class VercelHelpers
                             ) ?? [];
 
                             // 1) assistant function call
-                            assistantContents.Add(new FunctionCallContent(ti.ToolCallId, toolName, args));
+
 
                             // 2) tool function result as separate tool-role message only when concrete output exists.
                             // If output is not present yet (approval-requested/approval-responded flow),
@@ -199,6 +199,8 @@ public static class VercelHelpers
                                 || string.Equals(ti.State, "output-available", StringComparison.OrdinalIgnoreCase)
                                 || string.Equals(ti.State, "output-error", StringComparison.OrdinalIgnoreCase))
                             {
+                                assistantContents.Add(new FunctionCallContent(ti.ToolCallId, toolName, args));
+
                                 FlushAssistantContents();
 
                                 mappedMessages.Add(new ChatMessage(
