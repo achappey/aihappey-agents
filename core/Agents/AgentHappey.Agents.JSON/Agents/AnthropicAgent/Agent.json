@@ -7,13 +7,6 @@
         "providerMetadata": {
             "tools": [
                 {
-                    "name": "bash",
-                    "type": "bash_20250124",
-                    "allowed_callers": [
-                        "direct"
-                    ]
-                },
-                {
                     "name": "code_execution",
                     "allowed_callers": [
                         "direct"
