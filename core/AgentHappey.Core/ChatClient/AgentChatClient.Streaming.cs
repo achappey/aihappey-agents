@@ -140,19 +140,22 @@ public partial class AgentChatClient
                 yield break;
 
             case ResponseReasoningSummaryTextDelta reasoningSummaryDelta when !string.IsNullOrWhiteSpace(reasoningSummaryDelta.Delta):
-                state.MarkReasoningDelta(reasoningSummaryDelta.ItemId, reasoningSummaryDelta.ContentIndex);
+                var reasoningSummaryDeltaId = reasoningSummaryDelta.ItemId + reasoningSummaryDelta.SummaryIndex.ToString();
+                state.MarkReasoningDelta(reasoningSummaryDeltaId, reasoningSummaryDelta.ContentIndex);
                 yield return CreateStreamingUpdate(
                     ChatRole.Assistant,
                     [new TextReasoningContent(reasoningSummaryDelta.Delta)],
-                    reasoningSummaryDelta.ItemId);
+                    reasoningSummaryDeltaId);
                 yield break;
 
             case ResponseReasoningSummaryTextDone reasoningSummaryDone when !state.HasReasoningDelta(reasoningSummaryDone.ItemId, reasoningSummaryDone.ContentIndex)
                                                                         && !string.IsNullOrWhiteSpace(reasoningSummaryDone.Text):
+                var reasoningSummaryDoneId = reasoningSummaryDone.ItemId + reasoningSummaryDone.SummaryIndex.ToString();
+
                 yield return CreateStreamingUpdate(
                     ChatRole.Assistant,
                     [new TextReasoningContent(reasoningSummaryDone.Text)],
-                    reasoningSummaryDone.ItemId);
+                    reasoningSummaryDoneId);
                 yield break;
 
             case ResponseOutputItemAdded added:
