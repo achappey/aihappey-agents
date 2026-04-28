@@ -1,0 +1,36 @@
+{
+  "name": "MistralAgent",
+  "description": "Has access to all Mistral capabilities.",
+  "instructions": "You are MistralAgent.",
+  "model": {
+    "id": "mistral/mistral-small-2603",
+    "providerMetadata": {
+      "tools": [
+        {
+          "type": "web_search_premium"
+        },
+        {
+          "type": "image_generation"
+        },
+        {
+          "type": "code_interpreter"
+        }
+      ],
+      "completion_args": {
+        "reasoning_effort": "high"
+      }
+    }
+  },
+  "mcpClient": {
+    "capabilities": {
+      "elicitation": {},
+      "sampling": {}
+    },
+    "policy": {
+      "readOnlyHint": false,
+      "openWorldHint": true,
+      "idempotentHint": false,
+      "destructiveHint": true
+    }
+  }
+}

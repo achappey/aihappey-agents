@@ -77,7 +77,7 @@ public class RuntimeTools
         };
     }
 
-    [Description("Ask a custom AI agent by supplying name, descirption, instructions, MCP servers, policy and capabilities.")]
+    [Description("Ask a custom AI agent by supplying name, description, instructions, MCP servers, policy and capabilities.")]
     [McpServerTool(Title = "Ask a custom AI agent",
        Idempotent = false,
        ReadOnly = false,

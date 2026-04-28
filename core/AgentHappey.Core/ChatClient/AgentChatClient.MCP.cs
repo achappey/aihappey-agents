@@ -38,9 +38,9 @@ public partial class AgentChatClient
 
     private readonly ConcurrentDictionary<string, string> McpServerInstructions = [];
 
-    private readonly ConcurrentDictionary<string, IEnumerable<McpClientResource>> McpServerResources = [];
+    private readonly ConcurrentDictionary<string, IEnumerable<object>> McpServerResources = [];
 
-    private readonly ConcurrentDictionary<string, IEnumerable<McpClientResourceTemplate>> McpServerResourceTemplates = [];
+    private readonly ConcurrentDictionary<string, IEnumerable<object>> McpServerResourceTemplates = [];
 
     private readonly ConcurrentDictionary<string, ElicitationPair> ElicitPairs = new();
 
@@ -95,7 +95,6 @@ public partial class AgentChatClient
     public async Task<List<AITool>> ConnectMcp(CancellationToken cancellationToken)
     {
         List<AITool> tools = [];
-        var composedInstructions = GetComposedInstructions();
 
         McpClientOptions options = new()
         {
@@ -172,9 +171,9 @@ public partial class AgentChatClient
                                         text = JsonSerializer.Serialize(new {
                                             agent.Name,
                                             agent.Description,
-                                            Instructions = composedInstructions
-                                        }, JsonSerializerOptions.Web)
-                                    }
+                                            Instructions = GetComposedInstructions()
+                                         }, JsonSerializerOptions.Web)
+                                     }
                                    };
 
                                // 2) FULL MESSAGE ARRAY
@@ -350,10 +349,10 @@ public partial class AgentChatClient
             if (mcpClient.ServerCapabilities.Resources != null)
             {
                 var result = await mcpClient.ListResourcesAsync(cancellationToken: cancellationToken);
-                McpServerResources.AddOrUpdate(url, result, (_, __) => result);
+                McpServerResources.AddOrUpdate(url, [.. result.Cast<object>()], (_, __) => [.. result.Cast<object>()]);
 
                 var resultTemplates = await mcpClient.ListResourceTemplatesAsync(cancellationToken: cancellationToken);
-                McpServerResourceTemplates.AddOrUpdate(url, resultTemplates, (_, __) => resultTemplates);
+                McpServerResourceTemplates.AddOrUpdate(url, [.. resultTemplates.Cast<object>()], (_, __) => [.. resultTemplates.Cast<object>()]);
             }
         }
 

@@ -10,6 +10,9 @@ using AgentHappey.Core.ChatClient;
 using AIHappey.Vercel.Models;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using ModelContextProtocol.Protocol;
+using System.Collections.Concurrent;
+using System.Reflection;
 
 namespace AgentHappey.Tests;
 
@@ -29,7 +32,7 @@ public sealed class AgentChatClientFixtureTests
             [new UIMessage
             {
                 Id = "assistant-1",
-                Role = Role.assistant,
+                Role = AIHappey.Vercel.Models.Role.assistant,
                 Parts =
                 [
                     new ReasoningUIPart
@@ -71,7 +74,7 @@ public sealed class AgentChatClientFixtureTests
             [new UIMessage
             {
                 Id = "assistant-1",
-                Role = Role.assistant,
+                Role = AIHappey.Vercel.Models.Role.assistant,
                 Parts =
                 [
                     new ToolInvocationPart
@@ -107,6 +110,76 @@ public sealed class AgentChatClientFixtureTests
         AssertFunctionItem(functionItems[1], "function_call_output", "call-1");
         AssertFunctionItem(functionItems[2], "function_call", "call-2");
         AssertFunctionItem(functionItems[3], "function_call_output", "call-2");
+    }
+
+    [Fact]
+    public void Composed_instructions_include_chat_shaped_mcp_server_blocks()
+    {
+        using var httpClient = CreateHttpClient(_ => CreateJsonResponse(LoadFixture(StructuredFixturePath)));
+        using var client = CreateClient(httpClient, CreateAgent());
+
+        SeedMcpMetadata(client);
+
+        var instructions = client.GetComposedInstructions();
+        var block = ExtractSingleMcpInstructionBlock(instructions);
+
+        Assert.Equal("Return concise answers.", instructions.Split("\n\n", StringSplitOptions.RemoveEmptyEntries)[0]);
+
+        var server = block.GetProperty("modelContextProtocolServer");
+        Assert.Equal("example-mcp", server.GetProperty("name").GetString());
+        Assert.Equal("1.0.0", server.GetProperty("version").GetString());
+        Assert.Equal(TestMcpUrl, server.GetProperty("mcpServerUrl").GetString());
+        Assert.Equal("Example MCP", server.GetProperty("title").GetString());
+        Assert.Equal("https://mcp.example.com", server.GetProperty("websiteUrl").GetString());
+
+        Assert.Equal("Use the MCP resources before answering.", block.GetProperty("instructions").GetString());
+
+        var resources = block.GetProperty("resources").EnumerateArray().ToList();
+        Assert.Single(resources);
+        Assert.Equal("Policy", resources[0].GetProperty("name").GetString());
+        Assert.Equal("file://policy.md", resources[0].GetProperty("uri").GetString());
+        Assert.Equal("text/markdown", resources[0].GetProperty("mimeType").GetString());
+        Assert.Equal(42, resources[0].GetProperty("size").GetInt64());
+        Assert.Equal("high", resources[0].GetProperty("annotations").GetProperty("priority").GetString());
+        Assert.Equal("2026-04-28T00:00:00Z", resources[0].GetProperty("annotations").GetProperty("lastModified").GetString());
+
+        var templates = block.GetProperty("resourceTemplates").EnumerateArray().ToList();
+        Assert.Single(templates);
+        Assert.Equal("Ticket", templates[0].GetProperty("name").GetString());
+        Assert.Equal("ticket://{id}", templates[0].GetProperty("uriTemplate").GetString());
+        Assert.Equal("application/json", templates[0].GetProperty("mimeType").GetString());
+        Assert.Equal("high", templates[0].GetProperty("annotations").GetProperty("priority").GetString());
+    }
+
+    [Fact]
+    public async Task Composed_mcp_instructions_are_sent_in_responses_request_instructions_field()
+    {
+        var fixture = LoadFixture(StructuredFixturePath);
+        string requestBody = string.Empty;
+
+        using var httpClient = CreateHttpClient(request =>
+        {
+            requestBody = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+            return CreateJsonResponse(fixture);
+        });
+
+        using var client = CreateClient(httpClient, CreateAgent(modelId: "openai/gpt-fixture"));
+        SeedMcpMetadata(client);
+
+        await client.GetResponseAsync(
+            CreateUserMessages("Use MCP"),
+            new ChatOptions { Instructions = client.GetComposedInstructions() });
+
+        using var document = JsonDocument.Parse(requestBody);
+        var instructions = document.RootElement.GetProperty("instructions").GetString();
+
+        Assert.False(string.IsNullOrWhiteSpace(instructions));
+
+        var block = ExtractSingleMcpInstructionBlock(instructions!);
+        Assert.Equal(TestMcpUrl, block.GetProperty("modelContextProtocolServer").GetProperty("mcpServerUrl").GetString());
+        Assert.Equal("Use the MCP resources before answering.", block.GetProperty("instructions").GetString());
+        Assert.Single(block.GetProperty("resources").EnumerateArray());
+        Assert.Single(block.GetProperty("resourceTemplates").EnumerateArray());
     }
 
     [Fact]
@@ -315,7 +388,7 @@ public sealed class AgentChatClientFixtureTests
             [new UIMessage
             {
                 Id = "assistant-1",
-                Role = Role.assistant,
+                Role = AIHappey.Vercel.Models.Role.assistant,
                 Parts =
                 [
                     new ReasoningStartUIPart { Id = "reasoning-1" },
@@ -406,6 +479,84 @@ public sealed class AgentChatClientFixtureTests
         Assert.Equal(expectedCallId, item.GetProperty("call_id").GetString());
     }
 
+    private const string TestMcpUrl = "https://mcp.example.com/server";
+
+    private static void SeedMcpMetadata(AgentChatClient client)
+    {
+        GetPrivateField<ConcurrentDictionary<string, Implementation>>(client, "McpServerImplementations")[TestMcpUrl] = new Implementation
+        {
+            Name = "example-mcp",
+            Version = "1.0.0",
+            Title = "Example MCP",
+            WebsiteUrl = "https://mcp.example.com"
+        };
+
+        GetPrivateField<ConcurrentDictionary<string, string>>(client, "McpServerInstructions")[TestMcpUrl] = "Use the MCP resources before answering.";
+
+        GetPrivateField<ConcurrentDictionary<string, IEnumerable<object>>>(client, "McpServerResources")[TestMcpUrl] =
+        [
+            new TestMcpResource
+            {
+                Name = "Policy",
+                Uri = "file://policy.md",
+                Description = "Policy reference",
+                MimeType = "text/markdown",
+                Size = 42,
+                Annotations = new TestMcpAnnotations
+                {
+                    Audience = ["assistant"],
+                    Priority = "high",
+                    LastModified = "2026-04-28T00:00:00Z"
+                }
+            },
+            new TestMcpResource
+            {
+                Name = "UserOnly",
+                Uri = "file://user.txt",
+                Description = "User visible resource",
+                MimeType = "text/plain",
+                Annotations = new TestMcpAnnotations
+                {
+                    Audience = ["user"]
+                }
+            }
+        ];
+
+        GetPrivateField<ConcurrentDictionary<string, IEnumerable<object>>>(client, "McpServerResourceTemplates")[TestMcpUrl] =
+        [
+            new TestMcpResourceTemplate
+            {
+                Name = "Ticket",
+                UriTemplate = "ticket://{id}",
+                Description = "Ticket lookup template",
+                MimeType = "application/json",
+                Annotations = new TestMcpAnnotations
+                {
+                    Audience = ["assistant"],
+                    Priority = "high"
+                }
+            }
+        ];
+    }
+
+    private static T GetPrivateField<T>(object instance, string fieldName)
+    {
+        var field = instance.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new MissingFieldException(instance.GetType().FullName, fieldName);
+
+        return (T)field.GetValue(instance)!;
+    }
+
+    private static JsonElement ExtractSingleMcpInstructionBlock(string instructions)
+    {
+        var json = instructions
+            .Split(["\r\n\r\n", "\n\n"], StringSplitOptions.RemoveEmptyEntries)
+            .First(section => section.TrimStart().StartsWith("{\"modelContextProtocolServer\"", StringComparison.Ordinal));
+
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
+
     private static async Task<List<T>> CollectAsync<T>(IAsyncEnumerable<T> source, CancellationToken cancellationToken = default)
     {
         var items = new List<T>();
@@ -469,5 +620,31 @@ public sealed class AgentChatClientFixtureTests
             response.RequestMessage = request;
             return Task.FromResult(response);
         }
+    }
+
+    private sealed class TestMcpAnnotations
+    {
+        public string[]? Audience { get; init; }
+        public string? Priority { get; init; }
+        public string? LastModified { get; init; }
+    }
+
+    private sealed class TestMcpResource
+    {
+        public string Name { get; init; } = string.Empty;
+        public string Uri { get; init; } = string.Empty;
+        public string Description { get; init; } = string.Empty;
+        public string MimeType { get; init; } = string.Empty;
+        public long? Size { get; init; }
+        public TestMcpAnnotations? Annotations { get; init; }
+    }
+
+    private sealed class TestMcpResourceTemplate
+    {
+        public string Name { get; init; } = string.Empty;
+        public string UriTemplate { get; init; } = string.Empty;
+        public string Description { get; init; } = string.Empty;
+        public string MimeType { get; init; } = string.Empty;
+        public TestMcpAnnotations? Annotations { get; init; }
     }
 }

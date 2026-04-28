@@ -12,7 +12,12 @@ public partial class AgentChatClient
 {
     private IReadOnlyList<LoadedAgentSkill>? loadedSkills;
 
-    public string GetComposedInstructions() => agent.ComposeInstructions(GetEnabledSkills());
+    public string GetComposedInstructions() => agent.ComposeInstructions(
+        skills: GetEnabledSkills(),
+        mcpImplementations: McpServerImplementations,
+        mcpInstructions: McpServerInstructions,
+        mcpResources: McpServerResources,
+        mcpResourceTemplates: McpServerResourceTemplates);
 
     private IReadOnlyList<LoadedAgentSkill> GetEnabledSkills()
         => loadedSkills ??= AgentSkillCatalog.Load(agent.Skills);
