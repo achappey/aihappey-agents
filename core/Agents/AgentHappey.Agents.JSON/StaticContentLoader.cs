@@ -35,6 +35,7 @@ public static class StaticContentLoader
             {
                 Id = agentObj.Name,
                 OwnedBy = "agenthappey",
+                Agent = agentObj,
                 Description = agentObj.Description,
                 Created = File.GetLastWriteTimeUtc(file).ToUnixTimeSecondsSafe()
             };

@@ -36,6 +36,11 @@ public class Agent
     [JsonPropertyName("skills")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IEnumerable<AISkill>? Skills { get; set; }
+
+    [JsonPropertyName("icons")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IEnumerable<Icon>? Icons { get; set; }
+
 }
 
 public class OutputSchema

@@ -27,6 +27,10 @@ public class Model
     [JsonPropertyName("type")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Type { get; set; }
+
+    [JsonPropertyName("agent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Agent? Agent { get; set; }
 }
 
 public class ModelListResponse
