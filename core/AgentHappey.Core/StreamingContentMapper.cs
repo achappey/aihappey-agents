@@ -753,6 +753,13 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                     null => default,
                     _ => JsonSerializer.SerializeToElement(output, JsonWeb)
                 };
+
+                if (payload.ValueKind == JsonValueKind.Object
+                    && payload.TryGetProperty("structuredContent", out var wrappedStructuredContent)
+                    && wrappedStructuredContent.ValueKind == JsonValueKind.Object)
+                {
+                    payload = wrappedStructuredContent;
+                }
             }
             catch
             {
