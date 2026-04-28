@@ -1,6 +1,6 @@
 {
     "name": "AnthropicAgent",
-    "description": "Has access to all Anthropic capabilities.",
+    "description": "Has access to all Anthropic capabilities",
     "instructions": "You are Anthropic Agent.",
     "model": {
         "id": "anthropic/claude-haiku-4-5-20251001",

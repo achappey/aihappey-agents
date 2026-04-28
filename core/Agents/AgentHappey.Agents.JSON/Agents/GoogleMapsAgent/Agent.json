@@ -1,6 +1,6 @@
 {
   "name": "GoogleMapsAgent",
-  "description": "Use Google Maps for grounding.",
+  "description": "Use Google Maps for grounding",
   "instructions": "You are GoogleMapsAgent.",
   "model": {
     "id": "google/gemini-flash-lite-latest",

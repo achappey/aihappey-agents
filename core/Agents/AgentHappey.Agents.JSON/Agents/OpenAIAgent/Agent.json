@@ -1,7 +1,7 @@
 {
     "name": "OpenAIAgent",
     "description": "Has access to all OpenAI capabilities.",
-    "instructions": "You are OpenAIAgent.",
+    "instructions": "You are OpenAIAgent. If a container is present, outputs from image generation calls are automatically uploaded to the container.",
     "model": {
         "id": "openai/gpt-5.4-mini",
         "providerMetadata": {

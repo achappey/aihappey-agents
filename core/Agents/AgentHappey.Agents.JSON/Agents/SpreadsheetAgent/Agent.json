@@ -1,0 +1,44 @@
+{
+  "name": "SpreadsheetAgent",
+  "description": "OpenAI agent that works with spreadsheets",
+  "instructions": "You help users working with spreadsheets.",
+  "model": {
+    "id": "openai/gpt-5.4-mini",
+    "providerMetadata": {
+      "reasoning": {
+        "effort": "high",
+        "summary": "auto"
+      },
+      "tools": [
+        {
+          "type": "shell",
+          "environment": {
+            "type": "container_auto",
+            "skills": [
+              {
+                "type": "skill_reference",
+                "skill_id": "openai-spreadsheets"
+              }
+            ]
+          }
+        }
+      ],
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "parallel_tool_calls": true
+    }
+  },
+  "mcpClient": {
+    "capabilities": {
+      "elicitation": {},
+      "sampling": {}
+    },
+    "policy": {
+      "readOnlyHint": false,
+      "openWorldHint": true,
+      "idempotentHint": false,
+      "destructiveHint": true
+    }
+  }
+}
