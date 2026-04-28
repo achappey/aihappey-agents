@@ -1,0 +1,40 @@
+{
+  "name": "GoogleAgent",
+  "description": "GoogleAgent",
+  "instructions": "GoogleAgent",
+  "model": {
+    "id": "google/gemini-flash-lite-latest",
+    "providerMetadata": {
+      "response_modalities": [
+        "text"
+      ],
+      "generation_config": {
+        "thinking_level": "high",
+        "thinking_summaries": "auto"
+      },
+      "tools": [
+        {
+          "type": "url_context"
+        },
+        {
+          "type": "google_search",
+          "search_types": [
+            "web_search"
+          ]
+        }
+      ]
+    }
+  },
+  "mcpClient": {
+    "capabilities": {
+      "elicitation": {},
+      "sampling": {}
+    },
+    "policy": {
+      "readOnlyHint": true,
+      "openWorldHint": true,
+      "idempotentHint": false,
+      "destructiveHint": false
+    }
+  }
+}
