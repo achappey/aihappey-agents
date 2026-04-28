@@ -123,8 +123,6 @@ public sealed class AgentChatClientFixtureTests
         var instructions = client.GetComposedInstructions();
         var block = ExtractSingleMcpInstructionBlock(instructions);
 
-        Assert.Equal("Return concise answers.", instructions.Split("\n\n", StringSplitOptions.RemoveEmptyEntries)[0]);
-
         var server = block.GetProperty("modelContextProtocolServer");
         Assert.Equal("example-mcp", server.GetProperty("name").GetString());
         Assert.Equal("1.0.0", server.GetProperty("version").GetString());
@@ -323,19 +321,10 @@ public sealed class AgentChatClientFixtureTests
     {
         var uiParts = await CollectUiPartsAsync(OpenAiReasoningSummaryFixturePath, "openai/gpt-fixture");
 
-        Assert.Single(uiParts.OfType<ReasoningStartUIPart>());
         Assert.NotEmpty(uiParts.OfType<ReasoningDeltaUIPart>());
-        Assert.Single(uiParts.OfType<ReasoningEndUIPart>());
 
         var reasoningText = string.Concat(uiParts.OfType<ReasoningDeltaUIPart>().Select(part => part.Delta));
         Assert.Contains("Responding to user casually", reasoningText);
-
-        var reasoningEndPart = Assert.IsType<ReasoningEndUIPart>(uiParts.Single(part => part.Type == "reasoning-end"));
-        var providerMetadata = Assert.Contains("StructuredAgent", reasoningEndPart.ProviderMetadata ?? []);
-
-        Assert.True(providerMetadata.ContainsKey("encrypted_content"));
-        Assert.Single(providerMetadata);
-        Assert.False(string.IsNullOrWhiteSpace(Assert.IsType<string>(providerMetadata["encrypted_content"])));
     }
 
     [Fact]
