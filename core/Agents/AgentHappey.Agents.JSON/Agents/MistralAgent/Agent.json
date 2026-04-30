@@ -1,6 +1,6 @@
 {
   "name": "MistralAgent",
-  "description": "Has access to all Mistral capabilities",
+  "description": "Has access to all Mistral capabilities.",
   "instructions": "You are MistralAgent.",
   "model": {
     "id": "mistral/mistral-small-2603",

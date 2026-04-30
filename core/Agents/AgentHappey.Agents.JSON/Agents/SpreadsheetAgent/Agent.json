@@ -1,6 +1,6 @@
 {
   "name": "SpreadsheetAgent",
-  "description": "OpenAI agent that works with spreadsheets",
+  "description": "OpenAI agent that works with spreadsheets.",
   "instructions": "You help users working with spreadsheets.",
   "model": {
     "id": "openai/gpt-5.4-mini",

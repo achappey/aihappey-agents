@@ -1,6 +1,6 @@
 {
     "name": "WebSearchAgent",
-    "description": "Performs web searches",
+    "description": "Performs web searches.",
     "instructions": "You are WebSearch Agent.",
     "model": {
         "id": "openai/gpt-5.4-mini",

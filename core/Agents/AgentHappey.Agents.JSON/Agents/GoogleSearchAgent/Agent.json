@@ -1,6 +1,6 @@
 {
   "name": "GoogleSearchAgent",
-  "description": "Use Google Search for grounding",
+  "description": "Use Google Search for grounding.",
   "instructions": "You are GoogleSearchAgent.",
   "model": {
     "id": "google/gemini-flash-lite-latest",
