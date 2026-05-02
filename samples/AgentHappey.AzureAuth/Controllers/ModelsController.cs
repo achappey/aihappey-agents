@@ -13,6 +13,7 @@ public class ModelsController(IModelCatalog modelCatalog) : ControllerBase
     public async Task<ActionResult<ModelListResponse>> Get(CancellationToken cancellationToken)
     {
         var response = await modelCatalog.ListAsync(cancellationToken);
+
         return Ok(response);
     }
 }

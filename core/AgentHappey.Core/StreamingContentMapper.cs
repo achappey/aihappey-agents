@@ -38,6 +38,34 @@ public static class StreamWriterExtensions
             await response.Body.FlushAsync(ct);
         }
     }
+
+    public static Task WriteErrorPartAsync(
+        this HttpResponse response,
+        string? error,
+        CancellationToken ct = default)
+        => response.WritePartAsync(new ErrorUIPart
+        {
+            ErrorText = string.IsNullOrWhiteSpace(error) ? "Something went wrong" : error
+        }, ct);
+
+    public static Task WriteAbortPartAsync(
+        this HttpResponse response,
+        string? reason,
+        CancellationToken ct = default)
+        => response.WritePartAsync(new AbortUIPart
+        {
+            Reason = string.IsNullOrWhiteSpace(reason) ? "The operation was canceled." : reason
+        }, ct);
+
+    public static async Task WritePartAsync(
+        this HttpResponse response,
+        UIMessagePart part,
+        CancellationToken ct = default)
+    {
+        string json = JsonSerializer.Serialize(part, JsonSerializerOptions.Web);
+        await response.WriteAsync($"data: {json}\n\n", ct);
+        await response.Body.FlushAsync(ct);
+    }
 }
 
 public sealed class StreamingContentMapper : IStreamingContentMapper

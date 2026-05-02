@@ -252,6 +252,63 @@ public sealed class AgentChatClientFixtureTests
     }
 
     [Fact]
+    public async Task Streaming_downstream_http_error_roundtrips_to_error_ui_part()
+    {
+        const string providerError = "{\"error\":{\"message\":\"Provider backend rejected the request\",\"code\":\"bad_request\",\"param\":\"input\"}}";
+
+        using var httpClient = CreateHttpClient(_ => CreateJsonResponse(providerError, HttpStatusCode.BadRequest));
+        using var client = CreateClient(httpClient, CreateAgent());
+
+        var agent = new ChatClientAgent(
+            client,
+            instructions: "Fixture test instructions",
+            name: "FixtureAgent",
+            description: "Fixture test agent");
+
+        var mapper = new StreamingContentMapper();
+        var updates = agent.RunStreamingAsync(CreateUserMessages("Say hello"));
+        var uiParts = await CollectAsync(mapper.MapAsync(updates));
+
+        var errorPart = Assert.IsType<ErrorUIPart>(Assert.Single(uiParts.OfType<ErrorUIPart>()));
+
+        Assert.Contains("Provider backend rejected the request", errorPart.ErrorText);
+    }
+
+    [Fact]
+    public async Task Streaming_writer_error_helper_writes_vercel_error_part()
+    {
+        var response = new DefaultHttpContext().Response;
+        response.Body = new MemoryStream();
+
+        await response.WriteErrorPartAsync("Original provider error");
+
+        response.Body.Position = 0;
+        using var reader = new StreamReader(response.Body, Encoding.UTF8);
+        var body = await reader.ReadToEndAsync();
+
+        Assert.Contains("data:", body);
+        Assert.Contains("\"type\":\"error\"", body);
+        Assert.Contains("Original provider error", body);
+    }
+
+    [Fact]
+    public async Task Streaming_writer_abort_helper_writes_vercel_abort_part()
+    {
+        var response = new DefaultHttpContext().Response;
+        response.Body = new MemoryStream();
+
+        await response.WriteAbortPartAsync("Operation canceled");
+
+        response.Body.Position = 0;
+        using var reader = new StreamReader(response.Body, Encoding.UTF8);
+        var body = await reader.ReadToEndAsync();
+
+        Assert.Contains("data:", body);
+        Assert.Contains("\"type\":\"abort\"", body);
+        Assert.Contains("Operation canceled", body);
+    }
+
+    [Fact]
     public async Task Non_streaming_structured_response_roundtrips_to_data_ui_part()
     {
         var fixture = LoadFixture(StructuredFixturePath);
@@ -448,9 +505,9 @@ public sealed class AgentChatClientFixtureTests
         return response;
     }
 
-    private static HttpResponseMessage CreateJsonResponse(string body)
+    private static HttpResponseMessage CreateJsonResponse(string body, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
-        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        var response = new HttpResponseMessage(statusCode)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json")
         };
