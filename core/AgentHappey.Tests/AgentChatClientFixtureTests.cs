@@ -13,6 +13,7 @@ using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
 using System.Collections.Concurrent;
 using System.Reflection;
+using Microsoft.AspNetCore.Http;
 
 namespace AgentHappey.Tests;
 

@@ -107,12 +107,7 @@ public partial class AgentChatClient
             {
                 foreach (var result in message.Contents.OfType<FunctionResultContent>())
                 {
-                    items.Add(new ResponseFunctionCallOutputItem
-                    {
-                        CallId = result.CallId,
-                        Output = SerializeResponseValue(result.Result),
-                        Status = "completed"
-                    });
+                    items.Add(ToResponseFunctionCallOutputItem(result));
                 }
 
                 continue;
@@ -162,6 +157,13 @@ public partial class AgentChatClient
                     };
                     break;
 
+                case FunctionResultContent result:
+                    foreach (var item in FlushResponseInputMessage(message, contentParts))
+                        yield return item;
+
+                    yield return ToResponseFunctionCallOutputItem(result);
+                    break;
+
                 default:
                     var contentPart = ToResponseContentPart(message, content);
                     if (contentPart is not null)
@@ -173,6 +175,14 @@ public partial class AgentChatClient
         foreach (var item in FlushResponseInputMessage(message, contentParts))
             yield return item;
     }
+
+    private static ResponseFunctionCallOutputItem ToResponseFunctionCallOutputItem(FunctionResultContent result)
+        => new()
+        {
+            CallId = result.CallId,
+            Output = SerializeResponseValue(result.Result),
+            Status = "completed"
+        };
 
     private static IEnumerable<ResponseInputItem> FlushResponseInputMessage(
         ChatMessage message,
