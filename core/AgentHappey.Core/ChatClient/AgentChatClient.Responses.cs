@@ -319,7 +319,10 @@ public partial class AgentChatClient
                 : DateTimeOffset.UtcNow,
             Usage = ToUsageDetails(response.Usage),
             ResponseId = response.Id,
-            Messages = [new ChatMessage(ChatRole.Assistant, parts)]
+            Messages = [new ChatMessage(ChatRole.Assistant, parts)],
+            AdditionalProperties = response.Metadata is null
+                ? null
+                : new AdditionalPropertiesDictionary(response.Metadata)
         };
     }
 

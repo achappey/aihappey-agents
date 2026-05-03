@@ -365,6 +365,16 @@ public partial class AgentChatClient
             });
         }
 
+        if (response.Metadata is not null)
+        {
+            parts.Add(new DataContent(
+                Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response.Metadata, JsonSerializerOptions.Web)),
+                MediaTypeNames.Application.Json)
+            {
+                Name = "finish_metadata"
+            });
+        }
+
         if (agent.OutputSchema != null)
         {
             var structuredText = GetStructuredOutputText(response);

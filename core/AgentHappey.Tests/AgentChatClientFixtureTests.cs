@@ -20,6 +20,7 @@ namespace AgentHappey.Tests;
 public sealed class AgentChatClientFixtureTests
 {
     private const string StreamingFixturePath = "Fixtures/responses/raw/basic-response-stream.jsonl";
+    private const string StreamingGatewayFixturePath = "Fixtures/responses/raw/basic-response-stream-with-gateway.jsonl";
     private const string StructuredFixturePath = "Fixtures/responses/raw/structured-response-non-streaming.json";
     private const string GoogleEmptyReasoningFixturePath = "Fixtures/responses/raw/google-with-reasoning-responses-stream.jsonl";
     private const string OpenAiEmptyReasoningFixturePath = "Fixtures/responses/raw/openai-with-reasoning-responses-stream.jsonl";
@@ -250,6 +251,42 @@ public sealed class AgentChatClientFixtureTests
 
         Assert.Equal("Hello world", uiPart.Text);
         Assert.Contains(updates, update => update.FinishReason is not null);
+    }
+
+    [Fact]
+    public async Task Streaming_completed_response_gateway_metadata_roundtrips_to_finish_ui_part()
+    {
+        var uiParts = await CollectUiPartsAsync(StreamingGatewayFixturePath, "openai/gpt-fixture");
+
+        var finishPart = Assert.IsType<FinishUIPart>(Assert.Single(uiParts.OfType<FinishUIPart>()));
+        Assert.NotNull(finishPart.MessageMetadata?.Gateway);
+        Assert.Equal(0.12345m, finishPart.MessageMetadata.Gateway.Cost);
+
+        var gateway = finishPart.MessageMetadata.Gateway.ToDictionary();
+        Assert.Equal("EUR", Assert.IsType<JsonElement>(gateway["currency"]).GetString());
+        Assert.Equal("fixture", Assert.IsType<JsonElement>(gateway["provider"]).GetString());
+    }
+
+    [Fact]
+    public async Task Streaming_completed_response_gateway_metadata_roundtrips_to_final_update()
+    {
+        var fixture = LoadFixture(StreamingGatewayFixturePath);
+
+        using var httpClient = CreateHttpClient(_ => CreateStreamingResponse(fixture));
+        using var client = CreateClient(httpClient, CreateAgent(modelId: "openai/gpt-fixture"));
+
+        var updates = await CollectAsync(client.GetStreamingResponseAsync(CreateUserMessages("Say hello")));
+        var finalUpdate = Assert.Single(updates, update => update.FinishReason is not null);
+        var finishMetadataContent = Assert.Single(finalUpdate.Contents.OfType<DataContent>(), content => content.Name == "finish_metadata");
+
+        var metadata = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            Encoding.UTF8.GetString(finishMetadataContent.Data!.Value.Span),
+            JsonSerializerOptions.Web);
+
+        Assert.NotNull(metadata);
+        Assert.Equal(0.12345m, metadata!["gateway"].GetProperty("cost").GetDecimal());
+        Assert.Equal("EUR", metadata["gateway"].GetProperty("currency").GetString());
+        Assert.Equal("fixture", metadata["gateway"].GetProperty("provider").GetString());
     }
 
     [Fact]

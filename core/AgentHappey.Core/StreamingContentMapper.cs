@@ -1,5 +1,6 @@
 
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using System.Linq;
 using Microsoft.Agents.AI;
@@ -82,6 +83,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         string? authorName = null;
 
         List<UsageContent> usageContents = [];
+        var finishMetadata = new Dictionary<string, object?>(StringComparer.Ordinal);
 
         await foreach (var update in updates.WithCancellation(cancellationToken))
         {
@@ -92,13 +94,15 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             {
                 if (content is UsageContent usageContent)
                     usageContents.Add(usageContent);
+                else if (TryReadFinishMetadata(content, out var metadata))
+                    MergeFinishMetadata(finishMetadata, metadata);
                 else
                     foreach (var part in MapContent(content, update.MessageId, update.AuthorName, pendingCalls, text, reasoning, includeFileParts: true))
                         yield return part;
             }
         }
 
-        foreach (var part in CloseAndFinish(text, reasoning, usageContents, authorName))
+        foreach (var part in CloseAndFinish(text, reasoning, usageContents, authorName, finishMetadata))
             yield return part;
     }
 
@@ -473,7 +477,8 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         TextStreamState text,
         ReasoningStreamState reasoning,
         List<UsageContent> usages,
-        string? author)
+        string? author,
+        Dictionary<string, object?> finishMetadata)
     {
         foreach (var part in CloseAllReasoningStreams(reasoning))
             yield return part;
@@ -493,24 +498,84 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             usages.Sum(a => a.Details.OutputTokenCount ?? 0L),
             int.MaxValue);
 
+        var metadata = new Dictionary<string, object?>(finishMetadata, StringComparer.Ordinal)
+        {
+            ["timestamp"] = DateTime.UtcNow,
+            ["usage"] = new Usage()
+            {
+                TotalTokens = totalTokens,
+                CompletionTokens = outputTokens,
+                PromptTokens = inputTokens
+            },
+            ["author"] = author ?? string.Empty,
+            ["model"] = author ?? string.Empty
+        };
+
         yield return new FinishUIPart
         {
             FinishReason = "stop",
-            MessageMetadata = new Dictionary<string, object>
-                {
-                    { "timestamp", DateTime.UtcNow },
-                    {"usage", new Usage()
-                        {
-                            TotalTokens = totalTokens,
-                            CompletionTokens = outputTokens,
-                            PromptTokens = inputTokens
-                        }
-                    },
-                    { "author", author ?? string.Empty },
-                    { "model", author ?? string.Empty }
-                }
+            MessageMetadata = FinishMessageMetadata.FromDictionary(ToNonNullableMetadata(metadata))
         };
     }
+
+    private static bool TryReadFinishMetadata(AIContent content, out Dictionary<string, object?> metadata)
+    {
+        metadata = [];
+
+        if (content is not DataContent dataContent
+            || !string.Equals(dataContent.Name, "finish_metadata", StringComparison.Ordinal)
+            || !string.Equals(dataContent.MediaType, MediaTypeNames.Application.Json, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var json = ReadDataContentText(dataContent);
+        if (string.IsNullOrWhiteSpace(json))
+            return false;
+
+        try
+        {
+            metadata = JsonSerializer.Deserialize<Dictionary<string, object?>>(json, JsonWeb) ?? [];
+            return metadata.Count > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? ReadDataContentText(DataContent dataContent)
+    {
+        try
+        {
+            if (!dataContent.Data.IsEmpty)
+                return Encoding.UTF8.GetString(dataContent.Data.Span);
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    private static void MergeFinishMetadata(
+        Dictionary<string, object?> target,
+        Dictionary<string, object?> source)
+    {
+        foreach (var (key, value) in source)
+        {
+            if (value is not null)
+                target[key] = CloneMetadataValue(value);
+        }
+    }
+
+    private static object? CloneMetadataValue(object? value)
+        => value is JsonElement json ? json.Clone() : value;
+
+    private static Dictionary<string, object> ToNonNullableMetadata(Dictionary<string, object?> metadata)
+        => metadata
+            .Where(item => item.Value is not null)
+            .ToDictionary(item => item.Key, item => item.Value!, StringComparer.Ordinal);
     /*
         private static ToolCallPart CreateToolCallPart(McpServerToolCallContent fc)
         {
