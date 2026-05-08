@@ -24,7 +24,9 @@
                 }
             ],
             "include": [
-                "reasoning.encrypted_content"
+                "reasoning.encrypted_content",
+                "web_search_call.action.sources",
+                "code_interpreter_call.outputs"
             ],
             "reasoning": {},
             "parallel_tool_calls": true
