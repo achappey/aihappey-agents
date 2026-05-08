@@ -357,7 +357,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                         Id = state.ItemId,
                         Type = "reasoning",
                         Status = "in_progress",
-                        Content = []
+                        Content = null
                     }
                 });
             }
@@ -493,7 +493,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                         Type = "message",
                         Status = "in_progress",
                         Role = "assistant",
-                        Content = []
+                        Content = null
                     }
                 }
             ];
@@ -560,7 +560,9 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                     Type = "message",
                     Status = "completed",
                     Role = "assistant",
-                    Content = state.Parts.OrderBy(part => part.ContentIndex).Select(part => ToStreamContentPart(part.Part)).ToList()
+                    Content = JsonSerializer.SerializeToElement(state.Parts
+                        .OrderBy(part => part.ContentIndex)
+                        .Select(part => ToStreamContentPart(part.Part)).ToList())
                 }
             });
 
@@ -614,7 +616,10 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                         Status = "completed",
                         Content = string.IsNullOrWhiteSpace(text)
                             ? null
-                            : [new ResponseStreamContentPart { Type = "summary_text", Text = text }],
+                            : JsonSerializer.SerializeToElement(
+                                   new List<ResponseStreamContentPart>() {
+                                    new() { Type = "summary_text", Text = text }
+                                }),
                         AdditionalProperties = additionalProperties
                     }
                 }
