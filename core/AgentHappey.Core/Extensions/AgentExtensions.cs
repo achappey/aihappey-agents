@@ -50,8 +50,8 @@ public static class AgentExtensions
             }, JsonSerializerOptions.Web));
         }
 
-        if (!string.IsNullOrWhiteSpace(agent.Instructions))
-            sections.Add(agent.Instructions.Trim());
+        string agentInstructions = $"You are {agent.Name}. {agent.Description}\n{agent.Instructions}\n\nCurrent date/time: {DateTime.UtcNow:O}";
+        sections.Add(agentInstructions.Trim());
 
         return string.Join("\n\n", sections.Where(section => !string.IsNullOrWhiteSpace(section)));
     }
