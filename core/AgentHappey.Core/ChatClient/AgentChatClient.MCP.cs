@@ -213,7 +213,7 @@ public partial class AgentChatClient
                                    tools = Array.Empty<string>(),
                                    reasoning_effort = "low",
                                    //  model = string.Join("/", agent.Model.Id.Split("/").Skip(1)),
-                                   model = "openai/gpt-5.2",
+                                   model = "openai/gpt-5.4-mini",
                                    temperature = agent.Model.Options?.Temperature ?? 1
                                };
 
@@ -256,6 +256,21 @@ public partial class AgentChatClient
                         throw new Exception();
                     }
 
+                    // TEMPORARY due too MCP SDK bug MCP SDK/list converter    ❌ serializes via object, causes extra base64
+                    foreach (var msg in value.Messages)
+                    {
+                        for (var i = 0; i < msg.Content.Count; i++)
+                        {
+                            if (msg.Content[i] is ImageContentBlock img &&
+                                SamplingHelper.TryRepairImage(img, out var repaired))
+                            {
+                                msg.Content[i] = repaired;
+                            }
+                        }
+                    }
+
+
+
                     var modelResponse = await http.GetAsync("v1/models", cancellationToken);
                     var models = await modelResponse.Content.ReadFromJsonAsync<AIModelList>(cancellationToken: cancel);
 
@@ -283,7 +298,12 @@ public partial class AgentChatClient
                                 foreach (var header in headers.Where(z => !http.DefaultRequestHeaders.Contains(z.Key)))
                                     http.DefaultRequestHeaders.Add(header.Key, header.Value);
 
-                            var json = JsonSerializer.Serialize(value, JsonSerializerOptions.Web);
+                            // TEMPORARY due too MCP SDK bug MCP SDK/list converter    ❌ serializes via object, causes extra base64
+                            var options = new JsonSerializerOptions(JsonSerializerOptions.Web);
+                            options.Converters.Insert(0, new SamplingMessageWriteConverter());
+
+                            var json = JsonSerializer.Serialize(value, options);
+
                             using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
                             var response = await http.PostAsync("sampling", content, cancellationToken);
