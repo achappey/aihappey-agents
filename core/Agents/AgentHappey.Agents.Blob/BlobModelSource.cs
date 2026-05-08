@@ -9,11 +9,17 @@ namespace AgentHappey.Agents.Blob;
 
 public sealed class BlobModelSource(BlobAgentsConfig? config) : IModelSource
 {
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(10);
+
+    private readonly SemaphoreSlim cacheRefreshLock = new(1, 1);
+    private BlobAgentCache? cache;
+
     public async Task<IReadOnlyList<Model>> GetModelsAsync(CancellationToken cancellationToken = default)
     {
-        var models = new List<Model>();
+        var entries = await GetCachedAgentEntriesAsync(cancellationToken);
+        var models = new List<Model>(entries.Count);
 
-        await foreach (var entry in GetAgentEntriesAsync(cancellationToken))
+        foreach (var entry in entries)
         {
             models.Add(new Model
             {
@@ -33,9 +39,10 @@ public sealed class BlobModelSource(BlobAgentsConfig? config) : IModelSource
 
     public async Task<IReadOnlyList<Agent>> GetAgentsAsync(CancellationToken cancellationToken = default)
     {
-        var agents = new List<Agent>();
+        var entries = await GetCachedAgentEntriesAsync(cancellationToken);
+        var agents = new List<Agent>(entries.Count);
 
-        await foreach (var entry in GetAgentEntriesAsync(cancellationToken))
+        foreach (var entry in entries)
             agents.Add(entry.Agent);
 
         return agents
@@ -44,7 +51,46 @@ public sealed class BlobModelSource(BlobAgentsConfig? config) : IModelSource
             .AsReadOnly();
     }
 
-    private async IAsyncEnumerable<(Agent Agent, long? Created)> GetAgentEntriesAsync(
+    private async Task<IReadOnlyList<BlobAgentEntry>> GetCachedAgentEntriesAsync(CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var snapshot = cache;
+        if (IsCacheValid(snapshot, now))
+            return snapshot.Entries;
+
+        await cacheRefreshLock.WaitAsync(cancellationToken);
+        try
+        {
+            now = DateTimeOffset.UtcNow;
+            snapshot = cache;
+            if (IsCacheValid(snapshot, now))
+                return snapshot.Entries;
+
+            var refreshed = await LoadAgentEntriesAsync(cancellationToken);
+            cache = new BlobAgentCache(refreshed, DateTimeOffset.UtcNow.Add(CacheDuration));
+
+            return refreshed;
+        }
+        finally
+        {
+            cacheRefreshLock.Release();
+        }
+    }
+
+    private static bool IsCacheValid(BlobAgentCache? snapshot, DateTimeOffset now)
+        => snapshot != null && now < snapshot.ExpiresAt;
+
+    private async Task<IReadOnlyList<BlobAgentEntry>> LoadAgentEntriesAsync(CancellationToken cancellationToken)
+    {
+        var entries = new List<BlobAgentEntry>();
+
+        await foreach (var entry in GetAgentEntriesAsync(cancellationToken))
+            entries.Add(entry);
+
+        return entries.AsReadOnly();
+    }
+
+    private async IAsyncEnumerable<BlobAgentEntry> GetAgentEntriesAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(config?.ConnectionString) || string.IsNullOrWhiteSpace(config.ContainerName))
@@ -74,7 +120,7 @@ public sealed class BlobModelSource(BlobAgentsConfig? config) : IModelSource
             if (agent == null || string.IsNullOrWhiteSpace(agent.Name))
                 continue;
 
-            yield return (agent, blobItem.Properties.LastModified?.ToUnixTimeSeconds());
+            yield return new BlobAgentEntry(agent, blobItem.Properties.LastModified?.ToUnixTimeSeconds());
         }
     }
 
@@ -85,4 +131,8 @@ public sealed class BlobModelSource(BlobAgentsConfig? config) : IModelSource
 
         return prefix.Replace('\\', '/').Trim('/');
     }
+
+    private sealed record BlobAgentEntry(Agent Agent, long? Created);
+
+    private sealed record BlobAgentCache(IReadOnlyList<BlobAgentEntry> Entries, DateTimeOffset ExpiresAt);
 }
