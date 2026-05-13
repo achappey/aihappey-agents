@@ -148,6 +148,7 @@ public partial class AgentChatClient
                                {
                                    Request = value!
                                });
+
                                List<ChatMessage> history = [];
 
                                var historyBlocks =
@@ -213,7 +214,7 @@ public partial class AgentChatClient
                                    tools = Array.Empty<string>(),
                                    reasoning_effort = "low",
                                    //  model = string.Join("/", agent.Model.Id.Split("/").Skip(1)),
-                                   model = "openai/gpt-5.4-mini",
+                                   model = "openai/gpt-5.2",
                                    temperature = agent.Model.Options?.Temperature ?? 1
                                };
 
