@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Storage.Blobs" Version="12.29.0-beta.1" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.29.0" />
     <ProjectReference Include="..\..\AgentHappey.Common\AgentHappey.Common.csproj" PrivateAssets="All" />
     <ProjectReference Include="..\..\AgentHappey.Core\AgentHappey.Core.csproj" PrivateAssets="All" />
   </ItemGroup>  
