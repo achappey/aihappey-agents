@@ -8,11 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-      <PackageReference Include="Microsoft.Agents.AI" Version="1.9.0" />
-      <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.9.0" />
-      <PackageReference Include="Microsoft.Agents.AI.Workflows.Declarative" Version="1.9.0" />
-      <PackageReference Include="Microsoft.Extensions.AI" Version="10.6.0" />
-      <PackageReference Include="Microsoft.Graph.Beta" Version="6.1.0-preview" />
+      <PackageReference Include="Microsoft.Agents.AI" Version="1.10.0" />
+      <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.10.0" />
+      <PackageReference Include="Microsoft.Agents.AI.Workflows.Declarative" Version="1.10.0" />
+      <PackageReference Include="Microsoft.Extensions.AI" Version="10.7.0" />
+      <PackageReference Include="Microsoft.Graph.Beta" Version="6.2.0-preview" />
       <PackageReference Include="Microsoft.Identity.Web" Version="4.10.0" />
       <PackageReference Include="ModelContextProtocol" Version="1.4.0" />
       <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.4.0" />
