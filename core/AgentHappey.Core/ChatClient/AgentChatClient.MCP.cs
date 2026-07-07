@@ -250,76 +250,76 @@ public partial class AgentChatClient
                                return result;
                            };
 
-            if (agent.McpClient?.Capabilities?.Sampling != null)
-                options.Handlers.SamplingHandler = async (value, progress, cancel) =>
-                {
-                    if (value == null)
-                    {
-                        throw new Exception();
-                    }
+            /*   if (agent.McpClient?.Capabilities?.Sampling != null)
+                   options.Handlers.SamplingHandler = async (value, progress, cancel) =>
+                   {
+                       if (value == null)
+                       {
+                           throw new Exception();
+                       }
 
-                    // TEMPORARY due too MCP SDK bug MCP SDK/list converter    ❌ serializes via object, causes extra base64
-                    foreach (var msg in value.Messages)
-                    {
-                        for (var i = 0; i < msg.Content.Count; i++)
-                        {
-                            if (msg.Content[i] is ImageContentBlock img &&
-                                SamplingHelper.TryRepairImage(img, out var repaired))
-                            {
-                                msg.Content[i] = repaired;
-                            }
-                        }
-                    }
+                       // TEMPORARY due too MCP SDK bug MCP SDK/list converter    ❌ serializes via object, causes extra base64
+                       foreach (var msg in value.Messages)
+                       {
+                           for (var i = 0; i < msg.Content.Count; i++)
+                           {
+                               if (msg.Content[i] is ImageContentBlock img &&
+                                   SamplingHelper.TryRepairImage(img, out var repaired))
+                               {
+                                   msg.Content[i] = repaired;
+                               }
+                           }
+                       }
 
 
 
-                    var modelResponse = await http.GetAsync("v1/models", cancellationToken);
-                    var models = await modelResponse.Content.ReadFromJsonAsync<AIModelList>(cancellationToken: cancel);
+                       var modelResponse = await http.GetAsync("v1/models", cancellationToken);
+                       var models = await modelResponse.Content.ReadFromJsonAsync<AIModelList>(cancellationToken: cancel);
 
-                    var modelHint = (value.ModelPreferences?.Hints?.FirstOrDefault()) ?? throw new Exception();
-                    var preferedProviders = value.Metadata?.Select(a => a.Key);
+                       var modelHint = (value.ModelPreferences?.Hints?.FirstOrDefault()) ?? throw new Exception();
+                       var preferedProviders = value.Metadata?.Select(a => a.Key);
 
-                    var allModelProviders = models?.Data?.Where(l => l.Id.EndsWith(modelHint.Name!)
-                        && (l.Id.Split("/").Length == modelHint.Name?.Split("/").Length + 1)
-                        && preferedProviders?.Contains(l.Id.Split("/").First()) == true)
-                        .Where(a => !string.IsNullOrEmpty(a.Id))
-                        .Select(a => a.Id.Split("/").First()) ?? [];
+                       var allModelProviders = models?.Data?.Where(l => l.Id.EndsWith(modelHint.Name!)
+                           && (l.Id.Split("/").Length == modelHint.Name?.Split("/").Length + 1)
+                           && preferedProviders?.Contains(l.Id.Split("/").First()) == true)
+                           .Where(a => !string.IsNullOrEmpty(a.Id))
+                           .Select(a => a.Id.Split("/").First()) ?? [];
 
-                    foreach (var modelProvider in allModelProviders)
-                    {
-                        try
-                        {
-                            value.ModelPreferences ??= new();
-                            value.ModelPreferences.Hints = value?.ModelPreferences?.Hints?.Select(a =>
-                                new ModelHint()
-                                {
-                                    Name = $"{modelProvider}/{modelHint.Name}",
-                                }).ToList();
+                       foreach (var modelProvider in allModelProviders)
+                       {
+                           try
+                           {
+                               value.ModelPreferences ??= new();
+                               value.ModelPreferences.Hints = value?.ModelPreferences?.Hints?.Select(a =>
+                                   new ModelHint()
+                                   {
+                                       Name = $"{modelProvider}/{modelHint.Name}",
+                                   }).ToList();
 
-                            if (headers != null)
-                                foreach (var header in headers.Where(z => !http.DefaultRequestHeaders.Contains(z.Key)))
-                                    http.DefaultRequestHeaders.Add(header.Key, header.Value);
+                               if (headers != null)
+                                   foreach (var header in headers.Where(z => !http.DefaultRequestHeaders.Contains(z.Key)))
+                                       http.DefaultRequestHeaders.Add(header.Key, header.Value);
 
-                            // TEMPORARY due too MCP SDK bug MCP SDK/list converter    ❌ serializes via object, causes extra base64
-                            var options = new JsonSerializerOptions(JsonSerializerOptions.Web);
-                            options.Converters.Insert(0, new SamplingMessageWriteConverter());
+                               // TEMPORARY due too MCP SDK bug MCP SDK/list converter    ❌ serializes via object, causes extra base64
+                               var options = new JsonSerializerOptions(JsonSerializerOptions.Web);
+                               options.Converters.Insert(0, new SamplingMessageWriteConverter());
 
-                            var json = JsonSerializer.Serialize(value, options);
+                               var json = JsonSerializer.Serialize(value, options);
 
-                            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                               using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                            var response = await http.PostAsync("sampling", content, cancellationToken);
-                            response.EnsureSuccessStatusCode();
+                               var response = await http.PostAsync("sampling", content, cancellationToken);
+                               response.EnsureSuccessStatusCode();
 
-                            return await response.Content.ReadFromJsonAsync<CreateMessageResult>(cancellationToken)
-                                ?? throw new Exception("Something went wrong");
-                        }
-                        catch (Exception) { }
-                    }
+                               return await response.Content.ReadFromJsonAsync<CreateMessageResult>(cancellationToken)
+                                   ?? throw new Exception("Something went wrong");
+                           }
+                           catch (Exception) { }
+                       }
 
-                    throw new Exception("Sampling failed");
-                };
-
+                       throw new Exception("Sampling failed");
+                   };
+   */
             McpClient? mcpClient = null;
 
             try

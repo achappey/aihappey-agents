@@ -16,7 +16,7 @@ namespace AgentHappey.Core;
 
 // TEMPORARY workaround due too MCP SDK bug MCP SDK/list converter    ❌ serializes via object, causes extra base64
 // TODO remove
-public sealed class SamplingMessageWriteConverter : JsonConverter<SamplingMessage>
+/*public sealed class SamplingMessageWriteConverter : JsonConverter<SamplingMessage>
 {
     public override SamplingMessage? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         => throw new NotSupportedException();
@@ -78,4 +78,4 @@ public static class SamplingHelper
     }
 
 
-}
+}*/
