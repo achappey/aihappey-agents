@@ -77,8 +77,8 @@ public partial class AgentChatClient
                 ServerInfo = a.Value.ServerInfo,
                 ServerCapabilities = a.Value.ServerCapabilities,
                 ServerInstructions = a.Value.ServerInstructions,
-                SessionId = a.Value.SessionId
-            })
+                SessionId = a.Value.SessionId ?? Guid.NewGuid().ToString()
+            }).ToList()
         );
     }
 
@@ -108,6 +108,7 @@ public partial class AgentChatClient
         {
             var httpClient = httpClientFactory.CreateClient();
             var url = servers.Value.Url.ToLowerInvariant();
+            ApplyInferenceAuthorizationForSameEndpoint(http, httpClient, url);
 
             var transport = new HttpClientTransport(new()
             {
@@ -396,6 +397,35 @@ public partial class AgentChatClient
         }
 
         return [.. tools.DistinctBy(a => a.Name)];
+    }
+
+    private static void ApplyInferenceAuthorizationForSameEndpoint(HttpClient inferenceClient, HttpClient mcpClient, string mcpServerUrl)
+    {
+        if (mcpClient.DefaultRequestHeaders.Authorization != null)
+            return;
+
+        if (!IsSameEndpointAsInference(inferenceClient.BaseAddress, mcpServerUrl))
+            return;
+
+        var authorization = inferenceClient.DefaultRequestHeaders.Authorization;
+
+        if (authorization == null)
+            return;
+
+        mcpClient.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue(authorization.Scheme, authorization.Parameter);
+    }
+
+    private static bool IsSameEndpointAsInference(Uri? inferenceEndpoint, string mcpServerUrl)
+    {
+        if (inferenceEndpoint == null)
+            return false;
+
+        if (!Uri.TryCreate(mcpServerUrl, UriKind.Absolute, out var mcpEndpoint))
+            return false;
+
+        return string.Equals(inferenceEndpoint.Host, mcpEndpoint.Host, StringComparison.OrdinalIgnoreCase)
+            && inferenceEndpoint.Port == mcpEndpoint.Port;
     }
 
     [DisplayName("read_resource")]

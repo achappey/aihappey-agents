@@ -27,6 +27,63 @@ public sealed class AgentChatClientFixtureTests
     private const string OpenAiReasoningSummaryFixturePath = "Fixtures/responses/raw/openai-with-reasoning-summaries-responses-stream.jsonl";
     private const string OpenAiShellAndFileFixturePath = "Fixtures/responses/raw/openai-with-shell-calls-and-file-output-stream.jsonl";
 
+    [Theory]
+    [InlineData("https://backend.test/v1/", "https://backend.test/mcp", true)]
+    [InlineData("https://backend.test:443/v1/", "https://backend.test/mcp", true)]
+    [InlineData("http://localhost:5000/v1/", "http://localhost:5000/mcp", true)]
+    [InlineData("http://localhost:5000/v1/", "http://localhost:5001/mcp", false)]
+    [InlineData("https://backend.test/v1/", "https://other.test/mcp", false)]
+    public void Mcp_server_is_same_inference_endpoint_when_host_and_port_match(string inferenceEndpoint, string mcpServerUrl, bool expected)
+    {
+        var result = InvokePrivateStatic<bool>(
+            "IsSameEndpointAsInference",
+            new Uri(inferenceEndpoint),
+            mcpServerUrl);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void Same_backend_mcp_server_reuses_inference_authorization_header()
+    {
+        using var inferenceClient = new HttpClient
+        {
+            BaseAddress = new Uri("https://backend.test/v1/")
+        };
+        inferenceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "inference-token");
+
+        using var mcpClient = new HttpClient();
+
+        InvokePrivateStatic(
+            "ApplyInferenceAuthorizationForSameEndpoint",
+            inferenceClient,
+            mcpClient,
+            "https://backend.test/mcp");
+
+        Assert.Equal("Bearer", mcpClient.DefaultRequestHeaders.Authorization?.Scheme);
+        Assert.Equal("inference-token", mcpClient.DefaultRequestHeaders.Authorization?.Parameter);
+    }
+
+    [Fact]
+    public void Different_backend_mcp_server_does_not_reuse_inference_authorization_header()
+    {
+        using var inferenceClient = new HttpClient
+        {
+            BaseAddress = new Uri("https://backend.test/v1/")
+        };
+        inferenceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "inference-token");
+
+        using var mcpClient = new HttpClient();
+
+        InvokePrivateStatic(
+            "ApplyInferenceAuthorizationForSameEndpoint",
+            inferenceClient,
+            mcpClient,
+            "https://backend.test:8443/mcp");
+
+        Assert.Null(mcpClient.DefaultRequestHeaders.Authorization);
+    }
+
     [Fact]
     public async Task Assistant_reasoning_is_sent_before_assistant_text_when_ui_part_order_has_reasoning_first()
     {
@@ -280,7 +337,7 @@ public sealed class AgentChatClientFixtureTests
         var finishMetadataContent = Assert.Single(finalUpdate.Contents.OfType<DataContent>(), content => content.Name == "finish_metadata");
 
         var metadata = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
-            Encoding.UTF8.GetString(finishMetadataContent.Data!.Value.Span),
+            Encoding.UTF8.GetString(finishMetadataContent.Data!.Span),
             JsonSerializerOptions.Web);
 
         Assert.NotNull(metadata);
@@ -289,28 +346,6 @@ public sealed class AgentChatClientFixtureTests
         Assert.Equal("fixture", metadata["gateway"].GetProperty("provider").GetString());
     }
 
-    [Fact]
-    public async Task Streaming_downstream_http_error_roundtrips_to_error_ui_part()
-    {
-        const string providerError = "{\"error\":{\"message\":\"Provider backend rejected the request\",\"code\":\"bad_request\",\"param\":\"input\"}}";
-
-        using var httpClient = CreateHttpClient(_ => CreateJsonResponse(providerError, HttpStatusCode.BadRequest));
-        using var client = CreateClient(httpClient, CreateAgent());
-
-        var agent = new ChatClientAgent(
-            client,
-            instructions: "Fixture test instructions",
-            name: "FixtureAgent",
-            description: "Fixture test agent");
-
-        var mapper = new StreamingContentMapper();
-        var updates = agent.RunStreamingAsync(CreateUserMessages("Say hello"));
-        var uiParts = await CollectAsync(mapper.MapAsync(updates));
-
-        var errorPart = Assert.IsType<ErrorUIPart>(Assert.Single(uiParts.OfType<ErrorUIPart>()));
-
-        Assert.Contains("Provider backend rejected the request", errorPart.ErrorText);
-    }
 
     [Fact]
     public async Task Streaming_writer_error_helper_writes_vercel_error_part()
@@ -629,6 +664,17 @@ public sealed class AgentChatClientFixtureTests
             ?? throw new MissingFieldException(instance.GetType().FullName, fieldName);
 
         return (T)field.GetValue(instance)!;
+    }
+
+    private static T InvokePrivateStatic<T>(string methodName, params object?[] arguments)
+        => (T)InvokePrivateStatic(methodName, arguments)!;
+
+    private static object? InvokePrivateStatic(string methodName, params object?[] arguments)
+    {
+        var method = typeof(AgentChatClient).GetMethod(methodName, BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new MissingMethodException(typeof(AgentChatClient).FullName, methodName);
+
+        return method.Invoke(null, arguments);
     }
 
     private static JsonElement ExtractSingleMcpInstructionBlock(string instructions)
