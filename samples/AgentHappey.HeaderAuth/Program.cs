@@ -6,7 +6,9 @@ using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.MCP;
 using AgentHappey.Core.Responses;
 using AIHappey.Abstractions.Http;
+using AgentHappey.AsyncResponses;
 using AgentHappey.HeaderAuth;
+using AgentHappey.HeaderAuth.AsyncResponses;
 
 var builder = WebApplication.CreateBuilder(args);
 var basePath = Path.Combine(AppContext.BaseDirectory, "Agents");
@@ -42,10 +44,12 @@ builder.Services.AddSingleton<IModelSource>(_ => new JsonModelSource(basePath, a
 builder.Services.AddSingleton<IModelSource>(_ => new BlobModelSource(appConfig?.BlobAgents));
 builder.Services.AddHttpClient();
 builder.Services.AddMcpServers();
+builder.Services.AddAsyncAgentResponses<HeaderAuthAsyncResponsesProcessor>(builder.Configuration);
 
 var staticAgents = basePath.GetAgents(appConfig?.McpConfig?.McpBaseUrl!);
 builder.Services.AddSingleton(staticAgents.ToList().AsReadOnly());
 builder.Services.AddSingleton(appConfig?.AiConfig!);
+builder.Services.AddSingleton(appConfig?.McpConfig!);
 
 var app = builder.Build();
 

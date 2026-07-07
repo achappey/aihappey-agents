@@ -109,6 +109,7 @@ public partial class AgentChatClient
             var httpClient = httpClientFactory.CreateClient();
             var url = servers.Value.Url.ToLowerInvariant();
             ApplyInferenceAuthorizationForSameEndpoint(http, httpClient, url);
+            ApplyForwardedHeaders(httpClient);
 
             var transport = new HttpClientTransport(new()
             {
@@ -397,6 +398,15 @@ public partial class AgentChatClient
         }
 
         return [.. tools.DistinctBy(a => a.Name)];
+    }
+
+    private void ApplyForwardedHeaders(HttpClient client)
+    {
+        if (headers == null)
+            return;
+
+        foreach (var header in headers.Where(header => !client.DefaultRequestHeaders.Contains(header.Key)))
+            client.DefaultRequestHeaders.Add(header.Key, header.Value);
     }
 
     private static void ApplyInferenceAuthorizationForSameEndpoint(HttpClient inferenceClient, HttpClient mcpClient, string mcpServerUrl)

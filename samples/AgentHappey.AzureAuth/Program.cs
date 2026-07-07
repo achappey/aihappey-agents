@@ -1,6 +1,8 @@
 using AgentHappey.Agents.JSON;
 using AgentHappey.Agents.Blob;
 using AgentHappey.AzureAuth;
+using AgentHappey.AzureAuth.AsyncResponses;
+using AgentHappey.AsyncResponses;
 using AgentHappey.Common.Models;
 using AgentHappey.Core;
 using AgentHappey.Core.ChatRuntime;
@@ -53,6 +55,7 @@ builder.Services
 .AddMcpServers();
 
 builder.Services.AddControllers();
+builder.Services.AddAsyncAgentResponses<AzureAuthAsyncResponsesProcessor>(builder.Configuration);
 
 var staticAgents = basePath.GetAgents(appConfig?.McpConfig?.McpBaseUrl!);
 builder.Services.AddSingleton(staticAgents.ToList().AsReadOnly());

@@ -35,3 +35,12 @@ public class BlobAgentsConfig
 
     public string? Prefix { get; set; } = "Agents";
 }
+
+public class AsyncAgentsConfig
+{
+    public string? ConnectionString { get; set; }
+
+    public string? QueueName { get; set; } = "agents-async";
+
+    public string? ResponseContainerName { get; set; } = "agents-async-responses";
+}

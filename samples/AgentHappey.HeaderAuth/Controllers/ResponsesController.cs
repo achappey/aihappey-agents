@@ -7,6 +7,7 @@ using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.MCP;
 using AgentHappey.Core.Responses;
 using AIHappey.Responses.Streaming;
+using AgentHappey.AsyncResponses;
 
 namespace AgentHappey.HeaderAuth.Controllers;
 
@@ -16,6 +17,7 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
     IOptions<Config> options,
     [FromServices] IChatRuntimeOrchestrator orchestrator,
     [FromServices] IResponsesNativeMapper responsesMapper,
+    [FromServices] IAsyncResponsesService asyncResponses,
     IServiceProvider serviceProvider) : ControllerBase
 {
     private readonly string Endpoint = options.Value.AiConfig.AiEndpoint!;
@@ -34,6 +36,41 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
             && runtimeRequest.Models is not { Count: > 0 }
             && runtimeRequest.Agents is not { Count: > 0 })
             return BadRequest(new { error = "Provide 'model', 'models', or metadata.agents." });
+
+        if (requestDto.Background == true)
+        {
+            if (requestDto.Stream == true)
+                return BadRequest(new { error = "background responses are only supported for non-streaming requests" });
+
+            if (!asyncResponses.IsEnabled)
+                return StatusCode(503, new { error = "background responses are not configured" });
+
+            try
+            {
+                var queued = await asyncResponses.EnqueueAsync(
+                    requestDto,
+                    new AsyncResponsesRequestContext
+                    {
+                        Headers = GetForwardedHeaders(),
+                        CorrelationId = HttpContext.TraceIdentifier,
+                        AiEndpoint = Endpoint
+                    },
+                    cancellationToken);
+
+                return Ok(queued);
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, new
+                {
+                    error = new
+                    {
+                        message = e.Message,
+                        type = "server_error"
+                    }
+                });
+            }
+        }
 
         if (requestDto.Stream == true)
         {
@@ -107,6 +144,18 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
         }
     }
 
+    [HttpGet("{responseId}")]
+    public async Task<IActionResult> Get(string responseId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(responseId))
+            return BadRequest(new { error = "response_id is required" });
+
+        var response = await asyncResponses.GetAsync(responseId, cancellationToken);
+        return response is null
+            ? NotFound(new { error = new { message = "Response not found", type = "not_found" } })
+            : Ok(response);
+    }
+
     private static async Task WriteEventAsync(StreamWriter writer, ResponseStreamPart streamPart, CancellationToken cancellationToken)
     {
         await writer.WriteAsync($"data: {JsonSerializer.Serialize(streamPart, ResponseJson.Default)}\n\n");
@@ -136,6 +185,11 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
 
         return (context, runtimeRequest.Model ?? requestModel);
     }
+
+    private Dictionary<string, string?> GetForwardedHeaders()
+        => HttpContext.Request.Headers
+            .Where(header => header.Key.StartsWith("X-", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(header => header.Key, header => header.Value.FirstOrDefault(), StringComparer.OrdinalIgnoreCase);
 
     private async Task TryWriteResponsesStreamErrorAsync(string? message)
     {

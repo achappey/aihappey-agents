@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\core\AgentHappey.Common\AgentHappey.Common.csproj" />
+    <ProjectReference Include="..\..\core\AgentHappey.Async\AgentHappey.Async.csproj" />
     <ProjectReference Include="..\..\core\AgentHappey.Core\AgentHappey.Core.csproj" />
      <ProjectReference Include="..\..\core\Agents\AgentHappey.Agents.JSON\AgentHappey.Agents.JSON.csproj" />
      <ProjectReference Include="..\..\core\Agents\AgentHappey.Agents.Blob\AgentHappey.Agents.Blob.csproj" />

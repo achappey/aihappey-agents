@@ -9,6 +9,7 @@ using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.Responses;
 using Microsoft.Identity.Web;
 using AgentHappey.Core.MCP;
+using AgentHappey.AsyncResponses;
 
 namespace AgentHappey.AzureAuth.Controllers;
 
@@ -18,6 +19,7 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
     IOptions<Config> options,
     [FromServices] IChatRuntimeOrchestrator orchestrator,
     [FromServices] IResponsesNativeMapper responsesMapper,
+    [FromServices] IAsyncResponsesService asyncResponses,
     IServiceProvider serviceProvider,
     ITokenAcquisition tokenAcquisition) : ControllerBase
 {
@@ -40,6 +42,46 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
             && runtimeRequest.Models is not { Count: > 0 }
             && runtimeRequest.Agents is not { Count: > 0 })
             return BadRequest(new { error = "Provide 'model', 'models', or metadata.agents." });
+
+        if (requestDto.Background == true)
+        {
+            if (requestDto.Stream == true)
+                return BadRequest(new { error = "background responses are only supported for non-streaming requests" });
+
+            if (!asyncResponses.IsEnabled)
+                return StatusCode(503, new { error = "background responses are not configured" });
+
+            var accessToken = GetBearerToken();
+            if (string.IsNullOrWhiteSpace(accessToken))
+                return Unauthorized(new { error = "A bearer access token is required for background responses" });
+
+            try
+            {
+                var queued = await asyncResponses.EnqueueAsync(
+                    requestDto,
+                    new AsyncResponsesRequestContext
+                    {
+                        UserAccessToken = accessToken,
+                        CorrelationId = HttpContext.TraceIdentifier,
+                        AiEndpoint = Endpoint,
+                        AiScopes = AiScopes
+                    },
+                    cancellationToken);
+
+                return Ok(queued);
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, new
+                {
+                    error = new
+                    {
+                        message = e.Message,
+                        type = "server_error"
+                    }
+                });
+            }
+        }
 
         if (requestDto.Stream == true)
         {
@@ -113,6 +155,19 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
         }
     }
 
+    [HttpGet("{responseId}")]
+    [Authorize]
+    public async Task<IActionResult> Get(string responseId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(responseId))
+            return BadRequest(new { error = "response_id is required" });
+
+        var response = await asyncResponses.GetAsync(responseId, cancellationToken);
+        return response is null
+            ? NotFound(new { error = new { message = "Response not found", type = "not_found" } })
+            : Ok(response);
+    }
+
     private static async Task WriteEventAsync(StreamWriter writer, ResponseStreamPart streamPart, CancellationToken cancellationToken)
     {
         await writer.WriteAsync($"data: {JsonSerializer.Serialize(streamPart, ResponseJson.Default)}\n\n");
@@ -146,6 +201,18 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
             cancellationToken);
 
         return (context, runtimeRequest.Model ?? requestModel);
+    }
+
+    private string? GetBearerToken()
+    {
+        var authorization = HttpContext.Request.Headers.Authorization.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(authorization))
+            return null;
+
+        const string bearer = "Bearer ";
+        return authorization.StartsWith(bearer, StringComparison.OrdinalIgnoreCase)
+            ? authorization[bearer.Length..].Trim()
+            : null;
     }
 
     private async Task TryWriteResponsesStreamErrorAsync(string? message)
