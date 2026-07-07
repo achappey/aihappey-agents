@@ -10,11 +10,19 @@ public partial class AgentChatClient(
     IDictionary<string, string?> headers,
     Func<string, CancellationToken, Task<string?>>? getMcpToken = null) : IChatClient
 {
-    public async void EnsureHeaders()
+    private const string AgentNameHeader = "X-Agent-Name";
+
+    public void EnsureHeaders()
     {
         if (headers != null)
             foreach (var header in headers.Where(z => !http.DefaultRequestHeaders.Contains(z.Key)))
                 http.DefaultRequestHeaders.Add(header.Key, header.Value);
+
+        if (string.IsNullOrWhiteSpace(agent.Name))
+            return;
+
+        http.DefaultRequestHeaders.Remove(AgentNameHeader);
+        http.DefaultRequestHeaders.Add(AgentNameHeader, agent.Name);
     }
 
     public async Task<ChatResponse> GetResponseAsync(

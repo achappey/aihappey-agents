@@ -85,6 +85,58 @@ public sealed class AgentChatClientFixtureTests
     }
 
     [Fact]
+    public async Task Non_streaming_inference_request_sends_authoritative_agent_name_header()
+    {
+        var fixture = LoadFixture(StructuredFixturePath);
+        string? agentNameHeader = null;
+
+        using var httpClient = CreateHttpClient(request =>
+        {
+            agentNameHeader = request.Headers.TryGetValues("X-Agent-Name", out var values)
+                ? Assert.Single(values)
+                : null;
+
+            return CreateJsonResponse(fixture);
+        });
+
+        using var client = new AgentChatClient(
+            httpClient,
+            new StaticHttpClientFactory(httpClient),
+            CreateAgent(),
+            new Dictionary<string, string?>
+            {
+                ["X-Agent-Name"] = "ClientSuppliedAgent"
+            });
+
+        await client.GetResponseAsync(CreateUserMessages("Say hello"));
+
+        Assert.Equal("StructuredAgent", agentNameHeader);
+    }
+
+    [Fact]
+    public async Task Streaming_inference_request_sends_agent_name_header()
+    {
+        var fixture = LoadFixture(StreamingFixturePath);
+        string? agentNameHeader = null;
+
+        using var httpClient = CreateHttpClient(request =>
+        {
+            agentNameHeader = request.Headers.TryGetValues("X-Agent-Name", out var values)
+                ? Assert.Single(values)
+                : null;
+
+            return CreateStreamingResponse(fixture);
+        });
+
+        using var client = CreateClient(httpClient, CreateAgent());
+
+        var updates = await CollectAsync(client.GetStreamingResponseAsync(CreateUserMessages("Say hello")));
+
+        Assert.NotEmpty(updates);
+        Assert.Equal("StructuredAgent", agentNameHeader);
+    }
+
+    [Fact]
     public async Task Assistant_reasoning_is_sent_before_assistant_text_when_ui_part_order_has_reasoning_first()
     {
         var requestBody = await CaptureRequestBodyAsync(
