@@ -156,6 +156,17 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
             : Ok(response);
     }
 
+    [HttpDelete("{responseId}")]
+    public async Task<IActionResult> Delete(string responseId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(responseId))
+            return BadRequest(new { error = "response_id is required" });
+
+        return await asyncResponses.DeleteAsync(responseId, cancellationToken)
+            ? Ok(new { id = responseId, @object = "response", deleted = true })
+            : NotFound(new { error = new { message = "Response not found", type = "not_found" } });
+    }
+
     private static async Task WriteEventAsync(StreamWriter writer, ResponseStreamPart streamPart, CancellationToken cancellationToken)
     {
         await writer.WriteAsync($"data: {JsonSerializer.Serialize(streamPart, ResponseJson.Default)}\n\n");

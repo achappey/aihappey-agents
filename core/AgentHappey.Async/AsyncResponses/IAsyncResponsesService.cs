@@ -11,5 +11,7 @@ public interface IAsyncResponsesService
         AsyncResponsesRequestContext context,
         CancellationToken cancellationToken = default);
 
-    Task<ResponseResult?> GetAsync(string responseId, CancellationToken cancellationToken = default);
+    Task<ResponseResult?> GetAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null);
+
+    Task<bool> DeleteAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null);
 }

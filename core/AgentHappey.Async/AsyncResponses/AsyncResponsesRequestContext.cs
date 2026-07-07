@@ -4,6 +4,9 @@ namespace AgentHappey.AsyncResponses;
 
 public sealed class AsyncResponsesRequestContext
 {
+    [JsonPropertyName("user_id")]
+    public string? UserId { get; set; }
+
     [JsonPropertyName("user_access_token")]
     public string? UserAccessToken { get; set; }
 

@@ -52,14 +52,17 @@ public sealed class AzureAsyncResponsesService : IAsyncResponsesService
             throw new InvalidOperationException($"Background response queue message is too large ({messageSize} bytes). Reduce request size or externalize large file inputs.");
 
         await queue.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
-        await store.SaveAsync(response, cancellationToken);
+        await store.SaveAsync(response, cancellationToken, context.UserId);
         await queue.SendMessageAsync(json, cancellationToken);
 
         return response;
     }
 
-    public Task<ResponseResult?> GetAsync(string responseId, CancellationToken cancellationToken = default)
-        => store.GetAsync(responseId, cancellationToken);
+    public Task<ResponseResult?> GetAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
+        => store.GetAsync(responseId, cancellationToken, userId);
+
+    public Task<bool> DeleteAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
+        => store.DeleteAsync(responseId, cancellationToken, userId);
 
     public static ResponseResult CreateQueuedResponse(ResponseRequest request)
         => new()

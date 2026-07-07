@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using AIHappey.Responses;
 using AIHappey.Responses.Streaming;
 using Microsoft.Extensions.Options;
+using System.Security.Claims;
 using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.Responses;
@@ -55,12 +56,17 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
             if (string.IsNullOrWhiteSpace(accessToken))
                 return Unauthorized(new { error = "A bearer access token is required for background responses" });
 
+            var userId = GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+                return Unauthorized(new { error = "A stable user object id claim is required for background responses" });
+
             try
             {
                 var queued = await asyncResponses.EnqueueAsync(
                     requestDto,
                     new AsyncResponsesRequestContext
                     {
+                        UserId = userId,
                         UserAccessToken = accessToken,
                         CorrelationId = HttpContext.TraceIdentifier,
                         AiEndpoint = Endpoint,
@@ -162,10 +168,30 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
         if (string.IsNullOrWhiteSpace(responseId))
             return BadRequest(new { error = "response_id is required" });
 
-        var response = await asyncResponses.GetAsync(responseId, cancellationToken);
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized(new { error = "A stable user object id claim is required for background responses" });
+
+        var response = await asyncResponses.GetAsync(responseId, cancellationToken, userId);
         return response is null
             ? NotFound(new { error = new { message = "Response not found", type = "not_found" } })
             : Ok(response);
+    }
+
+    [HttpDelete("{responseId}")]
+    [Authorize]
+    public async Task<IActionResult> Delete(string responseId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(responseId))
+            return BadRequest(new { error = "response_id is required" });
+
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized(new { error = "A stable user object id claim is required for background responses" });
+
+        return await asyncResponses.DeleteAsync(responseId, cancellationToken, userId)
+            ? Ok(new { id = responseId, @object = "response", deleted = true })
+            : NotFound(new { error = new { message = "Response not found", type = "not_found" } });
     }
 
     private static async Task WriteEventAsync(StreamWriter writer, ResponseStreamPart streamPart, CancellationToken cancellationToken)
@@ -214,6 +240,10 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
             ? authorization[bearer.Length..].Trim()
             : null;
     }
+
+    private string? GetCurrentUserId()
+        => HttpContext.User.FindFirstValue("oid")
+            ?? HttpContext.User.FindFirstValue("http://schemas.microsoft.com/identity/claims/objectidentifier");
 
     private async Task TryWriteResponsesStreamErrorAsync(string? message)
     {

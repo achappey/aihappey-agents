@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AgentHappey.Core\AgentHappey.Core.csproj" />
     <ProjectReference Include="..\AgentHappey.Common\AgentHappey.Common.csproj" />
+    <ProjectReference Include="..\AgentHappey.Async\AgentHappey.Async.csproj" />
   </ItemGroup>
 
   <ItemGroup>

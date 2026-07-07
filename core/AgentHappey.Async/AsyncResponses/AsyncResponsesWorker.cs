@@ -71,7 +71,7 @@ public sealed class AsyncResponsesWorker(
 
             await MarkInProgressAsync(message, cancellationToken);
             var result = await processor.ProcessAsync(message, cancellationToken);
-            await store.SaveAsync(NormalizeBackgroundResult(message, result), cancellationToken);
+            await store.SaveAsync(NormalizeBackgroundResult(message, result), cancellationToken, message.Context.UserId);
             await DeleteMessageAsync(queueMessage, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -92,7 +92,7 @@ public sealed class AsyncResponsesWorker(
 
     private async Task MarkInProgressAsync(AsyncResponsesQueueMessage message, CancellationToken cancellationToken)
     {
-        var response = await store.GetAsync(message.ResponseId, cancellationToken)
+        var response = await store.GetAsync(message.ResponseId, cancellationToken, message.Context.UserId)
             ?? AzureAsyncResponsesService.CreateQueuedResponse(message.Request);
 
         response.Id = message.ResponseId;
@@ -101,7 +101,7 @@ public sealed class AsyncResponsesWorker(
         response.CompletedAt = null;
         response.Error = null;
         EnsureBackgroundProperty(response);
-        await store.SaveAsync(response, cancellationToken);
+        await store.SaveAsync(response, cancellationToken, message.Context.UserId);
     }
 
     private async Task TryPersistFailureAsync(
@@ -111,7 +111,7 @@ public sealed class AsyncResponsesWorker(
     {
         try
         {
-            var response = await store.GetAsync(message.ResponseId, cancellationToken)
+            var response = await store.GetAsync(message.ResponseId, cancellationToken, message.Context.UserId)
                 ?? AzureAsyncResponsesService.CreateQueuedResponse(message.Request);
 
             response.Id = message.ResponseId;
@@ -125,7 +125,7 @@ public sealed class AsyncResponsesWorker(
             };
             EnsureBackgroundProperty(response);
 
-            await store.SaveAsync(response, cancellationToken);
+            await store.SaveAsync(response, cancellationToken, message.Context.UserId);
         }
         catch (Exception persistException)
         {

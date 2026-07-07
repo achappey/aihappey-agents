@@ -25,7 +25,7 @@ public sealed class AzureAsyncResponseStore : IAsyncResponseStore
                 : config.ResponseContainerName.Trim().ToLowerInvariant());
     }
 
-    public async Task SaveAsync(ResponseResult response, CancellationToken cancellationToken = default)
+    public async Task SaveAsync(ResponseResult response, CancellationToken cancellationToken = default, string? userId = null)
     {
         ArgumentNullException.ThrowIfNull(response);
         if (string.IsNullOrWhiteSpace(response.Id))
@@ -35,17 +35,17 @@ public sealed class AzureAsyncResponseStore : IAsyncResponseStore
 
         var json = JsonSerializer.Serialize(response, ResponseJson.Default);
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-        await container.GetBlobClient(GetBlobName(response.Id)).UploadAsync(stream, overwrite: true, cancellationToken);
+        await container.GetBlobClient(GetBlobName(response.Id, userId)).UploadAsync(stream, overwrite: true, cancellationToken);
     }
 
-    public async Task<ResponseResult?> GetAsync(string responseId, CancellationToken cancellationToken = default)
+    public async Task<ResponseResult?> GetAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
     {
         if (string.IsNullOrWhiteSpace(responseId))
             return null;
 
         try
         {
-            var download = await container.GetBlobClient(GetBlobName(responseId)).DownloadContentAsync(cancellationToken);
+            var download = await container.GetBlobClient(GetBlobName(responseId, userId)).DownloadContentAsync(cancellationToken);
             return JsonSerializer.Deserialize<ResponseResult>(download.Value.Content.ToString(), ResponseJson.Default);
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
@@ -54,5 +54,21 @@ public sealed class AzureAsyncResponseStore : IAsyncResponseStore
         }
     }
 
-    private static string GetBlobName(string responseId) => $"responses/{responseId}.json";
+    public async Task<bool> DeleteAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
+    {
+        if (string.IsNullOrWhiteSpace(responseId))
+            return false;
+
+        var response = await container.GetBlobClient(GetBlobName(responseId, userId)).DeleteIfExistsAsync(cancellationToken: cancellationToken);
+        return response.Value;
+    }
+
+    public static string GetBlobName(string responseId, string? userId = null)
+    {
+        var responseSegment = Uri.EscapeDataString(responseId.Trim());
+        if (string.IsNullOrWhiteSpace(userId))
+            return $"responses/{responseSegment}.json";
+
+        return $"responses/{Uri.EscapeDataString(userId.Trim())}/{responseSegment}.json";
+    }
 }
