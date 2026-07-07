@@ -564,9 +564,136 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
     {
         foreach (var (key, value) in source)
         {
-            if (value is not null)
-                target[key] = CloneMetadataValue(value);
+            if (value is null)
+                continue;
+
+            if (string.Equals(key, "gateway", StringComparison.Ordinal)
+                && TryMergeGatewayMetadata(target, value, out var mergedGateway))
+            {
+                target[key] = mergedGateway;
+                continue;
+            }
+
+            target[key] = CloneMetadataValue(value);
         }
+    }
+
+    private static bool TryMergeGatewayMetadata(
+        Dictionary<string, object?> target,
+        object sourceGateway,
+        out object mergedGateway)
+    {
+        mergedGateway = CloneMetadataValue(sourceGateway)!;
+
+        if (!TryReadGatewayCost(sourceGateway, out var sourceCost))
+            return false;
+
+        var totalCost = sourceCost;
+        if (target.TryGetValue("gateway", out var currentGateway)
+            && TryReadGatewayCost(currentGateway, out var currentCost))
+        {
+            totalCost += currentCost;
+        }
+
+        mergedGateway = SetGatewayCost(sourceGateway, totalCost);
+        return true;
+    }
+
+    private static object SetGatewayCost(object sourceGateway, decimal totalCost)
+    {
+        var gateway = ToMetadataDictionary(sourceGateway);
+        gateway["cost"] = totalCost;
+        return gateway;
+    }
+
+    private static Dictionary<string, object?> ToMetadataDictionary(object value)
+    {
+        if (value is JsonElement json)
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, object?>>(json.GetRawText(), JsonWeb)
+                ?? [];
+        }
+
+        if (value is IDictionary<string, object?> nullableDictionary)
+        {
+            return nullableDictionary.ToDictionary(
+                item => item.Key,
+                item => CloneMetadataValue(item.Value),
+                StringComparer.Ordinal);
+        }
+
+        if (value is IDictionary<string, object> dictionary)
+        {
+            return dictionary.ToDictionary(
+                item => item.Key,
+                item => CloneMetadataValue(item.Value),
+                StringComparer.Ordinal);
+        }
+
+        return JsonSerializer.Deserialize<Dictionary<string, object?>>(
+            JsonSerializer.Serialize(value, JsonWeb),
+            JsonWeb) ?? [];
+    }
+
+    private static bool TryReadGatewayCost(object? gateway, out decimal cost)
+    {
+        cost = 0;
+
+        if (gateway is JsonElement json)
+            return TryReadGatewayCost(json, out cost);
+
+        if (gateway is IDictionary<string, object?> nullableDictionary
+            && nullableDictionary.TryGetValue("cost", out var nullableCost))
+        {
+            return TryReadDecimal(nullableCost, out cost);
+        }
+
+        if (gateway is IDictionary<string, object> dictionary
+            && dictionary.TryGetValue("cost", out var dictionaryCost))
+        {
+            return TryReadDecimal(dictionaryCost, out cost);
+        }
+
+        return false;
+    }
+
+    private static bool TryReadGatewayCost(JsonElement gateway, out decimal cost)
+    {
+        cost = 0;
+
+        return gateway.ValueKind == JsonValueKind.Object
+            && gateway.TryGetProperty("cost", out var costElement)
+            && TryReadDecimal(costElement, out cost);
+    }
+
+    private static bool TryReadDecimal(object? value, out decimal number)
+    {
+        number = 0;
+
+        return value switch
+        {
+            decimal decimalValue => TrySetDecimal(decimalValue, out number),
+            double doubleValue => TrySetDecimal((decimal)doubleValue, out number),
+            float floatValue => TrySetDecimal((decimal)floatValue, out number),
+            int intValue => TrySetDecimal(intValue, out number),
+            long longValue => TrySetDecimal(longValue, out number),
+            JsonElement json => TryReadDecimal(json, out number),
+            _ => false
+        };
+    }
+
+    private static bool TryReadDecimal(JsonElement value, out decimal number)
+    {
+        number = 0;
+
+        return value.ValueKind == JsonValueKind.Number
+            && value.TryGetDecimal(out number);
+    }
+
+    private static bool TrySetDecimal(decimal value, out decimal number)
+    {
+        number = value;
+        return true;
     }
 
     private static object? CloneMetadataValue(object? value)

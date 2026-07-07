@@ -644,6 +644,46 @@ public sealed class AgentChatClientFixtureTests
     private static string LoadFixture(string relativePath)
         => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar)));
 
+    private static ChatResponseUpdate CreateCompletionUpdate(
+        long inputTokens,
+        long outputTokens,
+        long totalTokens,
+        decimal gatewayCost,
+        string currency,
+        string provider)
+        => new(ChatRole.Assistant,
+        [
+            new UsageContent
+            {
+                Details = new UsageDetails
+                {
+                    InputTokenCount = inputTokens,
+                    OutputTokenCount = outputTokens,
+                    TotalTokenCount = totalTokens
+                }
+            },
+            new DataContent(
+                Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+                {
+                    gateway = new
+                    {
+                        cost = gatewayCost,
+                        currency,
+                        provider
+                    }
+                }, JsonSerializerOptions.Web)),
+                "application/json")
+            {
+                Name = "finish_metadata"
+            }
+        ])
+        {
+            MessageId = Guid.NewGuid().ToString("N"),
+            FinishReason = new ChatFinishReason("stop"),
+            AuthorName = "FixtureAgent",
+            ModelId = "openai/gpt-fixture"
+        };
+
     private static void AssertFunctionItem(JsonElement item, string expectedType, string expectedCallId)
     {
         Assert.Equal(expectedType, item.GetProperty("type").GetString());
