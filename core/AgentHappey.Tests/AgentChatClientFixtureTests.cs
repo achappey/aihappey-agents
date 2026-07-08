@@ -7,7 +7,10 @@ using AgentHappey.Common.Extensions;
 using AgentHappey.Common.Models;
 using AgentHappey.Core;
 using AgentHappey.Core.ChatClient;
+using AgentHappey.Core.Responses;
 using AIHappey.Vercel.Models;
+using AIHappey.Responses;
+using AIHappey.Responses.Streaming;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
@@ -398,6 +401,198 @@ public sealed class AgentChatClientFixtureTests
         Assert.Equal("fixture", metadata["gateway"].GetProperty("provider").GetString());
     }
 
+    [Fact]
+    public void Responses_mapper_uses_resolved_agent_name_as_response_model()
+    {
+        var mapper = new ResponsesNativeMapper();
+        var result = mapper.Map(
+            new ResponseRequest
+            {
+                Model = "openai/gpt-fixture",
+                Input = new ResponseInput("Say hello")
+            },
+            "StructuredAgent",
+            "openai",
+            new AgentResponse([new ChatMessage(ChatRole.Assistant, "Hello world")]));
+
+        Assert.Equal("StructuredAgent", result.Model);
+    }
+
+    [Fact]
+    public void Responses_mapper_adds_provider_metadata_with_provider_key()
+    {
+        var mapper = new ResponsesNativeMapper();
+        var result = mapper.Map(
+            new ResponseRequest
+            {
+                Model = "openai/gpt-fixture",
+                Input = new ResponseInput("Say hello")
+            },
+            "StructuredAgent",
+            "openai",
+            new AgentResponse([new ChatMessage(ChatRole.Assistant, "Hello world")]));
+
+        Assert.NotNull(result.Metadata);
+        var providerMetadata = Assert.IsType<Dictionary<string, object?>>(result.Metadata!["providerMetadata"]);
+        Assert.Empty(Assert.IsType<Dictionary<string, object?>>(providerMetadata["openai"]));
+    }
+
+    [Fact]
+    public void Responses_mapper_sums_gateway_cost_from_finish_metadata()
+    {
+        var mapper = new ResponsesNativeMapper();
+        var result = mapper.Map(
+            new ResponseRequest
+            {
+                Model = "openai/gpt-fixture",
+                Input = new ResponseInput("Say hello"),
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["gateway"] = new Dictionary<string, object?>
+                    {
+                        ["cost"] = 0.10m,
+                        ["currency"] = "EUR"
+                    }
+                }
+            },
+            "StructuredAgent",
+            "openai",
+            new AgentResponse([new ChatMessage(ChatRole.Assistant, [CreateFinishMetadataContent(0.23m, "EUR", "fixture")])]));
+
+        Assert.NotNull(result.Metadata);
+        var gateway = GetProviderMetadataGateway(result.Metadata!);
+        Assert.Equal(0.33m, gateway["cost"]);
+        Assert.Equal("EUR", Assert.IsType<JsonElement>(gateway["currency"]).GetString());
+        Assert.Equal("fixture", Assert.IsType<JsonElement>(gateway["provider"]).GetString());
+        Assert.False(result.Metadata!.ContainsKey("gateway"));
+    }
+
+    [Fact]
+    public void Responses_mapper_prefers_provider_metadata_gateway_over_direct_gateway()
+    {
+        var mapper = new ResponsesNativeMapper();
+        var result = mapper.Map(
+            new ResponseRequest
+            {
+                Model = "openai/gpt-fixture",
+                Input = new ResponseInput("Say hello")
+            },
+            "StructuredAgent",
+            "openai",
+            new AgentResponse([new ChatMessage(ChatRole.Assistant, [CreateProviderMetadataGatewayContent(
+                providerGatewayCost: 0.45m,
+                directGatewayCost: 0.01m,
+                currency: "EUR",
+                provider: "fixture")])]));
+
+        Assert.NotNull(result.Metadata);
+        var gateway = GetProviderMetadataGateway(result.Metadata!);
+        Assert.Equal(0.45m, gateway["cost"]);
+        Assert.Equal("EUR", Assert.IsType<JsonElement>(gateway["currency"]).GetString());
+        Assert.Equal("fixture", Assert.IsType<JsonElement>(gateway["provider"]).GetString());
+        Assert.False(result.Metadata!.ContainsKey("gateway"));
+    }
+
+    [Fact]
+    public void Responses_mapper_sums_provider_metadata_gateway_for_background_compatible_non_streaming_result()
+    {
+        var mapper = new ResponsesNativeMapper();
+        var result = mapper.Map(
+            new ResponseRequest
+            {
+                Model = "openai/gpt-fixture",
+                Input = new ResponseInput("Say hello"),
+                Background = true,
+                Stream = false,
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["gateway"] = new Dictionary<string, object?>
+                    {
+                        ["cost"] = 0.10m,
+                        ["currency"] = "EUR"
+                    }
+                }
+            },
+            "StructuredAgent",
+            "openai",
+            new AgentResponse([new ChatMessage(ChatRole.Assistant, [CreateProviderMetadataGatewayContent(
+                providerGatewayCost: 0.45m,
+                directGatewayCost: 0.01m,
+                currency: "EUR",
+                provider: "fixture")])]));
+
+        Assert.NotNull(result.Metadata);
+        var gateway = GetProviderMetadataGateway(result.Metadata!);
+        Assert.Equal(0.55m, gateway["cost"]);
+        Assert.Equal("fixture", Assert.IsType<JsonElement>(gateway["provider"]).GetString());
+        Assert.False(result.Metadata!.ContainsKey("gateway"));
+    }
+
+    [Fact]
+    public async Task Non_streaming_inference_response_metadata_roundtrips_to_finish_metadata_content()
+    {
+        var responseJson = JsonSerializer.Serialize(new
+        {
+            id = "resp_fixture",
+            @object = "response",
+            created_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            status = "completed",
+            model = "openai/gpt-fixture",
+            output = Array.Empty<object>(),
+            metadata = new
+            {
+                gateway = new
+                {
+                    cost = 0.016693800m
+                }
+            }
+        }, ResponseJson.Default);
+
+        using var httpClient = CreateHttpClient(_ => CreateJsonResponse(responseJson));
+        using var client = CreateClient(httpClient, CreateAgent());
+
+        var response = await client.GetResponseAsync(CreateUserMessages("Say hello"));
+        var finishMetadataContent = Assert.Single(response.Messages.Single().Contents.OfType<DataContent>(), content => content.Name == "finish_metadata");
+        var metadata = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            Encoding.UTF8.GetString(finishMetadataContent.Data!.Span),
+            JsonSerializerOptions.Web);
+
+        Assert.NotNull(metadata);
+        Assert.Equal(0.016693800m, metadata!["gateway"].GetProperty("cost").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Streaming_responses_mapper_sums_gateway_cost_on_completed_response()
+    {
+        var mapper = new ResponsesNativeMapper();
+        var parts = await CollectAsync(mapper.MapStreamingAsync(
+            new ResponseRequest
+            {
+                Model = "openai/gpt-fixture",
+                Input = new ResponseInput("Say hello"),
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["gateway"] = new Dictionary<string, object?>
+                    {
+                        ["cost"] = 0.10m,
+                        ["currency"] = "EUR"
+                    }
+                }
+            },
+            "StructuredAgent",
+            "openai",
+            ToAsync([
+                new AgentResponseUpdate(ChatRole.Assistant, [CreateFinishMetadataContent(0.23m, "EUR", "fixture")])
+            ])));
+
+        var completed = Assert.IsType<ResponseCompleted>(Assert.Single(parts.OfType<ResponseCompleted>()));
+        Assert.Equal("StructuredAgent", completed.Response.Model);
+        var gateway = GetProviderMetadataGateway(completed.Response.Metadata!);
+        Assert.Equal(0.33m, gateway["cost"]);
+        Assert.Equal("fixture", Assert.IsType<JsonElement>(gateway["provider"]).GetString());
+        Assert.False(completed.Response.Metadata!.ContainsKey("gateway"));
+    }
+
 
     [Fact]
     public async Task Streaming_writer_error_helper_writes_vercel_error_part()
@@ -683,6 +878,70 @@ public sealed class AgentChatClientFixtureTests
             AuthorName = "FixtureAgent",
             ModelId = "openai/gpt-fixture"
         };
+
+    private static DataContent CreateFinishMetadataContent(decimal gatewayCost, string currency, string provider)
+        => new(
+            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+            {
+                gateway = new
+                {
+                    cost = gatewayCost,
+                    currency,
+                    provider
+                }
+            }, JsonSerializerOptions.Web)),
+            "application/json")
+        {
+            Name = "finish_metadata"
+        };
+
+    private static DataContent CreateProviderMetadataGatewayContent(
+        decimal providerGatewayCost,
+        decimal directGatewayCost,
+        string currency,
+        string provider)
+        => new(
+            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+            {
+                providerMetadata = new
+                {
+                    openai = new
+                    {
+                        gateway = new
+                        {
+                            cost = providerGatewayCost,
+                            currency,
+                            provider
+                        }
+                    }
+                },
+                gateway = new
+                {
+                    cost = directGatewayCost,
+                    currency = "USD",
+                    provider = "direct"
+                }
+            }, JsonSerializerOptions.Web)),
+            "application/json")
+        {
+            Name = "finish_metadata"
+        };
+
+    private static Dictionary<string, object?> GetProviderMetadataGateway(Dictionary<string, object?> metadata)
+    {
+        var providerMetadata = Assert.IsType<Dictionary<string, object?>>(metadata["providerMetadata"]);
+        Assert.IsType<Dictionary<string, object?>>(providerMetadata["openai"]);
+        return Assert.IsType<Dictionary<string, object?>>(providerMetadata["gateway"]);
+    }
+
+    private static async IAsyncEnumerable<T> ToAsync<T>(IEnumerable<T> source)
+    {
+        foreach (var item in source)
+        {
+            yield return item;
+            await Task.Yield();
+        }
+    }
 
     private static void AssertFunctionItem(JsonElement item, string expectedType, string expectedCallId)
     {

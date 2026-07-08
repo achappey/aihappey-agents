@@ -15,18 +15,20 @@ public interface IResponsesNativeMapper
     IAsyncEnumerable<ResponseStreamPart> MapStreamingAsync(
         ResponseRequest request,
         string? model,
+        string? providerKey,
         IAsyncEnumerable<AgentResponseUpdate> updates,
         CancellationToken cancellationToken = default);
 
     IAsyncEnumerable<ResponseStreamPart> MapStreamingAsync(
         ResponseRequest request,
         string? model,
+        string? providerKey,
         IAsyncEnumerable<WorkflowEvent> updates,
         CancellationToken cancellationToken = default);
 
-    ResponseResult Map(ResponseRequest request, string? model, AgentResponse response);
+    ResponseResult Map(ResponseRequest request, string? model, string? providerKey, AgentResponse response);
 
-    ResponseResult Map(ResponseRequest request, string? model, IEnumerable<WorkflowEvent> events);
+    ResponseResult Map(ResponseRequest request, string? model, string? providerKey, IEnumerable<WorkflowEvent> events);
 }
 
 public sealed class ResponsesNativeMapper : IResponsesNativeMapper
@@ -34,10 +36,11 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
     public async IAsyncEnumerable<ResponseStreamPart> MapStreamingAsync(
         ResponseRequest request,
         string? model,
+        string? providerKey,
         IAsyncEnumerable<AgentResponseUpdate> updates,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var state = new NativeResponseState(request, model);
+        var state = new NativeResponseState(request, model, providerKey);
 
         foreach (var part in state.StartEvents())
             yield return part;
@@ -53,10 +56,11 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
     public async IAsyncEnumerable<ResponseStreamPart> MapStreamingAsync(
         ResponseRequest request,
         string? model,
+        string? providerKey,
         IAsyncEnumerable<WorkflowEvent> updates,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var state = new NativeResponseState(request, model);
+        var state = new NativeResponseState(request, model, providerKey);
 
         foreach (var part in state.StartEvents())
             yield return part;
@@ -69,9 +73,9 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             yield return part;
     }
 
-    public ResponseResult Map(ResponseRequest request, string? model, AgentResponse response)
+    public ResponseResult Map(ResponseRequest request, string? model, string? providerKey, AgentResponse response)
     {
-        var state = new NativeResponseState(request, model);
+        var state = new NativeResponseState(request, model, providerKey);
         state.Apply(response);
         foreach (var _ in state.Complete())
         {
@@ -80,9 +84,9 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
         return state.BuildResult();
     }
 
-    public ResponseResult Map(ResponseRequest request, string? model, IEnumerable<WorkflowEvent> events)
+    public ResponseResult Map(ResponseRequest request, string? model, string? providerKey, IEnumerable<WorkflowEvent> events)
     {
-        var state = new NativeResponseState(request, model);
+        var state = new NativeResponseState(request, model, providerKey);
 
         foreach (var update in events)
             foreach (var _ in state.Process(update))
@@ -96,15 +100,17 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
         return state.BuildResult();
     }
 
-    private sealed class NativeResponseState(ResponseRequest request, string? model)
+    private sealed class NativeResponseState(ResponseRequest request, string? model, string? providerKey)
     {
         private readonly ResponseRequest request = request;
         private readonly string model = string.IsNullOrWhiteSpace(model) ? "agent" : model;
+        private readonly string? providerKey = providerKey;
         private readonly List<ResponseOutputState> outputs = [];
         private readonly Dictionary<string, MessageOutputState> messages = new(StringComparer.Ordinal);
         private readonly Dictionary<string, ReasoningOutputState> reasoningItems = new(StringComparer.Ordinal);
         private readonly Dictionary<string, ToolCallOutputState> toolCalls = new(StringComparer.Ordinal);
         private readonly Dictionary<string, ToolResultOutputState> toolResults = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, object?> finishMetadata = new(StringComparer.Ordinal);
         private DateTimeOffset createdAt = DateTimeOffset.UtcNow;
         private string responseId = Guid.NewGuid().ToString("N");
         private object? usage;
@@ -250,6 +256,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                 TextContent text => AppendMessageText(itemId, text.Text),
                 FunctionCallContent functionCall => AddToolCall(functionCall),
                 FunctionResultContent functionResult => AddToolResult(functionResult),
+                DataContent dataContent when TrySetFinishMetadata(dataContent) => [],
                 DataContent dataContent => AddMessageData(itemId, dataContent),
                 _ => []
             };
@@ -260,6 +267,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                 FunctionResultContent functionResult => AddToolResult(functionResult),
                 ErrorContent errorContent => SetErrorAndReturn(errorContent.Message),
                 UsageContent usageContent => SetUsageAndReturn(usageContent.Details),
+                DataContent dataContent when TrySetFinishMetadata(dataContent) => [],
                 _ => []
             };
 
@@ -709,9 +717,343 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                 ServiceTier = request.ServiceTier,
                 Output = outputs.OrderBy(output => output.OutputIndex).Select(ToOutputObject).ToList(),
                 Error = errorMessage is null ? null : new ResponseResultError { Message = errorMessage },
-                Metadata = request.Metadata
+                Metadata = BuildMetadata()
             };
         }
+
+        private Dictionary<string, object?> BuildMetadata()
+        {
+            var metadata = request.Metadata is null
+                ? new Dictionary<string, object?>(StringComparer.Ordinal)
+                : request.Metadata.ToDictionary(
+                    item => item.Key,
+                    item => CloneMetadataValue(item.Value),
+                    StringComparer.Ordinal);
+
+            MergeMetadata(metadata, finishMetadata);
+            EnsureProviderMetadata(metadata);
+            return metadata;
+        }
+
+        private void EnsureProviderMetadata(Dictionary<string, object?> metadata)
+        {
+            if (string.IsNullOrWhiteSpace(providerKey))
+                return;
+
+            var providerMetadata = ReadOrCreateProviderMetadata(metadata);
+            var scopedProviderMetadata = ReadOrCreateScopedProviderMetadata(providerMetadata);
+
+            if (metadata.TryGetValue("gateway", out var gateway) && gateway is not null)
+            {
+                providerMetadata["gateway"] = gateway;
+                metadata.Remove("gateway");
+            }
+
+            providerMetadata[providerKey] = scopedProviderMetadata;
+            metadata["providerMetadata"] = providerMetadata;
+        }
+
+        private Dictionary<string, object?> ReadOrCreateProviderMetadata(Dictionary<string, object?> metadata)
+        {
+            if (metadata.TryGetValue("providerMetadata", out var existing) && existing is not null)
+                return ToMetadataDictionary(existing);
+
+            if (metadata.TryGetValue("provider_metadata", out var snakeCaseExisting) && snakeCaseExisting is not null)
+            {
+                metadata.Remove("provider_metadata");
+                return ToMetadataDictionary(snakeCaseExisting);
+            }
+
+            return new Dictionary<string, object?>(StringComparer.Ordinal);
+        }
+
+        private Dictionary<string, object?> ReadOrCreateScopedProviderMetadata(Dictionary<string, object?> providerMetadata)
+        {
+            if (!string.IsNullOrWhiteSpace(providerKey)
+                && providerMetadata.TryGetValue(providerKey, out var scoped)
+                && scoped is not null)
+            {
+                return ToMetadataDictionary(scoped);
+            }
+
+            return new Dictionary<string, object?>(StringComparer.Ordinal);
+        }
+
+        private bool TrySetFinishMetadata(DataContent dataContent)
+        {
+            if (!TryReadFinishMetadata(dataContent, out var metadata))
+                return false;
+
+            MergeMetadata(finishMetadata, NormalizeFinishMetadata(metadata));
+            return true;
+        }
+
+        private Dictionary<string, object?> NormalizeFinishMetadata(Dictionary<string, object?> metadata)
+        {
+            var normalized = new Dictionary<string, object?>(StringComparer.Ordinal);
+            var hasProviderGateway = TryReadProviderGatewayMetadata(metadata, providerKey, out var providerGateway);
+
+            foreach (var (key, value) in metadata)
+            {
+                if (value is null)
+                    continue;
+
+                if (IsProviderMetadataKey(key))
+                    continue;
+
+                if (hasProviderGateway && string.Equals(key, "gateway", StringComparison.Ordinal))
+                    continue;
+
+                normalized[key] = CloneMetadataValue(value);
+            }
+
+            if (hasProviderGateway)
+                normalized["gateway"] = providerGateway;
+
+            return normalized;
+        }
+
+        private static bool TryReadProviderGatewayMetadata(
+            Dictionary<string, object?> metadata,
+            string? providerKey,
+            out object gateway)
+        {
+            gateway = default!;
+
+            foreach (var providerMetadataKey in new[] { "providerMetadata", "provider_metadata" })
+            {
+                if (!metadata.TryGetValue(providerMetadataKey, out var providerMetadata) || providerMetadata is null)
+                    continue;
+
+                if (TryReadProviderGatewayMetadata(providerMetadata, providerKey, out gateway))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryReadProviderGatewayMetadata(object providerMetadata, string? providerKey, out object gateway)
+        {
+            gateway = default!;
+            var providers = ToMetadataDictionary(providerMetadata);
+
+            if (!string.IsNullOrWhiteSpace(providerKey)
+                && providers.TryGetValue(providerKey, out var scopedProvider)
+                && scopedProvider is not null
+                && TryReadGatewayMetadata(scopedProvider, out gateway))
+            {
+                return true;
+            }
+
+            foreach (var scopedProviderValue in providers.Values)
+            {
+                if (scopedProviderValue is not null && TryReadGatewayMetadata(scopedProviderValue, out gateway))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryReadGatewayMetadata(object scopedProviderMetadata, out object gateway)
+        {
+            gateway = default!;
+            var scoped = ToMetadataDictionary(scopedProviderMetadata);
+
+            return scoped.TryGetValue("gateway", out var gatewayValue)
+                && gatewayValue is not null
+                && TryReadGatewayCost(gatewayValue, out _)
+                && TrySetGateway(gatewayValue, out gateway);
+        }
+
+        private static bool TrySetGateway(object gatewayValue, out object gateway)
+        {
+            gateway = CloneMetadataValue(gatewayValue)!;
+            return true;
+        }
+
+        private static bool IsProviderMetadataKey(string key)
+            => string.Equals(key, "providerMetadata", StringComparison.Ordinal)
+               || string.Equals(key, "provider_metadata", StringComparison.Ordinal);
+
+        private static bool TryReadFinishMetadata(DataContent dataContent, out Dictionary<string, object?> metadata)
+        {
+            metadata = [];
+
+            if (!string.Equals(dataContent.Name, "finish_metadata", StringComparison.Ordinal)
+                || !string.Equals(dataContent.MediaType, MediaTypeNames.Application.Json, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var json = ReadDataContentText(dataContent);
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                metadata = JsonSerializer.Deserialize<Dictionary<string, object?>>(json, JsonSerializerOptions.Web) ?? [];
+                return metadata.Count > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string? ReadDataContentText(DataContent dataContent)
+        {
+            try
+            {
+                if (!dataContent.Data.IsEmpty)
+                    return Encoding.UTF8.GetString(dataContent.Data.Span);
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private static void MergeMetadata(
+            Dictionary<string, object?> target,
+            Dictionary<string, object?> source)
+        {
+            foreach (var (key, value) in source)
+            {
+                if (value is null)
+                    continue;
+
+                if (string.Equals(key, "gateway", StringComparison.Ordinal)
+                    && TryMergeGatewayMetadata(target, value, out var mergedGateway))
+                {
+                    target[key] = mergedGateway;
+                    continue;
+                }
+
+                target[key] = CloneMetadataValue(value);
+            }
+        }
+
+        private static bool TryMergeGatewayMetadata(
+            Dictionary<string, object?> target,
+            object sourceGateway,
+            out object mergedGateway)
+        {
+            mergedGateway = CloneMetadataValue(sourceGateway)!;
+
+            if (!TryReadGatewayCost(sourceGateway, out var sourceCost))
+                return false;
+
+            var totalCost = sourceCost;
+            if (target.TryGetValue("gateway", out var currentGateway)
+                && TryReadGatewayCost(currentGateway, out var currentCost))
+            {
+                totalCost += currentCost;
+            }
+
+            mergedGateway = SetGatewayCost(sourceGateway, totalCost);
+            return true;
+        }
+
+        private static object SetGatewayCost(object sourceGateway, decimal totalCost)
+        {
+            var gateway = ToMetadataDictionary(sourceGateway);
+            gateway["cost"] = totalCost;
+            return gateway;
+        }
+
+        private static Dictionary<string, object?> ToMetadataDictionary(object value)
+        {
+            if (value is JsonElement json)
+            {
+                return JsonSerializer.Deserialize<Dictionary<string, object?>>(json.GetRawText(), JsonSerializerOptions.Web)
+                    ?? [];
+            }
+
+            if (value is IDictionary<string, object?> nullableDictionary)
+            {
+                return nullableDictionary.ToDictionary(
+                    item => item.Key,
+                    item => CloneMetadataValue(item.Value),
+                    StringComparer.Ordinal);
+            }
+
+            if (value is IDictionary<string, object> dictionary)
+            {
+                return dictionary.ToDictionary(
+                    item => item.Key,
+                    item => CloneMetadataValue(item.Value),
+                    StringComparer.Ordinal);
+            }
+
+            return JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                JsonSerializer.Serialize(value, JsonSerializerOptions.Web),
+                JsonSerializerOptions.Web) ?? [];
+        }
+
+        private static bool TryReadGatewayCost(object? gateway, out decimal cost)
+        {
+            cost = 0;
+
+            if (gateway is JsonElement json)
+                return TryReadGatewayCost(json, out cost);
+
+            if (gateway is IDictionary<string, object?> nullableDictionary
+                && nullableDictionary.TryGetValue("cost", out var nullableCost))
+            {
+                return TryReadDecimal(nullableCost, out cost);
+            }
+
+            if (gateway is IDictionary<string, object> dictionary
+                && dictionary.TryGetValue("cost", out var dictionaryCost))
+            {
+                return TryReadDecimal(dictionaryCost, out cost);
+            }
+
+            return false;
+        }
+
+        private static bool TryReadGatewayCost(JsonElement gateway, out decimal cost)
+        {
+            cost = 0;
+
+            return gateway.ValueKind == JsonValueKind.Object
+                && gateway.TryGetProperty("cost", out var costElement)
+                && TryReadDecimal(costElement, out cost);
+        }
+
+        private static bool TryReadDecimal(object? value, out decimal number)
+        {
+            number = 0;
+
+            return value switch
+            {
+                decimal decimalValue => TrySetDecimal(decimalValue, out number),
+                double doubleValue => TrySetDecimal((decimal)doubleValue, out number),
+                float floatValue => TrySetDecimal((decimal)floatValue, out number),
+                int intValue => TrySetDecimal(intValue, out number),
+                long longValue => TrySetDecimal(longValue, out number),
+                JsonElement json => TryReadDecimal(json, out number),
+                _ => false
+            };
+        }
+
+        private static bool TryReadDecimal(JsonElement value, out decimal number)
+        {
+            number = 0;
+
+            return value.ValueKind == JsonValueKind.Number
+                && value.TryGetDecimal(out number);
+        }
+
+        private static bool TrySetDecimal(decimal value, out decimal number)
+        {
+            number = value;
+            return true;
+        }
+
+        private static object? CloneMetadataValue(object? value)
+            => value is JsonElement json ? json.Clone() : value;
 
         private static object ToOutputObject(ResponseOutputState output) => output switch
         {

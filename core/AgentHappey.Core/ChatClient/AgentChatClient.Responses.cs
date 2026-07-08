@@ -271,11 +271,9 @@ public partial class AgentChatClient
         foreach (var item in response.Output ?? [])
             AppendResponseOutput(parts, item);
 
-        if (parts.OfType<TextContent>().Any() != true && response.Text is not null)
+        if (parts.OfType<TextContent>().Any() != true && response.OutputText is not null)
         {
-            var fallbackText = ToDisplayText(response.Text);
-            if (!string.IsNullOrWhiteSpace(fallbackText))
-                parts.Add(new TextContent(fallbackText));
+            parts.Add(new TextContent(response.OutputText));
         }
 
         if (agent.OutputSchema != null)
@@ -290,6 +288,16 @@ public partial class AgentChatClient
                     Name = agent.GetOutputName()
                 });
             }
+        }
+
+        if (response.Metadata is not null)
+        {
+            parts.Add(new DataContent(
+                Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response.Metadata, JsonSerializerOptions.Web)),
+                MediaTypeNames.Application.Json)
+            {
+                Name = "finish_metadata"
+            });
         }
 
         foreach (var pair in ElicitPairs?.Values ?? [])

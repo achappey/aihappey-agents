@@ -43,15 +43,40 @@ public sealed class HeaderAuthAsyncResponsesProcessor(
             (agentClient, messages) => agentClient.SetHistory(messages),
             cancellationToken);
 
-        var responseModel = runtimeRequest.Model ?? request.Model;
+        var responseModel = ResolveResponseModel(runtimeRequest, request.Model, context);
+        var providerKey = ResolveProviderKey(runtimeRequest, request.Model, context);
         return context.Agents.Count > 1
             ? responsesMapper.Map(
                 request,
                 responseModel,
+                providerKey,
                 await orchestrator.RunWorkflowAsync(runtimeRequest, context, emitTurnToken: true, cancellationToken))
             : responsesMapper.Map(
                 request,
                 responseModel,
+                providerKey,
                 await orchestrator.RunAgentAsync(context, cancellationToken));
+    }
+
+    private static string? ResolveResponseModel(
+        ChatRuntimeRequest runtimeRequest,
+        string? requestModel,
+        ChatRuntimeContext context)
+        => context.Agents.Count == 1
+            ? context.PrimaryAgent.Name
+            : runtimeRequest.Model ?? requestModel;
+
+    private static string? ResolveProviderKey(
+        ChatRuntimeRequest runtimeRequest,
+        string? requestModel,
+        ChatRuntimeContext context)
+    {
+        var modelId = context.ResolvedAgents.FirstOrDefault()?.Model?.Id
+            ?? runtimeRequest.Model
+            ?? requestModel;
+
+        return string.IsNullOrWhiteSpace(modelId)
+            ? null
+            : modelId.Split('/')[0];
     }
 }

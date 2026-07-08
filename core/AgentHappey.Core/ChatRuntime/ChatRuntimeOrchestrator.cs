@@ -76,9 +76,12 @@ public interface IChatRuntimeOrchestrator
 public sealed record ChatRuntimeContext(
     IReadOnlyList<ChatMessage> Messages,
     IReadOnlyList<AIAgent> Agents,
-    ChatClientAgentRunOptions? SingleAgentRunOptions)
+    ChatClientAgentRunOptions? SingleAgentRunOptions,
+    IReadOnlyList<Agent> ResolvedAgents)
 {
     public AIAgent PrimaryAgent => Agents.FirstOrDefault() ?? throw new InvalidOperationException("No agent found");
+
+    public Agent PrimaryResolvedAgent => ResolvedAgents.FirstOrDefault() ?? throw new InvalidOperationException("No resolved agent found");
 
     public InMemoryWorkflowAgentProvider CreateWorkflowAgentProvider() =>
         new(Agents.Select(agent => (agent.Name!, agent)));
@@ -156,7 +159,7 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
                 await WriteConnectionPartsAsync(response, agentClient, cancellationToken);
         }
 
-        return new ChatRuntimeContext(messages, agents, runOptions);
+        return new ChatRuntimeContext(messages, agents, runOptions, resolvedAgents);
     }
 
     private async Task<IReadOnlyList<Agent>> ResolveAgentsAsync(

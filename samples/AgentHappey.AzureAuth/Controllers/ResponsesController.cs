@@ -95,18 +95,20 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
 
             try
             {
-                var (context, responseModel) = await PrepareRuntimeAsync(runtimeRequest, requestDto.Model, cancellationToken);
+                var (context, responseModel, providerKey) = await PrepareRuntimeAsync(runtimeRequest, requestDto.Model, cancellationToken);
                 await using var writer = new StreamWriter(Response.Body);
 
                 var stream = context.Agents.Count > 1
                     ? responsesMapper.MapStreamingAsync(
                         requestDto,
                         responseModel,
+                        providerKey,
                         orchestrator.StreamWorkflowAsync(runtimeRequest, context, emitTurnToken: true, cancellationToken),
                         cancellationToken)
                     : responsesMapper.MapStreamingAsync(
                         requestDto,
                         responseModel,
+                        providerKey,
                         orchestrator.StreamAgentAsync(context, cancellationToken),
                         cancellationToken);
 
@@ -130,16 +132,18 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
 
         try
         {
-            var (context, responseModel) = await PrepareRuntimeAsync(runtimeRequest, requestDto.Model, cancellationToken);
+            var (context, responseModel, providerKey) = await PrepareRuntimeAsync(runtimeRequest, requestDto.Model, cancellationToken);
 
             var result = context.Agents.Count > 1
                 ? responsesMapper.Map(
                     requestDto,
                     responseModel,
+                    providerKey,
                     await orchestrator.RunWorkflowAsync(runtimeRequest, context, emitTurnToken: true, cancellationToken))
                 : responsesMapper.Map(
                     requestDto,
                     responseModel,
+                    providerKey,
                     await orchestrator.RunAgentAsync(context, cancellationToken));
 
             return Ok(result);
@@ -202,7 +206,7 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
         await writer.FlushAsync(cancellationToken);
     }
 
-    private async Task<(ChatRuntimeContext Context, string? ResponseModel)> PrepareRuntimeAsync(
+    private async Task<(ChatRuntimeContext Context, string? ResponseModel, string? ProviderKey)> PrepareRuntimeAsync(
         ChatRuntimeRequest runtimeRequest,
         string? requestModel,
         CancellationToken cancellationToken)
@@ -228,7 +232,29 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
             (agentClient, messages) => agentClient.SetHistory(messages),
             cancellationToken);
 
-        return (context, runtimeRequest.Model ?? requestModel);
+        return (context, ResolveResponseModel(runtimeRequest, requestModel, context), ResolveProviderKey(runtimeRequest, requestModel, context));
+    }
+
+    private static string? ResolveResponseModel(
+        ChatRuntimeRequest runtimeRequest,
+        string? requestModel,
+        ChatRuntimeContext context)
+        => context.Agents.Count == 1
+            ? context.PrimaryAgent.Name
+            : runtimeRequest.Model ?? requestModel;
+
+    private static string? ResolveProviderKey(
+        ChatRuntimeRequest runtimeRequest,
+        string? requestModel,
+        ChatRuntimeContext context)
+    {
+        var modelId = context.ResolvedAgents.FirstOrDefault()?.Model?.Id
+            ?? runtimeRequest.Model
+            ?? requestModel;
+
+        return string.IsNullOrWhiteSpace(modelId)
+            ? null
+            : modelId.Split('/')[0];
     }
 
     private string? GetBearerToken()
