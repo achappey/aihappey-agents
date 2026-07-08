@@ -173,9 +173,11 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
             return Unauthorized(new { error = "A stable user object id claim is required for background responses" });
 
         var response = await asyncResponses.GetAsync(responseId, cancellationToken, userId);
-        return response is null
-            ? NotFound(new { error = new { message = "Response not found", type = "not_found" } })
-            : Ok(response);
+
+        if (response is null)
+            return NotFound(new { error = new { message = "Response not found", type = "not_found" } });
+
+        return Ok(response);
     }
 
     [HttpDelete("{responseId}")]

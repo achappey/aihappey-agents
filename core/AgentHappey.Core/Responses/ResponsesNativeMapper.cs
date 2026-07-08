@@ -700,7 +700,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                 Temperature = request.Temperature,
                 ParallelToolCalls = request.ParallelToolCalls,
                 Usage = usage,
-                Text = string.IsNullOrWhiteSpace(text) ? null : text,
+                OutputText = string.IsNullOrWhiteSpace(text) ? null : text,
                 ToolChoice = request.ToolChoice,
                 Tools = request.Tools?.Cast<object>().ToList() ?? [],
                 Reasoning = request.Reasoning,
