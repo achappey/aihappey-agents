@@ -148,6 +148,10 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
         }
     }
 
+    [HttpGet]
+    public IActionResult List()
+        => Ok(new { @object = "list", data = Array.Empty<ResponseResult>() });
+
     [HttpGet("{responseId}")]
     public async Task<IActionResult> Get(string responseId, CancellationToken cancellationToken)
     {

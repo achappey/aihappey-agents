@@ -165,6 +165,18 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
         }
     }
 
+    [HttpGet]
+    [Authorize]
+    public async Task<IActionResult> List(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized(new { error = "A stable user object id claim is required for background responses" });
+
+        var responses = await asyncResponses.ListAsync(cancellationToken, userId);
+        return Ok(new { @object = "list", data = responses });
+    }
+
     [HttpGet("{responseId}")]
     [Authorize]
     public async Task<IActionResult> Get(string responseId, CancellationToken cancellationToken)

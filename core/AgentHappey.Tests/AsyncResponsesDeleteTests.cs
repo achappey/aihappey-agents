@@ -46,6 +46,16 @@ public sealed class AsyncResponsesDeleteTests
     }
 
     [Fact]
+    public async Task Disabled_async_responses_list_returns_empty_responses_for_scoped_user()
+    {
+        var service = new DisabledAsyncResponsesService();
+
+        var responses = await service.ListAsync(userId: "user-a");
+
+        Assert.Empty(responses);
+    }
+
+    [Fact]
     public void Azure_async_response_store_uses_legacy_blob_name_without_user_scope()
     {
         var blobName = AzureAsyncResponseStore.GetBlobName("resp_123");
@@ -67,6 +77,14 @@ public sealed class AsyncResponsesDeleteTests
         var blobName = AzureAsyncResponseStore.GetBlobName(" resp/a ", " user/b ");
 
         Assert.Equal("responses/user%2Fb/resp%2Fa.json", blobName);
+    }
+
+    [Fact]
+    public void Azure_async_response_store_uses_user_folder_for_scoped_blob_prefix()
+    {
+        var prefix = AzureAsyncResponseStore.GetBlobPrefix("user-a");
+
+        Assert.Equal("responses/user-a/", prefix);
     }
 
     [Fact]
@@ -110,6 +128,19 @@ public sealed class AsyncResponsesDeleteTests
         Assert.NotNull(scopedResponse);
     }
 
+    [Fact]
+    public async Task User_scoped_store_list_only_returns_current_users_responses()
+    {
+        var store = new InMemoryScopedAsyncResponseStore();
+        await store.SaveAsync(new ResponseResult { Id = "resp_a", Object = "response", CreatedAt = 1 }, userId: "user-a");
+        await store.SaveAsync(new ResponseResult { Id = "resp_b", Object = "response", CreatedAt = 2 }, userId: "user-b");
+        await store.SaveAsync(new ResponseResult { Id = "resp_c", Object = "response", CreatedAt = 3 }, userId: "user-a");
+
+        var responses = await store.ListAsync(userId: "user-a");
+
+        Assert.Equal(["resp_c", "resp_a"], responses.Select(response => response.Id));
+    }
+
     private sealed class InMemoryScopedAsyncResponseStore : IAsyncResponseStore
     {
         private readonly Dictionary<(string? UserId, string ResponseId), ResponseResult> responses = [];
@@ -122,6 +153,14 @@ public sealed class AsyncResponsesDeleteTests
 
         public Task<ResponseResult?> GetAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
             => Task.FromResult(responses.GetValueOrDefault((NormalizeUserId(userId), responseId)));
+
+        public Task<IReadOnlyList<ResponseResult>> ListAsync(CancellationToken cancellationToken = default, string? userId = null)
+            => Task.FromResult<IReadOnlyList<ResponseResult>>(responses
+                .Where(response => response.Key.UserId == NormalizeUserId(userId))
+                .Select(response => response.Value)
+                .OrderByDescending(response => response.CreatedAt)
+                .ThenByDescending(response => response.Id, StringComparer.Ordinal)
+                .ToList());
 
         public Task<bool> DeleteAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
             => Task.FromResult(responses.Remove((NormalizeUserId(userId), responseId)));

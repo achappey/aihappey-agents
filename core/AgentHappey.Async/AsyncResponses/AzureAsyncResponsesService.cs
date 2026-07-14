@@ -61,6 +61,9 @@ public sealed class AzureAsyncResponsesService : IAsyncResponsesService
     public Task<ResponseResult?> GetAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
         => store.GetAsync(responseId, cancellationToken, userId);
 
+    public Task<IReadOnlyList<ResponseResult>> ListAsync(CancellationToken cancellationToken = default, string? userId = null)
+        => store.ListAsync(cancellationToken, userId);
+
     public Task<bool> DeleteAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
         => store.DeleteAsync(responseId, cancellationToken, userId);
 
