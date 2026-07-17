@@ -157,7 +157,8 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             FinishReason = "stop",
             MessageMetadata = new Dictionary<string, object>
             {
-                { "timestamp", DateTime.UtcNow }
+                { "timestamp", DateTime.UtcNow },
+                { "model", string.Join(",", authorNames) }
             }
         };
     }
