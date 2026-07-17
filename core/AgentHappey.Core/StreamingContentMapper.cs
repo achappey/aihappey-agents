@@ -114,6 +114,8 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         var reasoning = new ReasoningStreamState();
         var pendingCalls = new Dictionary<string, ToolCallPart>(StringComparer.Ordinal);
         HashSet<string> authorNames = [];
+        List<UsageContent> usageContents = [];
+        var finishMetadata = new Dictionary<string, object?>(StringComparer.Ordinal);
 
         await foreach (var update in updates.WithCancellation(cancellationToken))
         {
@@ -125,8 +127,22 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                     authorNames.Add(u.AuthorName);
 
                 foreach (var content in u.Contents)
+                {
+                    if (content is UsageContent usageContent)
+                    {
+                        usageContents.Add(usageContent);
+                        continue;
+                    }
+
+                    if (TryReadFinishMetadata(content, out var metadata))
+                    {
+                        MergeFinishMetadata(finishMetadata, metadata);
+                        continue;
+                    }
+
                     foreach (var part in MapContent(content, u.MessageId, u.AuthorName, pendingCalls, text, reasoning, includeFileParts: false))
                         yield return part;
+                }
             }
             else if (update is WorkflowOutputEvent)
             {
@@ -152,15 +168,15 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         foreach (var part in CloseAllTextStreams(text))
             yield return part;
 
-        yield return new FinishUIPart
+        foreach (var part in CloseAndFinish(
+            text,
+            reasoning,
+            usageContents,
+            string.Join(",", authorNames),
+            finishMetadata))
         {
-            FinishReason = "stop",
-            MessageMetadata = new Dictionary<string, object>
-            {
-                { "timestamp", DateTime.UtcNow },
-                { "model", string.Join(",", authorNames) }
-            }
-        };
+            yield return part;
+        }
     }
 
     private static IEnumerable<UIMessagePart> MapContent(
