@@ -1,17 +1,3 @@
-using System.Collections.Concurrent;
-using System.ComponentModel;
-using System.Net.Http.Json;
-using System.Text;
-using System.Text.Json;
-using Microsoft.Extensions.AI;
-using ModelContextProtocol.Client;
-using ModelContextProtocol.Protocol;
-using AgentHappey.Common.Extensions;
-using AgentHappey.Core.Extensions;
-using System.Text.Json.Serialization;
-using System.Text.Json.Nodes;
-using System.ComponentModel.DataAnnotations;
-
 namespace AgentHappey.Core;
 
 // TEMPORARY workaround due too MCP SDK bug MCP SDK/list converter    ❌ serializes via object, causes extra base64

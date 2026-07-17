@@ -3,7 +3,6 @@ using System.Text.Json;
 using AgentHappey.Core;
 using AIHappey.Responses;
 using Azure.Storage.Queues;
-using Azure.Storage.Queues.Models;
 using Microsoft.Extensions.Options;
 
 namespace AgentHappey.AsyncResponses;

@@ -4,7 +4,6 @@ using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.MCP;
 using AgentHappey.Core.Responses;
 using AIHappey.Responses;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
 namespace AgentHappey.HeaderAuth.AsyncResponses;
