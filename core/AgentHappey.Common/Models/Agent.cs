@@ -130,6 +130,10 @@ public class AIModel
     [JsonPropertyName("providerMetadata")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, object>? ProviderMetadata { get; set; }
+
+    [JsonPropertyName("providerHeaders")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, Dictionary<string, string>>? ProviderHeaders { get; set; }
 }
 
 public class AIModelOptions
