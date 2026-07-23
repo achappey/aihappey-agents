@@ -4,6 +4,11 @@
     "instructions": "You are Anthropic Agent.",
     "model": {
         "id": "anthropic/claude-haiku-4-5-20251001",
+        "providerHeaders": {
+            "anthropic": {
+                "anthropic-beta": "skills-2025-10-02,code-execution-2025-05-22"
+            }
+        },
         "providerMetadata": {
             "tools": [
                 {
@@ -38,7 +43,6 @@
                     "user_location": null
                 }
             ],
-            "anthropic-beta": "skills-2025-10-02,code-execution-2025-05-22",
             "max_tokens": 64000,
             "thinking": {
                 "type": "enabled",
