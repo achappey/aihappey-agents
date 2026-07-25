@@ -57,8 +57,6 @@ builder.Services
 builder.Services.AddControllers();
 builder.Services.AddAsyncAgentResponses<AzureAuthAsyncResponsesProcessor>(builder.Configuration);
 
-var staticAgents = basePath.GetAgents(appConfig?.McpConfig?.McpBaseUrl!);
-builder.Services.AddSingleton(staticAgents.ToList().AsReadOnly());
 builder.Services.AddSingleton(appConfig?.AiConfig!);
 builder.Services.AddSingleton(appConfig?.AzureAd!);
 builder.Services.AddSingleton(appConfig?.McpConfig!);

@@ -1,7 +1,4 @@
-using System.Collections.ObjectModel;
 using System.Reflection;
-using System.Text.Json;
-using AgentHappey.Common.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -90,21 +87,7 @@ public static class ServiceExtensions
                       return list;
                    }
 
-                   if (ModelContextServers.Resources.TryGetValue(server, out ListResourcesResult? resourceValue))
-                   {
-                      opts.Handlers.ListResourcesHandler = async (context, _ct) => await Task.FromResult(resourceValue);
-                      opts.Handlers.ReadResourceHandler = async (context, _ct) => await Task.FromResult(new ReadResourceResult()
-                      {
-                         Contents = [..context.Services?.GetRequiredService<ReadOnlyCollection<Agent>>().Select(a => new TextResourceContents()
-                         {
-                            Text = JsonSerializer.Serialize(a, JsonSerializerOptions.Web),
-                            Uri = $"agents://list/{a.Name}",
-                            MimeType =  "application/vnd.agent+json",
-                         }) ?? []]
-                      });
-                   }
-
-                   if (ModelContextServers.ToolTypes.TryGetValue(server, out Type[]? value))
+                    if (ModelContextServers.ToolTypes.TryGetValue(server, out Type[]? value))
                    {
                       // 3) Build per-request views
                       var tools = BuildTools(ctx.RequestServices, value);

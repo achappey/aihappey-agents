@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text.Json;
 using AgentHappey.Common.Extensions;
@@ -28,17 +27,15 @@ public class RuntimeTools
         RequestContext<CallToolRequestParams> _,
         CancellationToken cancellationToken = default)
     {
-        var agents = services.GetRequiredService<ReadOnlyCollection<Agent>>();
         var context = services.GetRequiredService<IHttpContextAccessor>();
         var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
-        var mapper = services.GetRequiredService<IStreamingContentMapper>();
+        var modelCatalog = services.GetRequiredService<IModelCatalog>();
         var aiConfig = services.GetRequiredService<AiConfig>();
-        var mcpConfig = services.GetRequiredService<McpConfig>();
-        var azureAd = services.GetRequiredService<AzureAd>();
         var tokenAcquisition = services.GetRequiredService<ITokenAcquisition>();
         var client = httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(aiConfig.AiEndpoint);
-        var agent = agents.FirstOrDefault(a => a.Name == agentName) ?? throw new Exception("Agent not found");
+        var agent = await modelCatalog.ResolveAgentAsync(agentName, cancellationToken)
+            ?? throw new Exception("Agent not found");
         IEnumerable<ChatMessage> messages = [new ChatMessage(ChatRole.User, task)];
 
         if (context.HttpContext?.User != null && !string.IsNullOrEmpty(aiConfig.AiScopes))
@@ -98,13 +95,9 @@ public class RuntimeTools
        bool? elicitCapability = false,
        CancellationToken cancellationToken = default)
     {
-        var agents = services.GetRequiredService<ReadOnlyCollection<Agent>>();
         var context = services.GetRequiredService<IHttpContextAccessor>();
         var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
-        var mapper = services.GetRequiredService<IStreamingContentMapper>();
         var aiConfig = services.GetRequiredService<AiConfig>();
-        var mcpConfig = services.GetRequiredService<McpConfig>();
-        var azureAd = services.GetRequiredService<AzureAd>();
         var tokenAcquisition = services.GetRequiredService<ITokenAcquisition>();
         var client = httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(aiConfig.AiEndpoint);
