@@ -405,7 +405,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                 Type = "function_call",
                 Status = "completed",
                 Name = state.Name,
-                Arguments = state.Arguments,
+                Arguments = JsonSerializer.SerializeToElement(state.Arguments),
                 AdditionalProperties = new Dictionary<string, JsonElement>
                 {
                     ["call_id"] = JsonSerializer.SerializeToElement(state.ItemId)

@@ -686,10 +686,10 @@ public partial class AgentChatClient
                 ? BuildMcpToolTitle(item)
                 : state.Name;
 
-            if (!string.IsNullOrWhiteSpace(item.Arguments))
+            if (item.Arguments != null)
             {
                 state.Arguments.Clear();
-                state.Arguments.Append(item.Arguments);
+                state.Arguments.Append(JsonSerializer.Serialize(item.Arguments));
             }
         }
 
