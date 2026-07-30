@@ -254,8 +254,66 @@ public partial class AgentChatClient
         if (!string.IsNullOrWhiteSpace(declaration.Description))
             extra["description"] = JsonSerializer.SerializeToElement(declaration.Description, JsonSerializerOptions.Web);
 
-        if (declaration.JsonSchema.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
-            extra["parameters"] = JsonSerializer.SerializeToElement(declaration.JsonSchema, JsonSerializerOptions.Web);
+
+        if (declaration.JsonSchema.ValueKind is not JsonValueKind.Undefined
+            and not JsonValueKind.Null)
+        {
+            extra["parameters"] = declaration.JsonSchema.Clone();
+        }
+
+        if (declaration.ReturnJsonSchema is
+            {
+                ValueKind: not JsonValueKind.Undefined
+            and not JsonValueKind.Null
+            } returnJsonSchema)
+        {
+            extra["output_schema"] = returnJsonSchema.Clone();
+        }
+
+        if (declaration.AdditionalProperties?.TryGetValue(
+                   "allowed_callers",
+                   out var allowedCallers) == true &&
+               allowedCallers is not null)
+        {
+            if (allowedCallers is JsonElement element)
+            {
+                if (element.ValueKind is not JsonValueKind.Undefined
+                    and not JsonValueKind.Null)
+                {
+                    extra["allowed_callers"] = element.Clone();
+                }
+            }
+            else
+            {
+                extra["allowed_callers"] = JsonSerializer.SerializeToElement(
+                    allowedCallers,
+                    allowedCallers.GetType(),
+                    JsonSerializerOptions.Web);
+            }
+        }
+
+        if (declaration.AdditionalProperties?.TryGetValue(
+                "defer_loading",
+                out var deferLoading) == true &&
+            deferLoading is not null)
+        {
+            if (deferLoading is JsonElement element)
+            {
+                if (element.ValueKind is not JsonValueKind.Undefined
+                    and not JsonValueKind.Null)
+                {
+                    extra["defer_loading"] = element.Clone();
+                }
+            }
+            else
+            {
+                extra["defer_loading"] = JsonSerializer.SerializeToElement(
+                    deferLoading,
+                    deferLoading.GetType(),
+                    JsonSerializerOptions.Web);
+            }
+        }
+
 
         return new ResponseToolDefinition
         {

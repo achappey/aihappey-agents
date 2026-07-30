@@ -128,7 +128,11 @@ public static class AgentExtensions
                 Name = a.Name,
                 Description = a.Description,
                 InputSchema = JsonSerializer
-                    .Deserialize<ToolSchema>(a.JsonSchema.ToString())
+                    .Deserialize<ToolSchema>(a.JsonSchema.ToString()),
+                OutputSchema = a.ReturnJsonSchema?.ToString() is { } schema &&
+                     !string.IsNullOrWhiteSpace(schema)
+                        ? JsonSerializer.Deserialize<ToolSchema>(schema)
+                        : null,
             }) ?? [];
 
     public static Implementation ToImplementation(
