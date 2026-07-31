@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text.Json;
 using AgentHappey.Common.Models;
@@ -28,10 +27,8 @@ public class SharePointRuntimeTools
         [Description("Sharepoint or OneDrive link of the agent json file")] string agentJsonFileUrl,
         string task,
         IServiceProvider services,
-        RequestContext<CallToolRequestParams> _,
         CancellationToken cancellationToken = default)
     {
-        var agents = services.GetRequiredService<ReadOnlyCollection<Agent>>();
         var context = services.GetRequiredService<IHttpContextAccessor>();
         var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
         var mapper = services.GetRequiredService<IStreamingContentMapper>();
@@ -110,13 +107,11 @@ public class SharePointRuntimeTools
     [Description("Sharepoint or OneDrive link of the workflow yaml file")] string workflowYaml,
     string task,
     IServiceProvider services,
-    RequestContext<CallToolRequestParams> requestContext,
     CancellationToken cancellationToken = default)
 
     {
         try
         {
-            var agents = services.GetRequiredService<ReadOnlyCollection<Agent>>();
             var context = services.GetRequiredService<IHttpContextAccessor>();
             var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
             var mapper = services.GetRequiredService<IStreamingContentMapper>();
