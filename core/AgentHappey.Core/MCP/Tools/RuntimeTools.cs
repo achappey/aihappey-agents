@@ -24,7 +24,7 @@ public class RuntimeTools
         string agentName,
         string task,
         IServiceProvider services,
-        RequestContext<CallToolRequestParams> _,
+        RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken = default)
     {
         var context = services.GetRequiredService<IHttpContextAccessor>();
@@ -66,7 +66,10 @@ public class RuntimeTools
             Tools = tools
         });
 
-        var response = await aiAgent.RunAsync(messages, options: runOpts, cancellationToken: cancellationToken);
+        var response = await AgentProgressStreaming.RunAgentAsync(
+            aiAgent.RunStreamingAsync(messages, options: runOpts, cancellationToken: cancellationToken),
+            requestContext,
+            cancellationToken);
 
         return new()
         {
@@ -81,7 +84,7 @@ public class RuntimeTools
        OpenWorld = true)]
     public static async Task<CallToolResult> AgentRuntime_AskCustom(
        IServiceProvider services,
-       RequestContext<CallToolRequestParams> _,
+       RequestContext<CallToolRequestParams> requestContext,
        string agentName,
        string description,
        string instructions,
@@ -157,7 +160,10 @@ public class RuntimeTools
             Tools = tools
         });
 
-        var response = await aiAgent.RunAsync(messages, options: runOpts, cancellationToken: cancellationToken);
+        var response = await AgentProgressStreaming.RunAgentAsync(
+            aiAgent.RunStreamingAsync(messages, options: runOpts, cancellationToken: cancellationToken),
+            requestContext,
+            cancellationToken);
 
         return new()
         {

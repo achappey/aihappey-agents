@@ -3,6 +3,7 @@ using System.Text.Json;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.Extensions;
+using AgentHappey.Core.MCP;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.AspNetCore.Http;
@@ -27,6 +28,7 @@ public class SharePointRuntimeTools
         [Description("Sharepoint or OneDrive link of the agent json file")] string agentJsonFileUrl,
         string task,
         IServiceProvider services,
+        RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken = default)
     {
         var context = services.GetRequiredService<IHttpContextAccessor>();
@@ -88,7 +90,10 @@ public class SharePointRuntimeTools
             Tools = tools
         });
 
-        var response = await aiAgent.RunAsync(messages, options: runOpts, cancellationToken: cancellationToken);
+        var response = await AgentProgressStreaming.RunAgentAsync(
+            aiAgent.RunStreamingAsync(messages, options: runOpts, cancellationToken: cancellationToken),
+            requestContext,
+            cancellationToken);
 
         return new()
         {
@@ -107,6 +112,7 @@ public class SharePointRuntimeTools
     [Description("Sharepoint or OneDrive link of the workflow yaml file")] string workflowYaml,
     string task,
     IServiceProvider services,
+    RequestContext<CallToolRequestParams> requestContext,
     CancellationToken cancellationToken = default)
 
     {
@@ -212,13 +218,18 @@ public class SharePointRuntimeTools
 
             var workflow = yaml.ParseWorkflow<string>(provider);
 
-            await using var run = await InProcessExecution.RunAsync(
+            await using var run = await InProcessExecution.RunStreamingAsync(
                                workflow,
                                messages.LastOrDefault(a => a.Role == ChatRole.User)?.Text!,
                                cancellationToken: cancellationToken
                            );
 
-            var events = run.OutgoingEvents
+            var workflowEvents = await AgentProgressStreaming.RunWorkflowAsync(
+                run.WatchStreamAsync(cancellationToken),
+                requestContext,
+                cancellationToken);
+
+            var events = workflowEvents
                 .Select(e => e.ToString())
                 .ToList();
 
