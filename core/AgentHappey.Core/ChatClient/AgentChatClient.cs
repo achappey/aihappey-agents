@@ -34,7 +34,11 @@ public partial class AgentChatClient(
 
         var request = BuildResponseRequest(messages, options);
         var capture = ResolveBackendCaptureRequest();
-        var response = await http.GetResponses(request, capture: capture, ct: cancellationToken);
+        var response = await http.GetResponses(
+            request,
+            capture: capture,
+            providerHeaders: agent.Model.ProviderHeaders,
+            ct: cancellationToken);
 
         return ToChatResponse(response);
     }

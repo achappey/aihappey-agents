@@ -140,6 +140,89 @@ public sealed class AgentChatClientFixtureTests
     }
 
     [Fact]
+    public async Task Non_streaming_inference_request_forwards_provider_headers_with_safe_precedence()
+    {
+        var fixture = LoadFixture(StructuredFixturePath);
+        HttpRequestMessage? capturedRequest = null;
+
+        using var httpClient = CreateHttpClient(request =>
+        {
+            capturedRequest = request;
+            return CreateJsonResponse(fixture);
+        });
+        httpClient.DefaultRequestHeaders.TryAddWithoutValidation("X-Provider-Route", "client-default");
+
+        using var client = CreateClient(httpClient, CreateAgent(providerHeaders: new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["X-Provider-Route"] = "agent-route",
+            ["Authorization"] = "Bearer provider-token",
+            ["Accept"] = "text/plain",
+            ["Content-Type"] = "text/plain",
+            ["X-Agent-Name"] = "ProviderSuppliedAgent"
+        }));
+
+        await client.GetResponseAsync(CreateUserMessages("Say hello"));
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("agent-route", Assert.Single(capturedRequest.Headers.GetValues("X-Provider-Route")));
+        Assert.Equal("Bearer provider-token", Assert.Single(capturedRequest.Headers.GetValues("Authorization")));
+        Assert.Equal("application/json", Assert.Single(capturedRequest.Headers.Accept).MediaType);
+        Assert.Equal("application/json", capturedRequest.Content?.Headers.ContentType?.MediaType);
+        Assert.Equal("StructuredAgent", Assert.Single(capturedRequest.Headers.GetValues("X-Agent-Name")));
+    }
+
+    [Fact]
+    public async Task Streaming_inference_request_forwards_provider_headers()
+    {
+        var fixture = LoadFixture(StreamingFixturePath);
+        string? providerHeader = null;
+
+        using var httpClient = CreateHttpClient(request =>
+        {
+            providerHeader = request.Headers.TryGetValues("X-Provider-Stream", out var values)
+                ? Assert.Single(values)
+                : null;
+
+            return CreateStreamingResponse(fixture);
+        });
+        using var client = CreateClient(httpClient, CreateAgent(providerHeaders: new()
+        {
+            ["X-Provider-Stream"] = "enabled"
+        }));
+
+        var updates = await CollectAsync(client.GetStreamingResponseAsync(CreateUserMessages("Say hello")));
+
+        Assert.NotEmpty(updates);
+        Assert.Equal("enabled", providerHeader);
+    }
+
+    [Fact]
+    public async Task Provider_headers_do_not_persist_on_shared_http_client()
+    {
+        var fixture = LoadFixture(StructuredFixturePath);
+        var capturedValues = new List<string?>();
+
+        using var httpClient = CreateHttpClient(request =>
+        {
+            capturedValues.Add(request.Headers.TryGetValues("X-Provider-Scoped", out var values)
+                ? Assert.Single(values)
+                : null);
+            return CreateJsonResponse(fixture);
+        });
+        using var providerClient = CreateClient(httpClient, CreateAgent(providerHeaders: new()
+        {
+            ["X-Provider-Scoped"] = "first-agent-only"
+        }));
+        using var plainClient = CreateClient(httpClient, CreateAgent());
+
+        await providerClient.GetResponseAsync(CreateUserMessages("First request"));
+        await plainClient.GetResponseAsync(CreateUserMessages("Second request"));
+
+        Assert.Equal(["first-agent-only", null], capturedValues);
+        Assert.False(httpClient.DefaultRequestHeaders.Contains("X-Provider-Scoped"));
+    }
+
+    [Fact]
     public async Task Assistant_reasoning_is_sent_before_assistant_text_when_ui_part_order_has_reasoning_first()
     {
         var requestBody = await CaptureRequestBodyAsync(
@@ -790,7 +873,8 @@ public sealed class AgentChatClientFixtureTests
     private static Agent CreateAgent(
         Dictionary<string, object>? providerMetadata = null,
         OutputSchema? outputSchema = null,
-        string modelId = "openai/gpt-fixture")
+        string modelId = "openai/gpt-fixture",
+        Dictionary<string, string>? providerHeaders = null)
         => new()
         {
             Name = "StructuredAgent",
@@ -801,6 +885,7 @@ public sealed class AgentChatClientFixtureTests
             {
                 Id = modelId,
                 ProviderMetadata = providerMetadata,
+                ProviderHeaders = providerHeaders,
                 Options = new AIModelOptions
                 {
                     Temperature = 0

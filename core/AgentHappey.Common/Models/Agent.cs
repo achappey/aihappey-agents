@@ -133,7 +133,7 @@ public class AIModel
 
     [JsonPropertyName("providerHeaders")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public Dictionary<string, Dictionary<string, string>>? ProviderHeaders { get; set; }
+    public Dictionary<string, string>? ProviderHeaders { get; set; }
 }
 
 public class AIModelOptions

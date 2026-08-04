@@ -26,7 +26,11 @@ public partial class AgentChatClient
 
         var state = new StreamingResponseState(GetStreamingModelId(), agent.Name);
 
-        await foreach (var part in http.GetResponsesUpdates(request, capture: capture, ct: cancellationToken).WithCancellation(cancellationToken))
+        await foreach (var part in http.GetResponsesUpdates(
+            request,
+            capture: capture,
+            providerHeaders: agent.Model.ProviderHeaders,
+            ct: cancellationToken).WithCancellation(cancellationToken))
         {
             foreach (var update in ToStreamingChatResponseUpdates(part, state))
                 yield return update;

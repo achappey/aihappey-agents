@@ -22,6 +22,7 @@ public static class HttpExtensions
         string relativeUrl = "v1/responses",
         JsonElement? extraRootProperties = null,
         ProviderBackendCaptureRequest? capture = null,
+        IReadOnlyDictionary<string, string>? providerHeaders = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(client);
@@ -32,6 +33,7 @@ public static class HttpExtensions
         req.Headers.Accept.Add(AcceptJson);
         var payload = BuildPayload(options, extraRootProperties);
         req.Content = new StringContent(payload.GetRawText(), Encoding.UTF8, "application/json");
+        ApplyProviderHeaders(req, providerHeaders);
 
         using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         await ThrowIfNotSuccess(resp, ct);
@@ -57,6 +59,7 @@ public static class HttpExtensions
         string relativeUrl = "v1/responses",
         JsonElement? extraRootProperties = null,
         ProviderBackendCaptureRequest? capture = null,
+        IReadOnlyDictionary<string, string>? providerHeaders = null,
         [EnumeratorCancellation] CancellationToken ct = default
 )
     {
@@ -71,6 +74,7 @@ public static class HttpExtensions
         var payload = BuildPayload(options, extraRootProperties);
 
         req.Content = new StringContent(payload.GetRawText(), Encoding.UTF8, "application/json");
+        ApplyProviderHeaders(req, providerHeaders);
 
         using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         await ThrowIfNotSuccess(resp, ct);
@@ -81,6 +85,28 @@ public static class HttpExtensions
 
         await foreach (var evt in ReadResponseSseEventsAsync(reader, captureSink, ct))
             yield return evt;
+    }
+
+    private static void ApplyProviderHeaders(
+        HttpRequestMessage request,
+        IReadOnlyDictionary<string, string>? providerHeaders)
+    {
+        if (providerHeaders is null)
+            return;
+
+        foreach (var (name, value) in providerHeaders)
+        {
+            // Headers explicitly set by the runtime own the wire representation.
+            // All other headers are request-scoped and override HttpClient defaults.
+            if (request.Headers.Any(header => string.Equals(header.Key, name, StringComparison.OrdinalIgnoreCase))
+                || request.Content?.Headers.Any(header => string.Equals(header.Key, name, StringComparison.OrdinalIgnoreCase)) == true
+                || string.Equals(name, "X-Agent-Name", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            request.Headers.TryAddWithoutValidation(name, value);
+        }
     }
 
 
