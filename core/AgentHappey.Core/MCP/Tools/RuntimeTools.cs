@@ -94,7 +94,6 @@ public class RuntimeTools
        bool? idempotent = true,
        bool? openWorld = false,
        bool? destructive = false,
-       bool? samplingCapability = false,
        bool? elicitCapability = false,
        CancellationToken cancellationToken = default)
     {
@@ -124,7 +123,6 @@ public class RuntimeTools
                 },
                 Capabilities = new ClientCapabilities
                 {
-                    Sampling = samplingCapability == true ? new() : null,
                     Elicitation = elicitCapability == true ? new() : null
                 }
             },

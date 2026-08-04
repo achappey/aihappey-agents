@@ -52,7 +52,6 @@ public class AgentEditorTools
         bool? policyIdempotent,
         bool? policyOpenWorld,
         bool? policyDestructive,
-        bool? capabilitySampling,
         bool? capabilityElicitation,
        [Description("File name to create (default: agent.json)")] string? fileName,
        [Description("If true, replaces existing file. If false, Graph may return conflict if file exists.")] bool? overwrite,
@@ -108,7 +107,6 @@ public class AgentEditorTools
                 },
                 Capabilities = new ClientCapabilities
                 {
-                    Sampling = capabilitySampling == true ? new() : null,
                     Elicitation = capabilityElicitation == true ? new() : null
                 }
             },
@@ -152,7 +150,6 @@ public class AgentEditorTools
         bool? policyIdempotent,
         bool? policyOpenWorld,
         bool? policyDestructive,
-        bool? capabilitySampling,
         bool? capabilityElicitation,
         IServiceProvider services,
         RequestContext<CallToolRequestParams> _,
@@ -203,7 +200,6 @@ public class AgentEditorTools
                 },
                 Capabilities = new ClientCapabilities
                 {
-                    Sampling = capabilitySampling == true ? new() : null,
                     Elicitation = capabilityElicitation == true ? new() : null
                 }
             },
