@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
@@ -17,11 +18,22 @@ public static class AuthenticationExtensions
       var mcpConfig = services.GetRequiredService<McpConfig>();
       var azureAd = services.GetRequiredService<AzureAd>();
 
-      if (azureAd is null || context.HttpContext?.User is null || mcpConfig is null)
+      if (azureAd is null || context.HttpContext is null || mcpConfig is null)
          return null;
 
+      var request = context.HttpContext.Request;
+      var authorizationHeader = request.Headers.Authorization.FirstOrDefault();
+      var userAccessToken = TryGetBearerToken(authorizationHeader);
+
+      if (Uri.TryCreate(serverUrl, UriKind.Absolute, out var serverUri)
+         && TryGetRequestOrigin(request, out var requestOrigin)
+         && IsSameOrigin(serverUri, requestOrigin))
+      {
+         return userAccessToken;
+      }
+
       return await httpClientFactory.GetMcpTokenAsync(serverUrl,
-                        context.HttpContext?.Request.Headers.Authorization.FirstOrDefault()?.Split(" ").LastOrDefault()!,
+                        userAccessToken!,
                         azureAd, mcpConfig, ct);
    }
 
@@ -114,5 +126,25 @@ public static class AuthenticationExtensions
       McpTokenCache.Set(cacheKey, access, expires);
 
       return access;
+   }
+
+   private static bool IsSameOrigin(Uri left, Uri right)
+      => string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
+         && string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
+         && left.Port == right.Port;
+
+   private static bool TryGetRequestOrigin(HttpRequest request, out Uri origin)
+      => Uri.TryCreate($"{request.Scheme}://{request.Host}", UriKind.Absolute, out origin!);
+
+   private static string? TryGetBearerToken(string? authorizationHeader)
+   {
+      if (!AuthenticationHeaderValue.TryParse(authorizationHeader, out var authorization)
+         || !string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase)
+         || string.IsNullOrWhiteSpace(authorization.Parameter))
+      {
+         return null;
+      }
+
+      return authorization.Parameter;
    }
 }

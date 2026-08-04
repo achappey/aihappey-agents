@@ -314,7 +314,6 @@ public partial class AgentChatClient
             }
         }
 
-
         return new ResponseToolDefinition
         {
             Type = "function",

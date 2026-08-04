@@ -3,7 +3,6 @@ using System.Text.Json;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.Extensions;
-using AgentHappey.Core.MCP;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.AspNetCore.Http;
