@@ -75,22 +75,6 @@ public class McpClient
     public ClientCapabilities? Capabilities { get; set; }
 }
 
-public class Mcp
-{
-    [JsonPropertyName("servers")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public IEnumerable<McpServer>? Servers { get; set; }
-
-    [JsonPropertyName("policy")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public McpPolicy? Policy { get; set; }
-
-    [JsonPropertyName("clientCapabilities")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public ClientCapabilities? ClientCapabilities { get; set; }
-}
-
-
 public class AISkill
 {
     [JsonPropertyName("name")]
@@ -152,7 +136,20 @@ public class McpServer
     public string Url { get; set; } = null!;
 
     [JsonPropertyName("disabled")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Disabled { get; set; }
+
+    [JsonPropertyName("defer_loading")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? DeferLoading { get; set; }
+
+    [JsonPropertyName("namespace")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Namespace { get; set; }
+
+    [JsonPropertyName("allowed_callers")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IEnumerable<string>? AllowedCallers { get; set; }
 
     [JsonPropertyName("headers")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

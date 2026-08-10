@@ -164,6 +164,7 @@ public partial class AgentChatClient
 
             case ResponseOutputItemAdded added:
                 state.RegisterOutputItem(added.Item, added.OutputIndex);
+                RegisterProgramStreamItem(added.Item);
                 yield break;
 
             case ResponseShellCallCommandAdded shellCommandAdded:
@@ -237,6 +238,7 @@ public partial class AgentChatClient
                 yield break;
             case ResponseOutputItemDone done:
                 state.RegisterOutputItem(done.Item, done.OutputIndex);
+                RegisterProgramStreamItem(done.Item);
 
                 if (string.Equals(done.Item.Type, "shell_call", StringComparison.OrdinalIgnoreCase)
                     && state.TryCreateShellInputUpdate(done.Item, done.OutputIndex, out ChatResponseUpdate shellInputUpdate))
@@ -549,6 +551,26 @@ public partial class AgentChatClient
         return property.Clone();
     }
 
+    private void RegisterProgramStreamItem(ResponseStreamItem item)
+    {
+        if (!string.Equals(item.Type, "program", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var callId = item.CallId ?? GetAdditionalPropertyString(item.AdditionalProperties, "call_id");
+        var code = GetAdditionalPropertyString(item.AdditionalProperties, "code");
+        var fingerprint = GetAdditionalPropertyString(item.AdditionalProperties, "fingerprint");
+        if (string.IsNullOrWhiteSpace(callId) || string.IsNullOrWhiteSpace(fingerprint))
+            return;
+
+        responsePrograms[callId] = new ResponseProgramItem
+        {
+            Id = item.Id,
+            CallId = callId,
+            Code = code ?? string.Empty,
+            Fingerprint = fingerprint
+        };
+    }
+
     private static string? GetUnknownEventString(ResponseUnknownEvent unknown, string propertyName)
     {
         if (unknown.Data?.TryGetValue(propertyName, out var property) != true)
@@ -686,6 +708,8 @@ public partial class AgentChatClient
             state.Name = string.IsNullOrWhiteSpace(item.Name) ? state.Name : item.Name;
             state.CallId = GetAdditionalPropertyString(item.AdditionalProperties, "call_id") ?? state.CallId ?? itemId;
             state.ProviderMetadata = GetAdditionalPropertyProviderMetadata(item.AdditionalProperties) ?? state.ProviderMetadata;
+            state.Namespace = GetAdditionalPropertyString(item.AdditionalProperties, "namespace") ?? state.Namespace;
+            state.Caller = GetAdditionalPropertyValue(item.AdditionalProperties, "caller") ?? state.Caller;
             state.ToolTitle = state.IsProviderExecuted
                 ? BuildMcpToolTitle(item)
                 : state.Name;
@@ -941,7 +965,14 @@ public partial class AgentChatClient
 
             update = new ChatResponseUpdate(
                 ChatRole.Assistant,
-                [new FunctionCallContent(callId, state.Name, arguments)])
+                [new FunctionCallContent(callId, state.Name, arguments)
+                {
+                    RawRepresentation = new Dictionary<string, object?>
+                    {
+                        ["namespace"] = state.Namespace,
+                        ["caller"] = state.Caller
+                    }
+                }])
             {
                 MessageId = itemId,
                 AuthorName = AuthorName,
@@ -1396,6 +1427,8 @@ public partial class AgentChatClient
         public string? CallId { get; set; }
         public string? Name { get; set; }
         public string? ToolTitle { get; set; }
+        public string? Namespace { get; set; }
+        public object? Caller { get; set; }
         public Dictionary<string, Dictionary<string, object>?>? ProviderMetadata { get; set; }
         public bool InputEmitted { get; set; }
         public StringBuilder Arguments { get; } = new();

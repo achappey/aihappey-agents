@@ -47,6 +47,8 @@ public partial class AgentChatClient
 
     private readonly ConcurrentDictionary<string, AITool> Tools = new();
 
+    private readonly ConcurrentDictionary<string, McpToolSource> McpToolSources = new(StringComparer.Ordinal);
+
     //  private readonly ConcurrentBag<ChatMessage> Messages = [];
 
     private ChatMessage[] _history = [];
@@ -296,7 +298,14 @@ public partial class AgentChatClient
                         && (agent.McpClient?.Policy?.OpenWorld != false || a.ProtocolTool.Annotations?.OpenWorldHint != true)
                         && (agent.McpClient?.Policy?.Idempotent != true || a.ProtocolTool.Annotations?.IdempotentHint == true))];
 
-                tools.AddRange(allTools.Cast<AITool>());
+                foreach (var tool in allTools.Cast<AITool>())
+                {
+                    tools.Add(tool);
+                    McpToolSources[tool.Name] = new McpToolSource(
+                        servers.Key,
+                        servers.Value,
+                        mcpClient.ServerInfo);
+                }
             }
 
             if (mcpClient.ServerCapabilities.Resources != null)
@@ -329,6 +338,11 @@ public partial class AgentChatClient
 
         return [.. tools.DistinctBy(a => a.Name)];
     }
+
+    private sealed record McpToolSource(
+        string ServerId,
+        AgentHappey.Common.Models.McpServer Configuration,
+        Implementation ServerInfo);
 
     private void ApplyForwardedHeaders(HttpClient client)
     {

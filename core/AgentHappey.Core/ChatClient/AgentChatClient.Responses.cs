@@ -5,17 +5,21 @@ using AIHappey.Abstractions.Http;
 using AIHappey.Responses;
 using AgentHappey.Common.Extensions;
 using Microsoft.Extensions.AI;
+using System.Text.RegularExpressions;
 
 namespace AgentHappey.Core.ChatClient;
 
 public partial class AgentChatClient
 {
+    private readonly Dictionary<string, ResponseCaller> responseCallers = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ResponseProgramItem> responsePrograms = new(StringComparer.Ordinal);
+
     private ResponseRequest BuildResponseRequest(IEnumerable<ChatMessage> messages, ChatOptions? options)
         => new()
         {
             Model = agent.Model.Id,
             Input = new ResponseInput(ToResponseInputItems(messages)),
-            Tools = options?.Tools?.OfType<AIFunctionDeclaration>().Select(ToResponseToolDefinition).ToList(),
+            Tools = BuildResponseToolDefinitions(options?.Tools),
             Text = agent.GetCompletionsOutputSchema(),
             Metadata = BuildResponsesProviderMetadata(),
             Instructions = options?.Instructions,
@@ -97,6 +101,82 @@ public partial class AgentChatClient
             ? element
             : JsonSerializer.SerializeToElement(value, JsonSerializerOptions.Web);
 
+    private List<ResponseToolDefinition>? BuildResponseToolDefinitions(IList<AITool>? tools)
+    {
+        if (tools is null)
+            return null;
+
+        var definitions = new List<ResponseToolDefinition>();
+        var namespaceGroups = new Dictionary<string, NamespaceToolGroup>(StringComparer.Ordinal);
+
+        foreach (var declaration in tools.OfType<AIFunctionDeclaration>())
+        {
+            if (!McpToolSources.TryGetValue(declaration.Name, out var source))
+            {
+                definitions.Add(ToResponseToolDefinition(declaration));
+                continue;
+            }
+
+            var function = ToResponseToolDefinition(declaration, source.Configuration);
+            if (source.Configuration.Namespace != true)
+            {
+                definitions.Add(function);
+                continue;
+            }
+
+            if (!namespaceGroups.TryGetValue(source.ServerId, out var group))
+            {
+                var displayName = source.ServerInfo.Name ?? source.ServerId;
+                group = new NamespaceToolGroup(
+                    displayName,
+                    !string.IsNullOrWhiteSpace(source.ServerInfo.Description)
+                        ? source.ServerInfo.Description
+                        : $"Tools provided by {displayName}.",
+                    []);
+                namespaceGroups[source.ServerId] = group;
+            }
+
+            group.Tools.Add(function);
+        }
+
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in namespaceGroups.Values)
+        {
+            var baseName = SanitizeNamespaceName(group.ProposedName);
+            var name = baseName;
+            var suffix = 2;
+            while (!used.Add(name))
+                name = $"{baseName[..Math.Min(baseName.Length, 60)]}_{suffix++}";
+
+            definitions.Add(new ResponseToolDefinition
+            {
+                Type = "namespace",
+                Extra = new Dictionary<string, JsonElement>
+                {
+                    ["name"] = JsonSerializer.SerializeToElement(name, JsonSerializerOptions.Web),
+                    ["description"] = JsonSerializer.SerializeToElement(group.Description, JsonSerializerOptions.Web),
+                    ["tools"] = JsonSerializer.SerializeToElement(group.Tools, ResponseJson.Default)
+                }
+            });
+        }
+
+        return definitions;
+    }
+
+    private static string SanitizeNamespaceName(string? value)
+    {
+        var name = Regex.Replace((value ?? string.Empty).Trim().ToLowerInvariant(), "[^a-z0-9_-]+", "_");
+        name = Regex.Replace(name, "^[_-]+|[_-]+$", string.Empty);
+        if (name.Length > 64)
+            name = name[..64];
+        return string.IsNullOrWhiteSpace(name) ? "tools" : name;
+    }
+
+    private sealed record NamespaceToolGroup(
+        string ProposedName,
+        string Description,
+        List<ResponseToolDefinition> Tools);
+
     private List<ResponseInputItem> ToResponseInputItems(IEnumerable<ChatMessage> messages)
     {
         var items = new List<ResponseInputItem>();
@@ -115,6 +195,32 @@ public partial class AgentChatClient
 
             foreach (var item in ToResponseInputItems(message))
                 items.Add(item);
+        }
+
+        return InsertReferencedPrograms(items);
+    }
+
+    private List<ResponseInputItem> InsertReferencedPrograms(List<ResponseInputItem> items)
+    {
+        var requiredProgramIds = items
+            .Select(item => item switch
+            {
+                ResponseFunctionCallItem call => call.Caller?.CallerId,
+                ResponseFunctionCallOutputItem output => output.Caller?.CallerId,
+                _ => null
+            })
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var programId in requiredProgramIds.Reverse())
+        {
+            if (programId is not null
+                && responsePrograms.TryGetValue(programId, out var program)
+                && !items.OfType<ResponseProgramItem>().Any(item => item.CallId == programId))
+            {
+                items.Insert(0, program);
+            }
         }
 
         return items;
@@ -153,7 +259,10 @@ public partial class AgentChatClient
                     {
                         CallId = call.CallId,
                         Name = call.Name,
-                        Arguments = SerializeResponseValue(call.Arguments)
+                        Arguments = SerializeResponseValue(call.Arguments),
+                        Namespace = ReadResponseMetadataString(call.RawRepresentation, "namespace"),
+                        Caller = ReadResponseCaller(call.RawRepresentation)
+                            ?? GetResponseCaller(call.CallId)
                     };
                     break;
 
@@ -176,13 +285,59 @@ public partial class AgentChatClient
             yield return item;
     }
 
-    private static ResponseFunctionCallOutputItem ToResponseFunctionCallOutputItem(FunctionResultContent result)
+    private ResponseFunctionCallOutputItem ToResponseFunctionCallOutputItem(FunctionResultContent result)
         => new()
         {
             CallId = result.CallId,
             Output = SerializeResponseValue(result.Result),
-            Status = "completed"
+            Status = "completed",
+            Caller = ReadResponseCaller(result.RawRepresentation)
+                ?? GetResponseCaller(result.CallId)
         };
+
+    private ResponseCaller? GetResponseCaller(string? callId)
+        => !string.IsNullOrWhiteSpace(callId)
+            && responseCallers.TryGetValue(callId, out var caller)
+                ? caller
+                : null;
+
+    private static string? ReadResponseMetadataString(object? rawRepresentation, string propertyName)
+    {
+        var json = TryReadRawRepresentation(rawRepresentation);
+        return json is { ValueKind: JsonValueKind.Object }
+            && json.Value.TryGetProperty(propertyName, out var value)
+            && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+    }
+
+    private static ResponseCaller? ReadResponseCaller(object? rawRepresentation)
+    {
+        var json = TryReadRawRepresentation(rawRepresentation);
+        if (json is not { ValueKind: JsonValueKind.Object }
+            || !json.Value.TryGetProperty("caller", out var caller)
+            || caller.ValueKind != JsonValueKind.Object)
+            return null;
+
+        return caller.Deserialize<ResponseCaller>(JsonSerializerOptions.Web);
+    }
+
+    private static JsonElement? TryReadRawRepresentation(object? rawRepresentation)
+    {
+        if (rawRepresentation is null)
+            return null;
+
+        try
+        {
+            return rawRepresentation is JsonElement element
+                ? element.Clone()
+                : JsonSerializer.SerializeToElement(rawRepresentation, JsonSerializerOptions.Web);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private static IEnumerable<ResponseInputItem> FlushResponseInputMessage(
         ChatMessage message,
@@ -244,7 +399,9 @@ public partial class AgentChatClient
         return null;
     }
 
-    private static ResponseToolDefinition ToResponseToolDefinition(AIFunctionDeclaration declaration)
+    private static ResponseToolDefinition ToResponseToolDefinition(
+        AIFunctionDeclaration declaration,
+        AgentHappey.Common.Models.McpServer? server = null)
     {
         var extra = new Dictionary<string, JsonElement>
         {
@@ -313,6 +470,16 @@ public partial class AgentChatClient
                     JsonSerializerOptions.Web);
             }
         }
+
+        var serverAllowedCallers = server?.AllowedCallers?
+            .Where(caller => caller is "direct" or "programmatic")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (serverAllowedCallers is { Length: > 0 })
+            extra["allowed_callers"] = JsonSerializer.SerializeToElement(serverAllowedCallers, JsonSerializerOptions.Web);
+
+        if (server?.DeferLoading == true)
+            extra["defer_loading"] = JsonSerializer.SerializeToElement(true, JsonSerializerOptions.Web);
 
         return new ResponseToolDefinition
         {
@@ -418,6 +585,10 @@ public partial class AgentChatClient
                 AppendFunctionCall(parts, json);
                 return;
 
+            case "program":
+                RegisterProgram(json);
+                return;
+
             default:
                 return;
         }
@@ -490,7 +661,7 @@ public partial class AgentChatClient
         });
     }
 
-    private static void AppendFunctionCall(List<AIContent> parts, JsonElement functionCall)
+    private void AppendFunctionCall(List<AIContent> parts, JsonElement functionCall)
     {
         var callId = functionCall.TryGetProperty("call_id", out var callIdProperty)
             ? callIdProperty.GetString()
@@ -511,10 +682,39 @@ public partial class AgentChatClient
                 : argumentsProperty.GetRawText()
             : null;
 
+        var caller = functionCall.TryGetProperty("caller", out var callerProperty)
+            && callerProperty.ValueKind == JsonValueKind.Object
+                ? callerProperty.Deserialize<ResponseCaller>(JsonSerializerOptions.Web)
+                : null;
+        if (caller is not null)
+            responseCallers[callId] = caller;
+
         parts.Add(new FunctionCallContent(
             callId,
             name,
-            DeserializeArguments(argumentsText)));
+            DeserializeArguments(argumentsText))
+        {
+            RawRepresentation = new Dictionary<string, object?>
+            {
+                ["namespace"] = functionCall.TryGetProperty("namespace", out var namespaceProperty)
+                    ? namespaceProperty.GetString()
+                    : null,
+                ["caller"] = caller
+            }
+        });
+    }
+
+    private void RegisterProgram(JsonElement program)
+    {
+        try
+        {
+            var item = program.Deserialize<ResponseProgramItem>(ResponseJson.Default);
+            if (item is not null && !string.IsNullOrWhiteSpace(item.CallId))
+                responsePrograms[item.CallId] = item;
+        }
+        catch
+        {
+        }
     }
 
     private static IDictionary<string, object?> DeserializeArguments(string? arguments)
