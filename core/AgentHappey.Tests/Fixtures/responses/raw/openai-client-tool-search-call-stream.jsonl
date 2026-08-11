@@ -1,0 +1,13 @@
+event: response.created
+data: {"type":"response.created","sequence_number":1,"response":{"id":"resp_tool_search_fixture","object":"response","created_at":1735689600,"status":"in_progress","model":"gpt-fixture","output":[],"tools":[]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,"output_index":0,"item":{"id":"tsc_fixture_123","type":"tool_search_call","status":"in_progress","arguments":{},"call_id":"call_tool_search_fixture_123","execution":"client"}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{"id":"tsc_fixture_123","type":"tool_search_call","status":"completed","arguments":{"goal":"Get detailed information about Poland"},"call_id":"call_tool_search_fixture_123","execution":"client"}}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":4,"response":{"id":"resp_tool_search_fixture","object":"response","created_at":1735689600,"completed_at":1735689601,"status":"completed","model":"gpt-fixture","output":[{"id":"tsc_fixture_123","type":"tool_search_call","status":"completed","arguments":{"goal":"Get detailed information about Poland"},"call_id":"call_tool_search_fixture_123","execution":"client"}],"tools":[]}}
+
+data: [DONE]

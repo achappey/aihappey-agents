@@ -29,6 +29,7 @@ public sealed class AgentChatClientFixtureTests
     private const string OpenAiEmptyReasoningFixturePath = "Fixtures/responses/raw/openai-with-reasoning-responses-stream.jsonl";
     private const string OpenAiReasoningSummaryFixturePath = "Fixtures/responses/raw/openai-with-reasoning-summaries-responses-stream.jsonl";
     private const string OpenAiShellAndFileFixturePath = "Fixtures/responses/raw/openai-with-shell-calls-and-file-output-stream.jsonl";
+    private const string OpenAiClientToolSearchFixturePath = "Fixtures/responses/raw/openai-client-tool-search-call-stream.jsonl";
 
     [Theory]
     [InlineData("https://backend.test/v1/", "https://backend.test/mcp", true)]
@@ -137,6 +138,30 @@ public sealed class AgentChatClientFixtureTests
 
         Assert.NotEmpty(updates);
         Assert.Equal("StructuredAgent", agentNameHeader);
+    }
+
+    [Fact]
+    public async Task OpenAI_client_tool_search_call_is_emitted_for_agent_backend_execution()
+    {
+        var fixture = LoadFixture(OpenAiClientToolSearchFixturePath);
+
+        using var httpClient = CreateHttpClient(_ => CreateStreamingResponse(fixture));
+        using var client = CreateClient(httpClient, CreateAgent(modelId: "openai/gpt-fixture"));
+
+        var updates = await CollectAsync(client.GetStreamingResponseAsync(CreateUserMessages("Tell me about Poland")));
+        var functionCall = Assert.Single(updates
+            .SelectMany(update => update.Contents)
+            .OfType<FunctionCallContent>());
+
+        Assert.Equal("call_tool_search_fixture_123", functionCall.CallId);
+        Assert.Equal("client_tool_search", functionCall.Name);
+        Assert.Equal("Get detailed information about Poland", functionCall.Arguments?["goal"]?.ToString());
+
+        var raw = Assert.IsType<Dictionary<string, object?>>(functionCall.RawRepresentation);
+        Assert.Equal("tool_search_call", raw["responses_type"]);
+        Assert.Equal("tsc_fixture_123", raw["item_id"]);
+        Assert.Equal("call_tool_search_fixture_123", raw["call_id"]);
+        Assert.Equal("client", raw["execution"]);
     }
 
     [Fact]

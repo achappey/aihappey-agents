@@ -111,6 +111,12 @@ public partial class AgentChatClient
 
         foreach (var declaration in tools.OfType<AIFunctionDeclaration>())
         {
+            if (string.Equals(declaration.Name, ClientToolSearchName, StringComparison.Ordinal)
+                && !HasAgentTool(ToolSearchType))
+            {
+                continue;
+            }
+
             if (!McpToolSources.TryGetValue(declaration.Name, out var source))
             {
                 definitions.Add(ToResponseToolDefinition(declaration));
@@ -187,7 +193,9 @@ public partial class AgentChatClient
             {
                 foreach (var result in message.Contents.OfType<FunctionResultContent>())
                 {
-                    items.Add(ToResponseFunctionCallOutputItem(result));
+                    items.Add(TryCreateToolSearchOutputItem(result, out var toolSearchOutput)
+                        ? toolSearchOutput
+                        : ToResponseFunctionCallOutputItem(result));
                 }
 
                 continue;
@@ -255,6 +263,21 @@ public partial class AgentChatClient
                     foreach (var item in FlushResponseInputMessage(message, contentParts))
                         yield return item;
 
+                    if (IsToolSearchCall(call))
+                    {
+                        yield return new ResponseToolSearchCallItem
+                        {
+                            Id = ReadResponseMetadataString(call.RawRepresentation, "item_id"),
+                            CallId = call.CallId,
+                            Execution = "client",
+                            Status = ReadResponseMetadataString(call.RawRepresentation, "status") ?? "completed",
+                            Arguments = JsonSerializer.SerializeToElement(
+                                call.Arguments ?? new Dictionary<string, object?>(),
+                                JsonSerializerOptions.Web)
+                        };
+                        break;
+                    }
+
                     yield return new ResponseFunctionCallItem
                     {
                         CallId = call.CallId,
@@ -269,6 +292,12 @@ public partial class AgentChatClient
                 case FunctionResultContent result:
                     foreach (var item in FlushResponseInputMessage(message, contentParts))
                         yield return item;
+
+                    if (TryCreateToolSearchOutputItem(result, out var toolSearchOutput))
+                    {
+                        yield return toolSearchOutput;
+                        break;
+                    }
 
                     yield return ToResponseFunctionCallOutputItem(result);
                     break;
@@ -294,6 +323,100 @@ public partial class AgentChatClient
             Caller = ReadResponseCaller(result.RawRepresentation)
                 ?? GetResponseCaller(result.CallId)
         };
+
+    private static bool IsToolSearchCall(FunctionCallContent call)
+        => string.Equals(
+            ReadResponseMetadataString(call.RawRepresentation, "responses_type"),
+            "tool_search_call",
+            StringComparison.Ordinal);
+
+    private bool TryCreateToolSearchOutputItem(
+        FunctionResultContent result,
+        out ResponseToolSearchOutputItem output)
+    {
+        output = null!;
+        if (string.IsNullOrWhiteSpace(result.CallId)
+            || !responseToolSearchCalls.ContainsKey(result.CallId))
+            return false;
+
+        var tools = ExtractSelectedToolDefinitions(result.Result);
+        output = new ResponseToolSearchOutputItem
+        {
+            CallId = result.CallId,
+            Execution = "client",
+            Status = "completed",
+            Tools = tools
+        };
+        return true;
+    }
+
+    private static List<ResponseToolDefinition> ExtractSelectedToolDefinitions(object? result)
+    {
+        var json = ToJsonElement(result ?? new { });
+        JsonElement selectedTools;
+        if (json.ValueKind == JsonValueKind.Object
+            && json.TryGetProperty("structuredContent", out var structured)
+            && structured.ValueKind == JsonValueKind.Object
+            && structured.TryGetProperty("selectedTools", out selectedTools)
+            && selectedTools.ValueKind == JsonValueKind.Array)
+        {
+            return selectedTools.EnumerateArray()
+                .Select(ToSelectedResponseToolDefinition)
+                .Where(tool => tool is not null)
+                .Cast<ResponseToolDefinition>()
+                .ToList();
+        }
+
+        if (json.ValueKind == JsonValueKind.Object
+            && json.TryGetProperty("selectedTools", out selectedTools)
+            && selectedTools.ValueKind == JsonValueKind.Array)
+        {
+            return selectedTools.EnumerateArray()
+                .Select(ToSelectedResponseToolDefinition)
+                .Where(tool => tool is not null)
+                .Cast<ResponseToolDefinition>()
+                .ToList();
+        }
+
+        return [];
+    }
+
+    private static ResponseToolDefinition? ToSelectedResponseToolDefinition(JsonElement tool)
+    {
+        if (tool.ValueKind != JsonValueKind.Object
+            || !tool.TryGetProperty("name", out var name)
+            || name.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(name.GetString()))
+        {
+            return null;
+        }
+
+        var extra = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["name"] = name.Clone(),
+            ["parameters"] = tool.TryGetProperty("inputSchema", out var inputSchema)
+                ? inputSchema.Clone()
+                : JsonSerializer.SerializeToElement(new { type = "object", properties = new { } })
+        };
+
+        if (tool.TryGetProperty("description", out var description)
+            && description.ValueKind == JsonValueKind.String)
+        {
+            extra["description"] = description.Clone();
+        }
+
+        if (tool.TryGetProperty("outputSchema", out var outputSchema)
+            && outputSchema.ValueKind == JsonValueKind.Object)
+        {
+            extra["output_schema"] = outputSchema.Clone();
+        }
+
+        return new ResponseToolDefinition
+        {
+            Type = "function",
+            Extra = extra
+        };
+    }
 
     private ResponseCaller? GetResponseCaller(string? callId)
         => !string.IsNullOrWhiteSpace(callId)

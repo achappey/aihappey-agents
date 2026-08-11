@@ -1,5 +1,6 @@
 
 using System.Text.Json.Serialization;
+using System.Text.Json;
 using ModelContextProtocol.Protocol;
 
 namespace AgentHappey.Common.Models;
@@ -37,10 +38,23 @@ public class Agent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IEnumerable<AISkill>? Skills { get; set; }
 
+    [JsonPropertyName("tools")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IEnumerable<AgentTool>? Tools { get; set; }
+
     [JsonPropertyName("icons")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IEnumerable<Icon>? Icons { get; set; }
 
+}
+
+public class AgentTool
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = null!;
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
 }
 
 public class OutputSchema

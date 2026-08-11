@@ -49,6 +49,8 @@ public partial class AgentChatClient
 
     private readonly ConcurrentDictionary<string, McpToolSource> McpToolSources = new(StringComparer.Ordinal);
 
+    private readonly ConcurrentDictionary<string, string> responseToolSearchCalls = new(StringComparer.Ordinal);
+
     //  private readonly ConcurrentBag<ChatMessage> Messages = [];
 
     private ChatMessage[] _history = [];
@@ -326,6 +328,12 @@ public partial class AgentChatClient
             tools.Add(AIFunctionFactory.Create(ActivateSkillAsync));
             tools.Add(AIFunctionFactory.Create(ReadSkillResourceAsync));
         }
+
+        // Always make the implementation available to the local agent loop so
+        // this service can execute downstream Responses calls delegated to its
+        // client. BuildResponseToolDefinitions controls whether the function is
+        // also advertised as an ordinary provider-neutral agent tool.
+        tools.Add(AIFunctionFactory.Create(ClientToolSearchAsync));
 
         foreach (var tool in tools)
         {
