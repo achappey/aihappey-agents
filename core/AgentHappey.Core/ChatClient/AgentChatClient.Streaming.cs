@@ -169,6 +169,12 @@ public partial class AgentChatClient
                 state.RegisterOutputItem(added.Item, added.OutputIndex);
                 RegisterProgramReplayStreamItem(added.Item);
                 RegisterResponseCallerStreamItem(added.Item);
+
+                if (string.Equals(added.Item.Type, "program", StringComparison.OrdinalIgnoreCase)
+                    && state.TryCreateProgramStartUpdate(added.Item, added.OutputIndex, out ChatResponseUpdate programStartUpdate))
+                {
+                    yield return programStartUpdate;
+                }
                 yield break;
 
             case ResponseShellCallCommandAdded shellCommandAdded:
@@ -258,6 +264,20 @@ public partial class AgentChatClient
                     && state.TryCreateToolSearchOutputUpdate(done.Item, done.OutputIndex, out ChatResponseUpdate toolSearchOutputUpdate))
                 {
                     yield return toolSearchOutputUpdate;
+                    yield break;
+                }
+
+                if (string.Equals(done.Item.Type, "program", StringComparison.OrdinalIgnoreCase)
+                    && state.TryCreateProgramDoneUpdate(done.Item, done.OutputIndex, out ChatResponseUpdate programDoneUpdate))
+                {
+                    yield return programDoneUpdate;
+                    yield break;
+                }
+
+                if (string.Equals(done.Item.Type, "program_output", StringComparison.OrdinalIgnoreCase)
+                    && state.TryCreateProgramOutputUpdate(done.Item, done.OutputIndex, out ChatResponseUpdate programOutputUpdate))
+                {
+                    yield return programOutputUpdate;
                     yield break;
                 }
 
@@ -716,6 +736,9 @@ public partial class AgentChatClient
         private readonly Dictionary<string, string> toolSearchIdsByItemId = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> toolSearchIdsByCallId = new(StringComparer.Ordinal);
         private readonly Queue<string> pendingHostedToolSearchIds = new();
+        private readonly HashSet<string> emittedProgramStarts = new(StringComparer.Ordinal);
+        private readonly HashSet<string> emittedProgramInputs = new(StringComparer.Ordinal);
+        private readonly HashSet<string> emittedProgramOutputs = new(StringComparer.Ordinal);
         private readonly Dictionary<int, StreamingShellInputState> shellInputsByOutputIndex = [];
         private readonly Dictionary<string, StreamingShellInputState> shellInputsByCallId = new(StringComparer.Ordinal);
         private readonly Dictionary<int, StreamingShellOutputState> shellOutputsByOutputIndex = [];
@@ -1172,6 +1195,133 @@ public partial class AgentChatClient
             MarkToolOutputEmitted(itemId);
             return true;
         }
+
+        public bool TryCreateProgramStartUpdate(
+            ResponseStreamItem item,
+            int outputIndex,
+            out ChatResponseUpdate update)
+        {
+            update = null!;
+            var callId = item.CallId
+                ?? GetAdditionalPropertyString(item.AdditionalProperties, "call_id")
+                ?? item.Id;
+            if (string.IsNullOrWhiteSpace(callId) || !emittedProgramStarts.Add(callId))
+                return false;
+
+            var nativeItem = JsonSerializer.SerializeToElement(item, ResponseJson.Default);
+            update = new ChatResponseUpdate(
+                ChatRole.Assistant,
+                [new FunctionCallContent(callId, "program", new Dictionary<string, object?>())
+                {
+                    InformationalOnly = true,
+                    RawRepresentation = CreateProgramRawRepresentation(item, outputIndex, nativeItem)
+                }])
+            {
+                MessageId = item.Id ?? callId,
+                AuthorName = AuthorName,
+                ModelId = ModelId
+            };
+            return true;
+        }
+
+        public bool TryCreateProgramDoneUpdate(
+            ResponseStreamItem item,
+            int outputIndex,
+            out ChatResponseUpdate update)
+        {
+            update = null!;
+            var callId = item.CallId
+                ?? GetAdditionalPropertyString(item.AdditionalProperties, "call_id")
+                ?? item.Id;
+            if (string.IsNullOrWhiteSpace(callId) || !emittedProgramInputs.Add(callId))
+                return false;
+
+            var nativeItem = JsonSerializer.SerializeToElement(item, ResponseJson.Default);
+            var code = GetAdditionalPropertyString(item.AdditionalProperties, "code") ?? string.Empty;
+            update = new ChatResponseUpdate(
+                ChatRole.Assistant,
+                [new FunctionCallContent(callId, "program", new Dictionary<string, object?>
+                {
+                    ["code"] = code
+                })
+                {
+                    InformationalOnly = true,
+                    RawRepresentation = CreateProgramRawRepresentation(item, outputIndex, nativeItem)
+                }])
+            {
+                MessageId = item.Id ?? callId,
+                AuthorName = AuthorName,
+                ModelId = ModelId
+            };
+            return true;
+        }
+
+        public bool TryCreateProgramOutputUpdate(
+            ResponseStreamItem item,
+            int outputIndex,
+            out ChatResponseUpdate update)
+        {
+            update = null!;
+            var callId = item.CallId
+                ?? GetAdditionalPropertyString(item.AdditionalProperties, "call_id")
+                ?? item.Id;
+            if (string.IsNullOrWhiteSpace(callId) || !emittedProgramOutputs.Add(callId))
+                return false;
+
+            var nativeItem = JsonSerializer.SerializeToElement(item, ResponseJson.Default);
+            var output = new Dictionary<string, object?>
+            {
+                ["result"] = GetAdditionalPropertyString(item.AdditionalProperties, "result") ?? string.Empty,
+                ["status"] = item.Status ?? GetAdditionalPropertyString(item.AdditionalProperties, "status")
+            };
+            update = new ChatResponseUpdate(
+                ChatRole.Tool,
+                [new FunctionResultContent(callId, CreateToolOutputEnvelope(
+                    output,
+                    preliminary: false,
+                    providerExecuted: true,
+                    providerMetadata: CreateProgramProviderMetadata(item, outputIndex, nativeItem),
+                    responsesItem: nativeItem))])
+            {
+                MessageId = item.Id ?? callId,
+                AuthorName = AuthorName,
+                ModelId = ModelId
+            };
+            return true;
+        }
+
+        private Dictionary<string, object?> CreateProgramRawRepresentation(
+            ResponseStreamItem item,
+            int outputIndex,
+            JsonElement nativeItem)
+            => new(StringComparer.Ordinal)
+            {
+                ["responses_type"] = "program",
+                ["item_id"] = item.Id,
+                ["call_id"] = item.CallId,
+                ["output_index"] = outputIndex,
+                ["responses_item"] = nativeItem,
+                ["provider_metadata"] = CreateProgramProviderMetadata(item, outputIndex, nativeItem),
+                ["title"] = "program"
+            };
+
+        private Dictionary<string, Dictionary<string, object>?> CreateProgramProviderMetadata(
+            ResponseStreamItem item,
+            int outputIndex,
+            JsonElement nativeItem)
+            => new(StringComparer.Ordinal)
+            {
+                [ProviderId ?? "openai"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["type"] = item.Type,
+                    ["id"] = item.Id,
+                    ["call_id"] = item.CallId,
+                    ["fingerprint"] = GetAdditionalPropertyValue(item.AdditionalProperties, "fingerprint"),
+                    ["status"] = item.Status,
+                    ["output_index"] = outputIndex,
+                    ["responses_item"] = nativeItem
+                }
+            };
 
         public bool TryCreateCustomToolCallInputUpdate(string? itemId,
             out ChatResponseUpdate update)
@@ -1706,7 +1856,6 @@ public partial class AgentChatClient
             JsonElement? responsesItem = null)
             => new(StringComparer.Ordinal)
             {
-                ["__aihappey_tool_output"] = true,
                 ["output"] = output,
                 ["preliminary"] = preliminary,
                 ["provider_executed"] = providerExecuted,

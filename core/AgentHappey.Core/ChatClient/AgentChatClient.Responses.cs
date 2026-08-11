@@ -315,6 +315,13 @@ public partial class AgentChatClient
                         break;
                     }
 
+                    if (TryReadResponseItem<ResponseProgramItem>(call.RawRepresentation, out var program))
+                    {
+                        RegisterResponseProgram(program);
+                        yield return program;
+                        break;
+                    }
+
                     yield return new ResponseFunctionCallItem
                     {
                         Id = ReadResponseMetadataString(call.RawRepresentation, "item_id"),
@@ -335,6 +342,13 @@ public partial class AgentChatClient
                     if (TryCreateToolSearchOutputItem(result, out var toolSearchOutput))
                     {
                         yield return toolSearchOutput;
+                        break;
+                    }
+
+                    if (TryReadResponseItem<ResponseProgramOutputItem>(result.Result, out var programOutput))
+                    {
+                        RegisterResponseProgramOutput(programOutput);
+                        yield return programOutput;
                         break;
                     }
 
@@ -852,12 +866,22 @@ public partial class AgentChatClient
                 AppendFunctionCall(parts, json);
                 return;
 
+            case "tool_search_call":
+                AppendHostedToolSearchCall(parts, json);
+                return;
+
+            case "tool_search_output":
+                AppendHostedToolSearchOutput(parts, json);
+                return;
+
             case "program":
                 RegisterProgram(json);
+                AppendProgramCall(parts, json);
                 return;
 
             case "program_output":
                 RegisterProgramOutput(json);
+                AppendProgramOutput(parts, json);
                 return;
 
             default:
@@ -993,6 +1017,103 @@ public partial class AgentChatClient
         {
         }
     }
+
+    private static void AppendProgramCall(List<AIContent> parts, JsonElement program)
+    {
+        var nativeItem = program.Clone();
+        var item = program.Deserialize<ResponseProgramItem>(ResponseJson.Default);
+        if (item is null || string.IsNullOrWhiteSpace(item.CallId))
+            return;
+
+        parts.Add(new FunctionCallContent(item.CallId, "program", new Dictionary<string, object?>
+        {
+            ["code"] = item.Code
+        })
+        {
+            InformationalOnly = true,
+            RawRepresentation = new Dictionary<string, object?>
+            {
+                ["responses_type"] = "program",
+                ["item_id"] = item.Id,
+                ["call_id"] = item.CallId,
+                ["responses_item"] = nativeItem,
+                ["provider_metadata"] = CreateNativeResponseProviderMetadata(nativeItem),
+                ["title"] = "program"
+            }
+        });
+    }
+
+    private static void AppendProgramOutput(List<AIContent> parts, JsonElement programOutput)
+    {
+        var item = programOutput.Deserialize<ResponseProgramOutputItem>(ResponseJson.Default);
+        if (item is null || string.IsNullOrWhiteSpace(item.CallId))
+            return;
+
+        parts.Add(new FunctionResultContent(item.CallId, CreateNativeToolOutputEnvelope(
+            new { result = item.Result, status = item.Status },
+            programOutput)));
+    }
+
+    private static void AppendHostedToolSearchCall(List<AIContent> parts, JsonElement call)
+    {
+        var item = call.Deserialize<ResponseToolSearchCallItem>(ResponseJson.Default);
+        if (item is null)
+            return;
+
+        var lifecycleId = item.CallId ?? item.Id ?? Guid.NewGuid().ToString("N");
+        parts.Add(new FunctionCallContent(lifecycleId, "tool_search", DeserializeArguments(item.Arguments.GetRawText()))
+        {
+            InformationalOnly = !string.Equals(item.Execution, "client", StringComparison.OrdinalIgnoreCase),
+            RawRepresentation = new Dictionary<string, object?>
+            {
+                ["responses_type"] = "tool_search_call",
+                ["item_id"] = item.Id,
+                ["native_call_id"] = item.CallId,
+                ["execution"] = item.Execution,
+                ["status"] = item.Status,
+                ["responses_item"] = call.Clone(),
+                ["provider_metadata"] = CreateNativeResponseProviderMetadata(call),
+                ["title"] = "tool_search"
+            }
+        });
+    }
+
+    private static void AppendHostedToolSearchOutput(List<AIContent> parts, JsonElement output)
+    {
+        var item = output.Deserialize<ResponseToolSearchOutputItem>(ResponseJson.Default);
+        if (item is null)
+            return;
+
+        var lifecycleId = item.CallId ?? item.Id;
+        if (string.IsNullOrWhiteSpace(lifecycleId))
+            return;
+
+        parts.Add(new FunctionResultContent(lifecycleId, CreateNativeToolOutputEnvelope(item.Tools, output)));
+    }
+
+    private static Dictionary<string, Dictionary<string, object>?> CreateNativeResponseProviderMetadata(JsonElement item)
+        => new(StringComparer.Ordinal)
+        {
+            ["openai"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["type"] = item.TryGetProperty("type", out var type) ? type.GetString() : null,
+                ["id"] = item.TryGetProperty("id", out var id) ? id.GetString() : null,
+                ["call_id"] = item.TryGetProperty("call_id", out var callId) && callId.ValueKind == JsonValueKind.String
+                    ? callId.GetString()
+                    : null,
+                ["responses_item"] = item.Clone()
+            }
+        };
+
+    private static Dictionary<string, object?> CreateNativeToolOutputEnvelope(object? output, JsonElement responseItem)
+        => new(StringComparer.Ordinal)
+        {
+            ["output"] = output,
+            ["preliminary"] = false,
+            ["provider_executed"] = true,
+            ["provider_metadata"] = CreateNativeResponseProviderMetadata(responseItem),
+            ["responses_item"] = responseItem.Clone()
+        };
 
     private void RegisterProgramOutput(JsonElement programOutput)
     {

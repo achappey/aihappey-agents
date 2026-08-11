@@ -43,6 +43,37 @@ public static class VercelHelpers
         _ => null
     };
 
+    private static Dictionary<string, object?> CreateToolCallRawRepresentation(ToolCallPart part)
+        => new(StringComparer.Ordinal)
+        {
+            ["provider_metadata"] = part.ProviderMetadata,
+            ["title"] = part.Title,
+            ["responses_type"] = ReadResponsesType(part.ProviderMetadata),
+            ["responses_item"] = ReadResponsesItem(part.ProviderMetadata)
+        };
+
+    private static Dictionary<string, object?> CreateToolOutputEnvelope(ToolOutputAvailablePart part)
+        => new(StringComparer.Ordinal)
+        {
+            ["output"] = part.Output,
+            ["preliminary"] = part.Preliminary,
+            ["provider_executed"] = part.ProviderExecuted ?? false,
+            ["provider_metadata"] = part.ProviderMetadata,
+            ["responses_item"] = ReadResponsesItem(part.ProviderMetadata)
+        };
+
+    private static object? ReadResponsesItem(Dictionary<string, Dictionary<string, object>?>? metadata)
+        => metadata?.Values
+            .Where(value => value is not null)
+            .Select(value => value!.TryGetValue("responses_item", out var item) ? item : null)
+            .FirstOrDefault(item => item is not null);
+
+    private static string? ReadResponsesType(Dictionary<string, Dictionary<string, object>?>? metadata)
+        => metadata?.Values
+            .Where(value => value is not null)
+            .Select(value => value!.TryGetValue("type", out var type) ? type?.ToString() : null)
+            .FirstOrDefault(type => !string.IsNullOrWhiteSpace(type));
+
     public static AIContent? ToUserMessagePart(this UIMessagePart message)
     {
         return message switch
@@ -155,7 +186,11 @@ public static class VercelHelpers
                                 JsonSerializer.Serialize(tc.Input)
                             ) ?? [];
 
-                            assistantContents.Add(new FunctionCallContent(tc.ToolCallId, tc.ToolName, args));
+                            assistantContents.Add(new FunctionCallContent(tc.ToolCallId, tc.ToolName, args)
+                            {
+                                InformationalOnly = tc.ProviderExecuted == true,
+                                RawRepresentation = CreateToolCallRawRepresentation(tc)
+                            });
 
                             if (partIndex + 1 < parts.Count && IsToolOutputPart(parts[partIndex + 1], tc.ToolCallId))
                             {
@@ -163,7 +198,11 @@ public static class VercelHelpers
 
                                 mappedMessages.Add(new ChatMessage(
                                     ChatRole.Tool,
-                                    [new FunctionResultContent(tc.ToolCallId, GetToolOutput(parts[partIndex + 1]) ?? new { })])
+                                    [new FunctionResultContent(
+                                        tc.ToolCallId,
+                                        parts[partIndex + 1] is ToolOutputAvailablePart available
+                                            ? CreateToolOutputEnvelope(available)
+                                            : GetToolOutput(parts[partIndex + 1]) ?? new { })])
                                 {
                                     MessageId = tc.ToolCallId
                                 });

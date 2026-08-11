@@ -858,8 +858,11 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         }
 
         if (envelope.ValueKind != JsonValueKind.Object
-            || !envelope.TryGetProperty("__aihappey_tool_output", out var marker)
-            || marker.ValueKind != JsonValueKind.True)
+            || !envelope.TryGetProperty("output", out _)
+            || !envelope.TryGetProperty("provider_executed", out var providerExecutedMarker)
+            || providerExecutedMarker.ValueKind is not (JsonValueKind.True or JsonValueKind.False)
+            || !envelope.TryGetProperty("provider_metadata", out var providerMetadataMarker)
+            || providerMetadataMarker.ValueKind != JsonValueKind.Object)
         {
             return false;
         }
@@ -874,19 +877,11 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             preliminary = preliminaryElement.GetBoolean();
         }
 
-        if (envelope.TryGetProperty("provider_executed", out var providerExecutedElement)
-            && providerExecutedElement.ValueKind is JsonValueKind.True or JsonValueKind.False)
-        {
-            providerExecuted = providerExecutedElement.GetBoolean();
-        }
+        providerExecuted = providerExecutedMarker.GetBoolean();
 
-        if (envelope.TryGetProperty("provider_metadata", out var providerMetadataElement)
-            && providerMetadataElement.ValueKind == JsonValueKind.Object)
-        {
-            providerMetadata = JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, object>?>>(
-                providerMetadataElement.GetRawText(),
-                JsonWeb);
-        }
+        providerMetadata = JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, object>?>>(
+            providerMetadataMarker.GetRawText(),
+            JsonWeb);
 
         return true;
     }
