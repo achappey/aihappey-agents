@@ -167,7 +167,8 @@ public partial class AgentChatClient
 
             case ResponseOutputItemAdded added:
                 state.RegisterOutputItem(added.Item, added.OutputIndex);
-                RegisterProgramStreamItem(added.Item);
+                RegisterProgramReplayStreamItem(added.Item);
+                RegisterResponseCallerStreamItem(added.Item);
                 yield break;
 
             case ResponseShellCallCommandAdded shellCommandAdded:
@@ -196,8 +197,10 @@ public partial class AgentChatClient
 
             case ResponseFunctionCallArgumentsDone functionArgumentsDone:
                 state.SetArguments(functionArgumentsDone.ItemId, functionArgumentsDone.Arguments, providerExecuted: false);
-                if (state.TryCreateFunctionCallUpdate(functionArgumentsDone.ItemId, out ChatResponseUpdate functionCallUpdate))
-                    yield return functionCallUpdate;
+                // Wait for response.output_item.done before handing the call to
+                // Microsoft Agents. The done item is the authoritative native
+                // Responses item and may be the first event carrying caller,
+                // namespace, final status, and the complete item/call IDs.
                 yield break;
 
             case ResponseCustomToolCallInputDone customToolCallInputDone:
@@ -241,12 +244,20 @@ public partial class AgentChatClient
                 yield break;
             case ResponseOutputItemDone done:
                 state.RegisterOutputItem(done.Item, done.OutputIndex);
-                RegisterProgramStreamItem(done.Item);
+                RegisterProgramReplayStreamItem(done.Item);
+                RegisterResponseCallerStreamItem(done.Item);
 
                 if (string.Equals(done.Item.Type, "tool_search_call", StringComparison.OrdinalIgnoreCase)
-                    && state.TryCreateToolSearchCallUpdate(done.Item, out ChatResponseUpdate toolSearchCallUpdate))
+                    && state.TryCreateToolSearchCallUpdate(done.Item, done.OutputIndex, out ChatResponseUpdate toolSearchCallUpdate))
                 {
                     yield return toolSearchCallUpdate;
+                    yield break;
+                }
+
+                if (string.Equals(done.Item.Type, "tool_search_output", StringComparison.OrdinalIgnoreCase)
+                    && state.TryCreateToolSearchOutputUpdate(done.Item, done.OutputIndex, out ChatResponseUpdate toolSearchOutputUpdate))
+                {
+                    yield return toolSearchOutputUpdate;
                     yield break;
                 }
 
@@ -561,8 +572,25 @@ public partial class AgentChatClient
         return property.Clone();
     }
 
-    private void RegisterProgramStreamItem(ResponseStreamItem item)
+    private void RegisterProgramReplayStreamItem(ResponseStreamItem item)
     {
+        if (string.Equals(item.Type, "program_output", StringComparison.OrdinalIgnoreCase))
+        {
+            var outputCallId = item.CallId ?? GetAdditionalPropertyString(item.AdditionalProperties, "call_id");
+            if (!string.IsNullOrWhiteSpace(outputCallId))
+            {
+                RegisterResponseProgramOutput(new ResponseProgramOutputItem
+                {
+                    Id = item.Id,
+                    CallId = outputCallId,
+                    Result = GetAdditionalPropertyString(item.AdditionalProperties, "result") ?? string.Empty,
+                    Status = item.Status ?? GetAdditionalPropertyString(item.AdditionalProperties, "status")
+                });
+            }
+
+            return;
+        }
+
         if (!string.Equals(item.Type, "program", StringComparison.OrdinalIgnoreCase))
             return;
 
@@ -572,13 +600,28 @@ public partial class AgentChatClient
         if (string.IsNullOrWhiteSpace(callId) || string.IsNullOrWhiteSpace(fingerprint))
             return;
 
-        responsePrograms[callId] = new ResponseProgramItem
+        RegisterResponseProgram(new ResponseProgramItem
         {
             Id = item.Id,
             CallId = callId,
             Code = code ?? string.Empty,
             Fingerprint = fingerprint
+        });
+    }
+
+    private void RegisterResponseCallerStreamItem(ResponseStreamItem item)
+    {
+        if (!string.Equals(item.Type, "function_call", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var caller = GetAdditionalPropertyValue(item.AdditionalProperties, "caller") switch
+        {
+            JsonElement json when json.ValueKind == JsonValueKind.Object =>
+                json.Deserialize<ResponseCaller>(JsonSerializerOptions.Web),
+            _ => null
         };
+
+        RegisterResponseCaller(item.Id, item.CallId, caller);
     }
 
     private static string? GetUnknownEventString(ResponseUnknownEvent unknown, string propertyName)
@@ -670,6 +713,9 @@ public partial class AgentChatClient
         Action<string, string> registerToolSearchCall)
     {
         private readonly Dictionary<string, StreamingToolCallState> toolCalls = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> toolSearchIdsByItemId = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> toolSearchIdsByCallId = new(StringComparer.Ordinal);
+        private readonly Queue<string> pendingHostedToolSearchIds = new();
         private readonly Dictionary<int, StreamingShellInputState> shellInputsByOutputIndex = [];
         private readonly Dictionary<string, StreamingShellInputState> shellInputsByCallId = new(StringComparer.Ordinal);
         private readonly Dictionary<int, StreamingShellOutputState> shellOutputsByOutputIndex = [];
@@ -699,6 +745,7 @@ public partial class AgentChatClient
 
             if (!string.Equals(item.Type, "function_call", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(item.Type, "tool_search_call", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(item.Type, "tool_search_output", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(item.Type, "mcp_call", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(item.Type, "custom_tool_call", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(item.Type, "shell_call", StringComparison.OrdinalIgnoreCase)
@@ -711,6 +758,12 @@ public partial class AgentChatClient
                 return;
             }
 
+            if (string.Equals(item.Type, "tool_search_output", StringComparison.OrdinalIgnoreCase))
+            {
+                RegisterToolSearchOutput(item);
+                return;
+            }
+
             if (string.Equals(item.Type, "shell_call_output", StringComparison.OrdinalIgnoreCase))
             {
                 RegisterShellCallOutput(item, outputIndex ?? -1);
@@ -719,20 +772,30 @@ public partial class AgentChatClient
 
             var isToolSearch = string.Equals(item.Type, "tool_search_call", StringComparison.OrdinalIgnoreCase);
             var state = GetOrCreateToolCall(itemId,
-                !isToolSearch && string.Equals(item.Type, "function_call", StringComparison.OrdinalIgnoreCase) != true);
+                isToolSearch
+                    ? IsServerToolSearch(item)
+                    : string.Equals(item.Type, "function_call", StringComparison.OrdinalIgnoreCase) != true);
             state.Name = isToolSearch
-                ? ClientToolSearchName
+                ? IsServerToolSearch(item) ? "tool_search" : ClientToolSearchName
                 : string.IsNullOrWhiteSpace(item.Name) ? state.Name : item.Name;
-            state.CallId = item.CallId
-                ?? GetAdditionalPropertyString(item.AdditionalProperties, "call_id")
-                ?? state.CallId
-                ?? itemId;
+            var nativeCallId = item.CallId
+                ?? GetAdditionalPropertyString(item.AdditionalProperties, "call_id");
+            state.NativeCallId = nativeCallId ?? state.NativeCallId;
+            state.CallId = isToolSearch
+                ? RegisterToolSearchCall(item)
+                : nativeCallId ?? state.CallId ?? itemId;
             state.ItemType = item.Type;
+            state.OutputIndex = outputIndex ?? state.OutputIndex;
             state.Execution = item.Execution
                 ?? GetAdditionalPropertyString(item.AdditionalProperties, "execution")
                 ?? state.Execution;
+            state.Status = item.Status
+                ?? GetAdditionalPropertyString(item.AdditionalProperties, "status")
+                ?? state.Status;
             state.ProviderMetadata = GetAdditionalPropertyProviderMetadata(item.AdditionalProperties) ?? state.ProviderMetadata;
-            state.Namespace = GetAdditionalPropertyString(item.AdditionalProperties, "namespace") ?? state.Namespace;
+            state.Namespace = item.Namespace
+                ?? GetAdditionalPropertyString(item.AdditionalProperties, "namespace")
+                ?? state.Namespace;
             state.Caller = GetAdditionalPropertyValue(item.AdditionalProperties, "caller") ?? state.Caller;
             state.ToolTitle = state.IsProviderExecuted
                 ? BuildMcpToolTitle(item)
@@ -740,8 +803,20 @@ public partial class AgentChatClient
 
             if (item.Arguments != null)
             {
-                state.Arguments.Clear();
-                state.Arguments.Append(JsonSerializer.Serialize(item.Arguments));
+                var arguments = item.Arguments.Value;
+                var argumentsText = arguments.ValueKind == JsonValueKind.String
+                    ? arguments.GetString()
+                    : arguments.GetRawText();
+
+                // output_item.added frequently contains an empty placeholder,
+                // while function_call_arguments.done carries the final JSON.
+                // Do not let a later empty placeholder erase those arguments.
+                if (!string.IsNullOrWhiteSpace(argumentsText)
+                    && (!IsEmptyArguments(argumentsText) || state.Arguments.Length == 0))
+                {
+                    state.Arguments.Clear();
+                    state.Arguments.Append(argumentsText);
+                }
             }
         }
 
@@ -993,7 +1068,10 @@ public partial class AgentChatClient
                 {
                     RawRepresentation = new Dictionary<string, object?>
                     {
+                        ["item_id"] = state.ItemId,
+                        ["call_id"] = callId,
                         ["namespace"] = state.Namespace,
+                        ["status"] = state.Status,
                         ["caller"] = state.Caller
                     }
                 }])
@@ -1007,31 +1085,48 @@ public partial class AgentChatClient
             return true;
         }
 
-        public bool TryCreateToolSearchCallUpdate(ResponseStreamItem item, out ChatResponseUpdate update)
+        public bool TryCreateToolSearchCallUpdate(
+            ResponseStreamItem item,
+            int outputIndex,
+            out ChatResponseUpdate update)
         {
             update = null!;
             var itemId = item.Id;
             if (string.IsNullOrWhiteSpace(itemId)
                 || !toolCalls.TryGetValue(itemId, out var state)
-                || state.InputEmitted
-                || !string.Equals(state.Execution, "client", StringComparison.OrdinalIgnoreCase))
+                || state.InputEmitted)
             {
                 return false;
             }
 
-            var callId = state.CallId ?? item.CallId ?? itemId;
-            registerToolSearchCall(callId, itemId);
+            var providerExecuted = IsServerToolSearch(item);
+            var callId = state.CallId ?? RegisterToolSearchCall(item);
+            var nativeItem = JsonSerializer.SerializeToElement(item, ResponseJson.Default);
+            var providerMetadata = CreateToolSearchProviderMetadata(item, outputIndex, nativeItem);
+
+            if (!providerExecuted)
+                registerToolSearchCall(callId, itemId);
+
             update = new ChatResponseUpdate(
                 ChatRole.Assistant,
-                [new FunctionCallContent(callId, ClientToolSearchName, DeserializeArguments(state.ArgumentsText))
+                [new FunctionCallContent(
+                    callId,
+                    providerExecuted ? "tool_search" : ClientToolSearchName,
+                    DeserializeArguments(state.ArgumentsText))
                 {
+                    InformationalOnly = providerExecuted,
                     RawRepresentation = new Dictionary<string, object?>
                     {
                         ["responses_type"] = "tool_search_call",
                         ["item_id"] = itemId,
                         ["call_id"] = callId,
-                        ["execution"] = "client",
-                        ["status"] = item.Status ?? "completed"
+                        ["native_call_id"] = item.CallId,
+                        ["execution"] = item.Execution ?? "server",
+                        ["status"] = item.Status ?? "completed",
+                        ["output_index"] = outputIndex,
+                        ["responses_item"] = nativeItem,
+                        ["provider_metadata"] = providerMetadata,
+                        ["title"] = "tool_search"
                     }
                 }])
             {
@@ -1041,6 +1136,40 @@ public partial class AgentChatClient
             };
 
             state.InputEmitted = true;
+            return true;
+        }
+
+        public bool TryCreateToolSearchOutputUpdate(
+            ResponseStreamItem item,
+            int outputIndex,
+            out ChatResponseUpdate update)
+        {
+            update = null!;
+            var itemId = item.Id;
+            if (string.IsNullOrWhiteSpace(itemId))
+                return false;
+
+            var callId = RegisterToolSearchOutput(item);
+            if (string.IsNullOrWhiteSpace(callId) || HasToolOutputEmitted(itemId))
+                return false;
+
+            var nativeItem = JsonSerializer.SerializeToElement(item, ResponseJson.Default);
+            var tools = item.Tools?.ToList() ?? [];
+            update = new ChatResponseUpdate(
+                ChatRole.Tool,
+                [new FunctionResultContent(callId, CreateToolOutputEnvelope(
+                    tools,
+                    preliminary: false,
+                    providerExecuted: IsServerToolSearch(item),
+                    providerMetadata: CreateToolSearchProviderMetadata(item, outputIndex, nativeItem),
+                    responsesItem: nativeItem))])
+            {
+                MessageId = itemId,
+                AuthorName = AuthorName,
+                ModelId = ModelId
+            };
+
+            MarkToolOutputEmitted(itemId);
             return true;
         }
 
@@ -1151,6 +1280,92 @@ public partial class AgentChatClient
             return created;
         }
 
+        private string RegisterToolSearchCall(ResponseStreamItem item)
+        {
+            if (!string.IsNullOrWhiteSpace(item.Id)
+                && toolSearchIdsByItemId.TryGetValue(item.Id, out var registered))
+            {
+                return registered;
+            }
+
+            var callId = item.CallId
+                ?? GetAdditionalPropertyString(item.AdditionalProperties, "call_id");
+            var unifiedId = callId ?? item.Id ?? Guid.NewGuid().ToString("N");
+
+            if (!string.IsNullOrWhiteSpace(callId))
+                toolSearchIdsByCallId[callId] = unifiedId;
+            if (!string.IsNullOrWhiteSpace(item.Id))
+                toolSearchIdsByItemId[item.Id] = unifiedId;
+
+            if (IsServerToolSearch(item) && string.IsNullOrWhiteSpace(callId))
+                pendingHostedToolSearchIds.Enqueue(unifiedId);
+
+            return unifiedId;
+        }
+
+        private string RegisterToolSearchOutput(ResponseStreamItem item)
+        {
+            if (!string.IsNullOrWhiteSpace(item.Id)
+                && toolSearchIdsByItemId.TryGetValue(item.Id, out var registered))
+            {
+                return registered;
+            }
+
+            var callId = item.CallId
+                ?? GetAdditionalPropertyString(item.AdditionalProperties, "call_id");
+            string unifiedId;
+
+            if (!string.IsNullOrWhiteSpace(callId)
+                && toolSearchIdsByCallId.TryGetValue(callId, out var byCallId))
+            {
+                unifiedId = byCallId;
+            }
+            else if (IsServerToolSearch(item)
+                     && string.IsNullOrWhiteSpace(callId)
+                     && pendingHostedToolSearchIds.TryDequeue(out var pendingHostedId))
+            {
+                unifiedId = pendingHostedId;
+            }
+            else
+            {
+                unifiedId = callId ?? item.Id ?? Guid.NewGuid().ToString("N");
+            }
+
+            if (!string.IsNullOrWhiteSpace(callId))
+                toolSearchIdsByCallId[callId] = unifiedId;
+            if (!string.IsNullOrWhiteSpace(item.Id))
+                toolSearchIdsByItemId[item.Id] = unifiedId;
+
+            return unifiedId;
+        }
+
+        private static bool IsServerToolSearch(ResponseStreamItem item)
+            => !string.Equals(
+                item.Execution
+                    ?? GetAdditionalPropertyString(item.AdditionalProperties, "execution"),
+                "client",
+                StringComparison.OrdinalIgnoreCase);
+
+        private Dictionary<string, Dictionary<string, object>?> CreateToolSearchProviderMetadata(
+            ResponseStreamItem item,
+            int outputIndex,
+            JsonElement nativeItem)
+            => new(StringComparer.Ordinal)
+            {
+                [ProviderId ?? "openai"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["type"] = item.Type,
+                    ["id"] = item.Id,
+                    ["call_id"] = item.CallId,
+                    ["execution"] = item.Execution ?? "server",
+                    ["status"] = item.Status,
+                    ["arguments"] = item.Arguments,
+                    ["tools"] = item.Tools,
+                    ["output_index"] = outputIndex,
+                    ["responses_item"] = nativeItem
+                }
+            };
+
         private static string BuildContentKey(string itemId, int contentIndex)
             => $"{itemId}:{contentIndex}";
 
@@ -1175,6 +1390,23 @@ public partial class AgentChatClient
                 {
                     ["arguments"] = arguments
                 }, JsonSerializerOptions.Web);
+            }
+        }
+
+        private static bool IsEmptyArguments(string? arguments)
+        {
+            if (string.IsNullOrWhiteSpace(arguments))
+                return true;
+
+            try
+            {
+                using var document = JsonDocument.Parse(arguments);
+                var root = document.RootElement;
+                return root.ValueKind == JsonValueKind.Object && !root.EnumerateObject().Any();
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -1470,14 +1702,16 @@ public partial class AgentChatClient
             object? output,
             bool preliminary,
             bool providerExecuted,
-            Dictionary<string, Dictionary<string, object>?>? providerMetadata)
+            Dictionary<string, Dictionary<string, object>?>? providerMetadata,
+            JsonElement? responsesItem = null)
             => new(StringComparer.Ordinal)
             {
                 ["__aihappey_tool_output"] = true,
                 ["output"] = output,
                 ["preliminary"] = preliminary,
                 ["provider_executed"] = providerExecuted,
-                ["provider_metadata"] = providerMetadata
+                ["provider_metadata"] = providerMetadata,
+                ["responses_item"] = responsesItem
             };
     }
 
@@ -1486,9 +1720,12 @@ public partial class AgentChatClient
         public string ItemId { get; } = itemId;
         public bool IsProviderExecuted { get; } = isProviderExecuted;
         public string? CallId { get; set; }
+        public string? NativeCallId { get; set; }
         public string? Name { get; set; }
         public string? ItemType { get; set; }
         public string? Execution { get; set; }
+        public string? Status { get; set; }
+        public int? OutputIndex { get; set; }
         public string? ToolTitle { get; set; }
         public string? Namespace { get; set; }
         public object? Caller { get; set; }

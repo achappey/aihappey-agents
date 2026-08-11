@@ -335,6 +335,232 @@ public sealed class AgentChatClientFixtureTests
     }
 
     [Fact]
+    public async Task Programmatic_function_result_replays_complete_program_caller_graph()
+    {
+        const string programItemId = "prog-item-1";
+        const string programCallId = "prog-call-1";
+        const string functionItemId = "function-item-1";
+        const string functionCallId = "function-call-1";
+        var responseJson = JsonSerializer.Serialize(new
+        {
+            id = "response-programmatic-1",
+            @object = "response",
+            created_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            status = "completed",
+            model = "gpt-fixture",
+            output = new object[]
+            {
+                new
+                {
+                    id = programItemId,
+                    type = "program",
+                    call_id = programCallId,
+                    code = "const result = await tools.github_rest_countries_get_detail({ cca: 'PL' });",
+                    fingerprint = "program-fingerprint-1"
+                },
+                new
+                {
+                    id = functionItemId,
+                    type = "function_call",
+                    call_id = functionCallId,
+                    name = "github_rest_countries_get_detail",
+                    arguments = "{\"cca\":\"PL\"}",
+                    status = "completed",
+                    caller = new { type = "program", caller_id = programItemId }
+                },
+            },
+            tools = Array.Empty<object>()
+        }, JsonSerializerOptions.Web);
+
+        var requestBodies = new List<string>();
+        using var httpClient = CreateHttpClient(request =>
+        {
+            requestBodies.Add(request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty);
+            return CreateJsonResponse(responseJson);
+        });
+        using var client = CreateClient(httpClient, CreateAgent());
+
+        var firstResponse = await client.GetResponseAsync(CreateUserMessages("Look up Poland"));
+        var functionCall = Assert.Single(firstResponse.Messages.Single().Contents.OfType<FunctionCallContent>());
+
+        var messages = CreateUserMessages("Look up Poland").ToList();
+        messages.Add(firstResponse.Messages.Single());
+        messages.Add(new ChatMessage(ChatRole.Tool,
+        [
+            new FunctionResultContent(functionCall.CallId, new { name = "Poland", cca = "PL" })
+        ]));
+
+        await client.GetResponseAsync(messages);
+
+        using var document = JsonDocument.Parse(requestBodies[1]);
+        var input = document.RootElement.GetProperty("input").EnumerateArray().ToList();
+        var programIndex = input.FindIndex(item => item.GetProperty("type").GetString() == "program");
+        var functionCallIndex = input.FindIndex(item => item.GetProperty("type").GetString() == "function_call");
+        var functionOutputIndex = input.FindIndex(item => item.GetProperty("type").GetString() == "function_call_output");
+
+        Assert.True(programIndex < functionCallIndex);
+        Assert.True(functionCallIndex < functionOutputIndex);
+        Assert.DoesNotContain(input, item => item.GetProperty("type").GetString() == "program_output");
+
+        var program = input[programIndex];
+        Assert.Equal(programItemId, program.GetProperty("id").GetString());
+        Assert.Equal(programCallId, program.GetProperty("call_id").GetString());
+        Assert.Equal("program-fingerprint-1", program.GetProperty("fingerprint").GetString());
+
+        AssertProgramCaller(input[functionCallIndex], programItemId);
+        AssertProgramCaller(input[functionOutputIndex], programItemId);
+        Assert.Equal(functionItemId, input[functionCallIndex].GetProperty("id").GetString());
+        Assert.Equal("completed", input[functionCallIndex].GetProperty("status").GetString());
+        Assert.Equal(functionCallId, input[functionOutputIndex].GetProperty("call_id").GetString());
+    }
+
+    [Fact]
+    public async Task Microsoft_agent_programmatic_tool_loop_replays_caller_on_executed_result()
+    {
+        const string programItemId = "prog-item-agent-loop";
+        const string programCallId = "prog-call-agent-loop";
+        const string functionCallId = "function-call-agent-loop";
+        var requestBodies = new List<string>();
+        var requestNumber = 0;
+
+        using var httpClient = CreateHttpClient(request =>
+        {
+            requestBodies.Add(request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty);
+            requestNumber++;
+
+            if (requestNumber == 1)
+            {
+                return CreateStreamingResponse(CreateProgrammaticToolCallStream(
+                    programItemId,
+                    programCallId,
+                    functionCallId));
+            }
+
+            return CreateStreamingResponse(CreateTextResponseStream("Poland uses PLN."));
+        });
+        using var client = CreateClient(httpClient, CreateAgent());
+        var tool = AIFunctionFactory.Create(
+            ([System.ComponentModel.Description("Country code")] string cca) => new { cca, currency = "PLN" },
+            "github_rest_countries_get_detail");
+        var agent = new ChatClientAgent(
+            client,
+            instructions: "Use the tool.",
+            name: "ProgrammaticAgent",
+            tools: [tool]);
+        var options = new ChatClientAgentRunOptions(new ChatOptions { Tools = [tool] });
+
+        _ = await CollectAsync(agent.RunStreamingAsync(
+            CreateUserMessages("Look up Poland"),
+            options: options));
+
+        Assert.Equal(2, requestBodies.Count);
+        using var document = JsonDocument.Parse(requestBodies[1]);
+        var input = document.RootElement.GetProperty("input").EnumerateArray().ToList();
+        var programIndex = input.FindIndex(item => item.GetProperty("type").GetString() == "program");
+        var functionCallIndex = input.FindIndex(item => item.GetProperty("type").GetString() == "function_call");
+        var functionOutputIndex = input.FindIndex(item => item.GetProperty("type").GetString() == "function_call_output");
+
+        Assert.True(programIndex >= 0, requestBodies[1]);
+        Assert.True(functionCallIndex > programIndex, requestBodies[1]);
+        Assert.True(functionOutputIndex > functionCallIndex, requestBodies[1]);
+        Assert.DoesNotContain(input, item => item.GetProperty("type").GetString() == "program_output");
+        AssertProgramCaller(input[functionCallIndex], programItemId);
+        AssertProgramCaller(input[functionOutputIndex], programItemId);
+        Assert.Equal("function-item-agent-loop", input[functionCallIndex].GetProperty("id").GetString());
+        Assert.Equal("completed", input[functionCallIndex].GetProperty("status").GetString());
+        Assert.Equal(functionCallId, input[functionOutputIndex].GetProperty("call_id").GetString());
+    }
+
+    private static string CreateProgrammaticToolCallStream(
+        string programItemId,
+        string programCallId,
+        string functionCallId)
+    {
+        var response = new
+        {
+            id = "response-programmatic-agent-loop",
+            @object = "response",
+            created_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            status = "completed",
+            model = "gpt-fixture",
+            output = Array.Empty<object>(),
+            tools = Array.Empty<object>()
+        };
+        var program = new
+        {
+            id = programItemId,
+            type = "program",
+            call_id = programCallId,
+            code = "const result = await tools.github_rest_countries_get_detail({ cca: 'PL' });",
+            fingerprint = "program-fingerprint-agent-loop"
+        };
+        var addedCall = new
+        {
+            id = "function-item-agent-loop",
+            type = "function_call",
+            call_id = functionCallId,
+            name = "github_rest_countries_get_detail",
+            arguments = string.Empty,
+            status = "in_progress"
+        };
+        var completedCall = new
+        {
+            id = "function-item-agent-loop",
+            type = "function_call",
+            call_id = functionCallId,
+            name = "github_rest_countries_get_detail",
+            arguments = "{\"cca\":\"PL\"}",
+            status = "completed",
+            caller = new { type = "program", caller_id = programItemId }
+        };
+
+        return string.Join("\n\n", new[]
+        {
+            Sse("response.created", new { type = "response.created", sequence_number = 1, response }),
+            Sse("response.output_item.added", new { type = "response.output_item.added", sequence_number = 2, output_index = 0, item = program }),
+            Sse("response.output_item.done", new { type = "response.output_item.done", sequence_number = 3, output_index = 0, item = program }),
+            Sse("response.output_item.added", new { type = "response.output_item.added", sequence_number = 4, output_index = 1, item = addedCall }),
+            Sse("response.function_call_arguments.done", new { type = "response.function_call_arguments.done", sequence_number = 5, output_index = 1, item_id = addedCall.id, arguments = completedCall.arguments }),
+            Sse("response.output_item.done", new { type = "response.output_item.done", sequence_number = 6, output_index = 1, item = completedCall }),
+            Sse("response.completed", new { type = "response.completed", sequence_number = 7, response }),
+            "data: [DONE]"
+        }) + "\n\n";
+    }
+
+    private static string CreateTextResponseStream(string text)
+    {
+        var response = new
+        {
+            id = "response-text-agent-loop",
+            @object = "response",
+            created_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            status = "completed",
+            model = "gpt-fixture",
+            output = Array.Empty<object>(),
+            tools = Array.Empty<object>()
+        };
+
+        return string.Join("\n\n", new[]
+        {
+            Sse("response.created", new { type = "response.created", sequence_number = 1, response }),
+            Sse("response.output_text.delta", new { type = "response.output_text.delta", sequence_number = 2, item_id = "message-agent-loop", content_index = 0, output_index = 0, delta = text }),
+            Sse("response.output_text.done", new { type = "response.output_text.done", sequence_number = 3, item_id = "message-agent-loop", content_index = 0, output_index = 0, text }),
+            Sse("response.completed", new { type = "response.completed", sequence_number = 4, response }),
+            "data: [DONE]"
+        }) + "\n\n";
+    }
+
+    private static string Sse(string eventName, object data)
+        => $"event: {eventName}\ndata: {JsonSerializer.Serialize(data, JsonSerializerOptions.Web)}";
+
+    private static void AssertProgramCaller(JsonElement item, string callerId)
+    {
+        var caller = item.GetProperty("caller");
+        Assert.Equal("program", caller.GetProperty("type").GetString());
+        Assert.Equal(callerId, caller.GetProperty("caller_id").GetString());
+    }
+
+    [Fact]
     public void Composed_instructions_include_chat_shaped_mcp_server_blocks()
     {
         using var httpClient = CreateHttpClient(_ => CreateJsonResponse(LoadFixture(StructuredFixturePath)));
