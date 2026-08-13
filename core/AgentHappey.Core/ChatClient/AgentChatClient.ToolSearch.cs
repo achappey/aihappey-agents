@@ -61,7 +61,7 @@ public partial class AgentChatClient
                 ParallelToolCalls = false,
                 Stream = false,
                 Temperature = agent.Model.Options?.Temperature ?? 1,
-                Metadata = BuildResponsesProviderMetadata()
+                Metadata = BuildSideInferenceProviderMetadata()
             };
 
             EnsureHeaders();

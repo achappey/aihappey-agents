@@ -47,6 +47,59 @@ public partial class AgentChatClient
         };
     }
 
+    private static readonly HashSet<string> SideInferenceOwnedProviderOptions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "background",
+        "conversation",
+        "input",
+        "instructions",
+        "max_tool_calls",
+        "maxToolCalls",
+        "metadata",
+        "model",
+        "parallel_tool_calls",
+        "parallelToolCalls",
+        "previous_response_id",
+        "previousResponseId",
+        "prompt",
+        "providerMetadata",
+        "stream",
+        "tool_choice",
+        "toolChoice",
+        "tools"
+    };
+
+    /// <summary>
+    /// Preserves provider/model tuning for a side-inference request while ensuring
+    /// provider metadata cannot inject tools, replay state, or override the request's
+    /// input and instructions. Some providers materialize metadata.tools after the
+    /// request has already supplied an empty tool list, so Tools = [] alone is not
+    /// sufficient to guarantee a tool-free inference call.
+    /// </summary>
+    private Dictionary<string, object?>? BuildSideInferenceProviderMetadata()
+    {
+        if (agent.Model.ProviderMetadata is not { Count: > 0 } providerMetadata)
+            return null;
+
+        var source = JsonSerializer.SerializeToElement(providerMetadata, JsonSerializerOptions.Web);
+        if (source.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var safeOptions = source.EnumerateObject()
+            .Where(property => !SideInferenceOwnedProviderOptions.Contains(property.Name))
+            .ToDictionary(
+                property => property.Name,
+                property => property.Value.Clone(),
+                StringComparer.Ordinal);
+
+        return safeOptions.Count == 0
+            ? null
+            : new Dictionary<string, object?>
+            {
+                [GetProviderKey()] = JsonSerializer.SerializeToElement(safeOptions, JsonSerializerOptions.Web)
+            };
+    }
+
     private ProviderBackendCaptureRequest? ResolveBackendCaptureRequest()
     {
         if (agent.Model.ProviderMetadata is not { Count: > 0 } providerMetadata)

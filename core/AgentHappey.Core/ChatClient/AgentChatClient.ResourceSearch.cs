@@ -26,7 +26,7 @@ public partial class AgentChatClient
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out var serverUri))
+        if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out _))
             return CreateResourceSearchError("Missing or invalid serverUrl.");
 
         var normalizedServerUrl = serverUrl.Trim().ToLowerInvariant();
@@ -74,7 +74,7 @@ public partial class AgentChatClient
                 ParallelToolCalls = false,
                 Stream = false,
                 Temperature = agent.Model.Options?.Temperature ?? 1,
-                Metadata = BuildResponsesProviderMetadata()
+                Metadata = BuildSideInferenceProviderMetadata()
             };
 
             EnsureHeaders();
