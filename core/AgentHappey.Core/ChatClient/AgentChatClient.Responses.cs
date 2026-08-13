@@ -118,6 +118,12 @@ public partial class AgentChatClient
                 continue;
             }
 
+            if (string.Equals(declaration.Name, ResourceSearchName, StringComparison.Ordinal)
+                && !HasAgentTool(ResourceSearchType))
+            {
+                continue;
+            }
+
             if (!McpToolSources.TryGetValue(declaration.Name, out var source))
             {
                 definitions.Add(ToResponseToolDefinition(declaration));

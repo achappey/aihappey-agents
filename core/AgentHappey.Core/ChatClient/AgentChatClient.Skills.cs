@@ -15,8 +15,8 @@ public partial class AgentChatClient
         skills: GetEnabledSkills(),
         mcpImplementations: McpServerImplementations,
         mcpInstructions: McpServerInstructions,
-        mcpResources: McpServerResources,
-        mcpResourceTemplates: McpServerResourceTemplates);
+        mcpResources: HasAgentTool(ResourceSearchType) ? null : McpServerResources,
+        mcpResourceTemplates: HasAgentTool(ResourceSearchType) ? null : McpServerResourceTemplates);
 
     private IReadOnlyList<LoadedAgentSkill> GetEnabledSkills()
         => loadedSkills ??= AgentSkillCatalog.Load(agent.Skills);

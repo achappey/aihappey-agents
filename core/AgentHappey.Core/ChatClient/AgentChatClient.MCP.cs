@@ -334,6 +334,7 @@ public partial class AgentChatClient
         // client. BuildResponseToolDefinitions controls whether the function is
         // also advertised as an ordinary provider-neutral agent tool.
         tools.Add(AIFunctionFactory.Create(ClientToolSearchAsync));
+        tools.Add(AIFunctionFactory.Create(SearchResourcesAsync));
 
         foreach (var tool in tools)
         {
