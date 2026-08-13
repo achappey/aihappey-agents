@@ -78,9 +78,15 @@ public partial class AgentChatClient
         {
             throw;
         }
-        catch
+        catch (Exception e)
         {
-            return CreateToolSearchResult([]);
+            return new CallToolResult()
+            {
+                IsError = true,
+                Content = [new TextContentBlock() {
+                    Text = e.ToString()
+                }]
+            };
         }
     }
 
@@ -96,8 +102,10 @@ public partial class AgentChatClient
                 tool.JsonSchema.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
                     ? JsonSerializer.SerializeToElement(new { type = "object", properties = new { } })
                     : tool.JsonSchema.Clone(),
-                tool.ReturnJsonSchema is { 
-                    ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined } outputSchema
+                tool.ReturnJsonSchema is
+                {
+                    ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined
+                } outputSchema
                     ? outputSchema.Clone()
                     : null))
             .ToList();
