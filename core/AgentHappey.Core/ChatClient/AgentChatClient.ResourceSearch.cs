@@ -13,7 +13,7 @@ public partial class AgentChatClient
     private const int MaximumResourceSearchResults = 20;
 
     internal const string ResourceSearchInstructions =
-        "Select the MCP resources and resource templates that best satisfy the supplied query from the supplied server-scoped catalog. Return exactly one JSON object with the shape {\"selectedResourceUris\":[\"exact_resource_uri\"],\"selectedResourceTemplateUriTemplates\":[\"exact_uri_template\"]}. Use only exact values present in the catalog, preserve relevance order, include no duplicates, select at most 20 entries in each array, and include no markdown or text outside the JSON object.";
+        "Select the MCP resources and resource templates that are relevant to the supplied query from the supplied server-scoped catalog, using the MCP server instructions as additional context when provided. Prefer returning all clearly relevant entries; return empty arrays only when no catalog entry is reasonably related to the query. Return exactly one JSON object with the shape {\"selectedResourceUris\":[\"exact_resource_uri\"],\"selectedResourceTemplateUriTemplates\":[\"exact_uri_template\"]}. Use only exact values present in the catalog, preserve relevance order, include no duplicates, select at most 20 entries in each array, and include no markdown or text outside the JSON object.";
 
     [DisplayName(ResourceSearchName)]
     [Description("Search the resources and resource templates advertised by one connected MCP server. Results preserve their MCP shapes and can be read with read_resource.")]
@@ -49,6 +49,10 @@ public partial class AgentChatClient
             {
                 query = query.Trim(),
                 serverUrl,
+                mcpServerInstructions = McpServerInstructions.TryGetValue(normalizedServerUrl, out var instructions)
+                    && !string.IsNullOrWhiteSpace(instructions)
+                        ? instructions.Trim()
+                        : null,
                 resources = catalog.Resources,
                 resourceTemplates = catalog.ResourceTemplates
             }, JsonSerializerOptions.Web);
@@ -91,9 +95,15 @@ public partial class AgentChatClient
         {
             throw;
         }
-        catch
+        catch (Exception e)
         {
-            return CreateResourceSearchResult([], []);
+            return new CallToolResult()
+            {
+                IsError = true,
+                Content = [new TextContentBlock() {
+                    Text = e.ToString()
+                }]
+            };
         }
     }
 
