@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using AgentHappey.Common.Extensions;
+using AgentHappey.Common.Models;
 using AgentHappey.Core.Extensions;
 using AgentHappey.Core.Skills;
 using ModelContextProtocol.Protocol;
@@ -11,6 +12,10 @@ public partial class AgentChatClient
 {
     private IReadOnlyList<LoadedAgentSkill>? loadedSkills;
 
+    private Task<IReadOnlyList<LoadedAgentSkill>>? loadSkillsTask;
+
+    private readonly object loadSkillsLock = new();
+
     public string GetComposedInstructions() => agent.ComposeInstructions(
         skills: GetEnabledSkills(),
         mcpImplementations: McpServerImplementations,
@@ -19,7 +24,96 @@ public partial class AgentChatClient
         mcpResourceTemplates: HasAgentTool(ResourceSearchType) ? null : McpServerResourceTemplates);
 
     private IReadOnlyList<LoadedAgentSkill> GetEnabledSkills()
-        => loadedSkills ??= AgentSkillCatalog.Load(agent.Skills);
+    {
+        if (loadedSkills is not null)
+            return loadedSkills;
+
+        var configuredSkills = agent.Skills?.ToArray() ?? [];
+        if (configuredSkills.Any(skill => skill is SkillReference))
+            throw new InvalidOperationException("Referenced agent skills must be downloaded before skills are exposed.");
+
+        return loadedSkills = AgentSkillCatalog.Load(configuredSkills);
+    }
+
+    private Task<IReadOnlyList<LoadedAgentSkill>> EnsureSkillsLoadedAsync(CancellationToken cancellationToken)
+    {
+        if (loadedSkills is not null)
+            return Task.FromResult(loadedSkills);
+
+        lock (loadSkillsLock)
+        {
+            loadSkillsTask ??= LoadSkillsAsync(cancellationToken);
+            return loadSkillsTask;
+        }
+    }
+
+    private async Task<IReadOnlyList<LoadedAgentSkill>> LoadSkillsAsync(CancellationToken cancellationToken)
+    {
+        var result = new List<LoadedAgentSkill>();
+
+        foreach (var skill in agent.Skills ?? [])
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (skill is not SkillReference reference)
+            {
+                result.Add(AgentSkillCatalog.Load(skill));
+                continue;
+            }
+
+            reference.Validate();
+            var bundle = await DownloadSkillReferenceAsync(reference, cancellationToken);
+
+            try
+            {
+                result.Add(AgentSkillCatalog.LoadBundle(bundle));
+            }
+            catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException)
+            {
+                throw new InvalidOperationException(
+                    $"Referenced skill '{reference.SkillId}' returned an invalid skill bundle.",
+                    exception);
+            }
+        }
+
+        loadedSkills = result;
+        return result;
+    }
+
+    private async Task<byte[]> DownloadSkillReferenceAsync(
+        SkillReference reference,
+        CancellationToken cancellationToken)
+    {
+        EnsureHeaders();
+
+        var encodedSkillId = string.Join('/', reference.SkillId
+            .Split('/', StringSplitOptions.None)
+            .Select(Uri.EscapeDataString));
+        var relativeUrl = reference.Version is null
+            ? $"v1/skills/{encodedSkillId}/content"
+            : $"v1/skills/{encodedSkillId}/versions/{Uri.EscapeDataString(reference.Version)}/content";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, relativeUrl);
+        request.Headers.Accept.ParseAdd("application/zip");
+
+        using var response = await http.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"Failed to download referenced skill '{reference.SkillId}'"
+                + (reference.Version is null ? string.Empty : $" version '{reference.Version}'")
+                + $": HTTP {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                null,
+                response.StatusCode);
+        }
+
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
 
     private LoadedAgentSkill ResolveEnabledSkill(string skillId)
     {

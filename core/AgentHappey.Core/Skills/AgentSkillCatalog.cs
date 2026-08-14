@@ -69,7 +69,7 @@ public static class AgentSkillCatalog
         ArgumentNullException.ThrowIfNull(skill);
 
         if (!string.Equals(skill.Type, "inline", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"Skill '{skill.Name}' uses unsupported type '{skill.Type}'. Only inline skills are currently supported.");
+            throw new InvalidOperationException($"Skill type '{skill.Type}' cannot be loaded as an inline skill.");
 
         if (skill.Source is null)
             throw new InvalidOperationException($"Skill '{skill.Name}' is missing its source payload.");
@@ -91,6 +91,16 @@ public static class AgentSkillCatalog
             throw new InvalidOperationException($"Skill '{skill.Name}' contains invalid base64 data.", ex);
         }
 
+        return LoadBundle(zipBytes, skill.Name, skill.Description);
+    }
+
+    public static LoadedAgentSkill LoadBundle(
+        byte[] zipBytes,
+        string? displayName = null,
+        string? description = null)
+    {
+        ArgumentNullException.ThrowIfNull(zipBytes);
+
         using var archiveStream = new MemoryStream(zipBytes, writable: false);
         using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Read, leaveOpen: false);
 
@@ -104,7 +114,7 @@ public static class AgentSkillCatalog
             .ToArray();
 
         if (fileEntries.Length == 0)
-            throw new InvalidOperationException($"Skill '{skill.Name}' zip bundle is empty.");
+            throw new InvalidOperationException("Skill zip bundle is empty.");
 
         var rootDirectories = fileEntries
             .Select(entry => entry.Path.Split('/', 2, StringSplitOptions.RemoveEmptyEntries)[0])
@@ -112,13 +122,13 @@ public static class AgentSkillCatalog
             .ToArray();
 
         if (rootDirectories.Length != 1)
-            throw new InvalidOperationException($"Skill '{skill.Name}' zip bundle must contain exactly one root folder.");
+            throw new InvalidOperationException("Skill zip bundle must contain exactly one root folder.");
 
         var rootDirectory = rootDirectories[0];
         var skillMarkdownEntry = fileEntries.FirstOrDefault(entry => string.Equals(entry.Path, $"{rootDirectory}/SKILL.md", StringComparison.Ordinal));
 
         if (skillMarkdownEntry is null)
-            throw new InvalidOperationException($"Skill '{skill.Name}' zip bundle must contain '{rootDirectory}/SKILL.md'.");
+            throw new InvalidOperationException($"Skill zip bundle must contain '{rootDirectory}/SKILL.md'.");
 
         var markdown = ReadAllText(skillMarkdownEntry.Entry);
         var parsedMarkdown = ParseSkillMarkdown(markdown);
@@ -143,15 +153,15 @@ public static class AgentSkillCatalog
                 IsTextResource(relativePath));
         }
 
-        var displayName = string.IsNullOrWhiteSpace(skill.Name) ? parsedMarkdown.SkillId : skill.Name.Trim();
-        var description = string.IsNullOrWhiteSpace(parsedMarkdown.Description)
-            ? skill.Description?.Trim() ?? string.Empty
+        var resolvedDisplayName = string.IsNullOrWhiteSpace(displayName) ? parsedMarkdown.SkillId : displayName.Trim();
+        var resolvedDescription = string.IsNullOrWhiteSpace(parsedMarkdown.Description)
+            ? description?.Trim() ?? string.Empty
             : parsedMarkdown.Description.Trim();
 
         return new LoadedAgentSkill(
             parsedMarkdown.SkillId,
-            displayName,
-            description,
+            resolvedDisplayName,
+            resolvedDescription,
             parsedMarkdown.Body,
             rootDirectory,
             resources);

@@ -89,6 +89,7 @@ public class McpClient
     public ClientCapabilities? Capabilities { get; set; }
 }
 
+[JsonConverter(typeof(AISkillJsonConverter))]
 public class AISkill
 {
     [JsonPropertyName("name")]
@@ -98,10 +99,158 @@ public class AISkill
     public string Description { get; set; } = null!;
 
     [JsonPropertyName("type")]
-    public string Type { get; set; } = "inline";
+    public virtual string Type { get; set; } = "inline";
 
     [JsonPropertyName("source")]
     public AISkillSource Source { get; set; } = null!;
+}
+
+public sealed class SkillReference : AISkill
+{
+    public override string Type { get; set; } = "skill_reference";
+
+    [JsonPropertyName("skill_id")]
+    public string SkillId { get; set; } = null!;
+
+    [JsonPropertyName("version")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Version { get; set; }
+
+    public void Validate()
+    {
+        if (string.IsNullOrWhiteSpace(SkillId) || SkillId.Length is < 1 or > 64)
+            throw new InvalidOperationException("Referenced skill_id must contain between 1 and 64 characters.");
+
+        if (Version is null)
+            return;
+
+        if (string.Equals(Version, "latest", StringComparison.Ordinal))
+            return;
+
+        if (Version.Length == 0
+            || Version[0] == '0'
+            || Version.Any(character => character is < '0' or > '9'))
+        {
+            throw new InvalidOperationException($"Referenced skill version '{Version}' is invalid. Use a positive integer or 'latest'.");
+        }
+    }
+}
+
+public sealed class AISkillJsonConverter : JsonConverter<AISkill>
+{
+    public override AISkill? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        using var document = JsonDocument.ParseValue(ref reader);
+        var root = document.RootElement;
+
+        if (root.ValueKind != JsonValueKind.Object)
+            throw new JsonException("An agent skill must be a JSON object.");
+
+        var discriminator = TryGetProperty(root, "type", out var typeElement)
+            ? typeElement.GetString()
+            : "inline";
+
+        if (string.Equals(discriminator, "skill_reference", StringComparison.Ordinal))
+        {
+            var reference = new SkillReference
+            {
+                SkillId = GetRequiredString(root, "skill_id"),
+                Version = TryGetProperty(root, "version", out var versionElement)
+                    && versionElement.ValueKind != JsonValueKind.Null
+                        ? versionElement.GetString()
+                        : null
+            };
+
+            try
+            {
+                reference.Validate();
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new JsonException(exception.Message, exception);
+            }
+
+            return reference;
+        }
+
+        if (!string.Equals(discriminator, "inline", StringComparison.Ordinal))
+            throw new JsonException($"Unsupported agent skill type '{discriminator}'. Expected 'inline' or 'skill_reference'.");
+
+        var inline = new AISkill
+        {
+            Type = "inline",
+            Name = GetRequiredString(root, "name"),
+            Description = GetRequiredString(root, "description")
+        };
+
+        if (!TryGetProperty(root, "source", out var sourceElement)
+            || sourceElement.ValueKind != JsonValueKind.Object)
+        {
+            throw new JsonException($"Inline skill '{inline.Name}' is missing its source payload.");
+        }
+
+        inline.Source = new AISkillSource
+        {
+            Data = GetRequiredString(sourceElement, "data"),
+            MediaType = GetRequiredString(sourceElement, "media_type"),
+            Type = GetRequiredString(sourceElement, "type")
+        };
+
+        return inline;
+    }
+
+    public override void Write(Utf8JsonWriter writer, AISkill value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+
+        if (value is SkillReference reference)
+        {
+            reference.Validate();
+            writer.WriteString("skill_id", reference.SkillId);
+            writer.WriteString("type", "skill_reference");
+
+            if (reference.Version is not null)
+                writer.WriteString("version", reference.Version);
+
+            writer.WriteEndObject();
+            return;
+        }
+
+        writer.WriteString("description", value.Description);
+        writer.WriteString("name", value.Name);
+
+        writer.WritePropertyName("source");
+        JsonSerializer.Serialize(writer, value.Source, options);
+
+        writer.WriteString("type", "inline");
+        writer.WriteEndObject();
+    }
+
+    private static string GetRequiredString(JsonElement element, string propertyName)
+    {
+        if (!TryGetProperty(element, propertyName, out var property)
+            || property.ValueKind != JsonValueKind.String)
+        {
+            throw new JsonException($"Agent skill property '{propertyName}' must be a string.");
+        }
+
+        return property.GetString()!;
+    }
+
+    private static bool TryGetProperty(JsonElement element, string propertyName, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
 }
 
 public class AISkillSource

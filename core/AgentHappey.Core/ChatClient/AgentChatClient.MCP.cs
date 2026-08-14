@@ -99,6 +99,8 @@ public partial class AgentChatClient
     {
         List<AITool> tools = [];
 
+        await EnsureSkillsLoadedAsync(cancellationToken);
+
         McpClientOptions options = new()
         {
             Capabilities = agent.McpClient?.Capabilities,
