@@ -93,16 +93,16 @@ public class McpClient
 public class AISkill
 {
     [JsonPropertyName("name")]
-    public string Name { get; set; } = null!;
+    public string? Name { get; set; }
 
     [JsonPropertyName("description")]
-    public string Description { get; set; } = null!;
+    public string? Description { get; set; }
 
     [JsonPropertyName("type")]
     public virtual string Type { get; set; } = "inline";
 
     [JsonPropertyName("source")]
-    public AISkillSource Source { get; set; } = null!;
+    public AISkillSource? Source { get; set; }
 }
 
 public sealed class SkillReference : AISkill
@@ -126,13 +126,6 @@ public sealed class SkillReference : AISkill
 
         if (string.Equals(Version, "latest", StringComparison.Ordinal))
             return;
-
-        if (Version.Length == 0
-            || Version[0] == '0'
-            || Version.Any(character => character is < '0' or > '9'))
-        {
-            throw new InvalidOperationException($"Referenced skill version '{Version}' is invalid. Use a positive integer or 'latest'.");
-        }
     }
 }
 
