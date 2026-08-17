@@ -49,7 +49,8 @@ public class ChatController(IHttpClientFactory httpClientFactory,
                     httpClientFactory,
                     agent,
                     new Dictionary<string, string?>(),
-                    serviceProvider.GetMcpTokenAsync),
+                    serviceProvider.GetMcpTokenAsync,
+                    options.Value.AgentPluginExtensionNamespace),
                 (agentClient, messages) => agentClient.SetHistory(messages),
                 cancellationToken);
 

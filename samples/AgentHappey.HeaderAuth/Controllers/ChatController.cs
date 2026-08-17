@@ -32,7 +32,8 @@ public class ChatController(IHttpClientFactory httpClientFactory,
                     agent,
                     HttpContext.Request.Headers.Where(a => a.Key.StartsWith("X-", StringComparison.OrdinalIgnoreCase))
                         .ToDictionary(a => a.Key, a => a.Value.FirstOrDefault()),
-                    null),
+                    null,
+                    options.Value.AgentPluginExtensionNamespace),
                 cancellationToken: cancellationToken);
 
             await orchestrator.ExecuteAsync(Response, chatRequest, context, cancellationToken);

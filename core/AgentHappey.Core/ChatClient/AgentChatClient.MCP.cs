@@ -107,12 +107,13 @@ public partial class AgentChatClient
             ClientInfo = agent.ToImplementation()
         };
 
-        var enabledServers = agent.McpServers?.Where(a => a.Value.Disabled != true);
+        var enabledServers = GetEnabledMcpServers();
 
         foreach (var servers in enabledServers ?? [])
         {
             var httpClient = httpClientFactory.CreateClient();
             var url = servers.Value.Url.ToLowerInvariant();
+            ApplyConfiguredMcpHeaders(httpClient, servers.Value);
             ApplyInferenceAuthorizationForSameEndpoint(http, httpClient, url);
             ApplyForwardedHeaders(httpClient);
 
@@ -331,6 +332,9 @@ public partial class AgentChatClient
             tools.Add(AIFunctionFactory.Create(ReadSkillResourceAsync));
         }
 
+        if (GetPluginsWithReadableFiles().Count > 0)
+            tools.Add(AIFunctionFactory.Create(ReadPluginFileAsync));
+
         // Always make the implementation available to the local agent loop so
         // this service can execute downstream Responses calls delegated to its
         // client. BuildResponseToolDefinitions controls whether the function is
@@ -362,6 +366,25 @@ public partial class AgentChatClient
 
         foreach (var header in headers.Where(header => !client.DefaultRequestHeaders.Contains(header.Key)))
             client.DefaultRequestHeaders.Add(header.Key, header.Value);
+    }
+
+    private static void ApplyConfiguredMcpHeaders(
+        HttpClient client,
+        AgentHappey.Common.Models.McpServer server)
+    {
+        foreach (var header in server.Headers ?? [])
+        {
+            var value = header.Value switch
+            {
+                JsonElement element when element.ValueKind == JsonValueKind.String => element.GetString(),
+                JsonElement element => element.ToString(),
+                null => null,
+                _ => Convert.ToString(header.Value, System.Globalization.CultureInfo.InvariantCulture)
+            };
+
+            if (!string.IsNullOrEmpty(value) && !client.DefaultRequestHeaders.Contains(header.Key))
+                client.DefaultRequestHeaders.TryAddWithoutValidation(header.Key, value);
+        }
     }
 
     private static void ApplyInferenceAuthorizationForSameEndpoint(HttpClient inferenceClient, HttpClient mcpClient, string mcpServerUrl)

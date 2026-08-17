@@ -38,7 +38,8 @@ public sealed class HeaderAuthAsyncResponsesProcessor(
                 httpClientFactory,
                 agent,
                 message.Context.Headers,
-                serviceProvider.GetMcpTokenAsync),
+                serviceProvider.GetMcpTokenAsync,
+                config.AgentPluginExtensionNamespace),
             (agentClient, messages) => agentClient.SetHistory(messages),
             cancellationToken);
 

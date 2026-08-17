@@ -3,6 +3,7 @@ using System.Text.Json;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.Skills;
+using AgentHappey.Core.Plugins;
 using AIHappey.Vercel.Models;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
@@ -14,6 +15,7 @@ public static class AgentExtensions
     public static string ComposeInstructions(
         this Agent agent,
         IReadOnlyCollection<LoadedAgentSkill>? skills = null,
+        IReadOnlyCollection<LoadedAgentPlugin>? plugins = null,
         IDictionary<string, Implementation>? mcpImplementations = null,
         IDictionary<string, string>? mcpInstructions = null,
         IDictionary<string, IEnumerable<object>>? mcpResources = null,
@@ -45,6 +47,25 @@ public static class AgentExtensions
                         skill_id = skill.SkillId,
                         name = skill.Name,
                         description = skill.Description
+                    })
+                }
+            }, JsonSerializerOptions.Web));
+        }
+
+        if (plugins is { Count: > 0 })
+        {
+            sections.Add(JsonSerializer.Serialize(new
+            {
+                availablePluginFiles = new
+                {
+                    readTool = "read_plugin_file",
+                    instructions = "Use read_plugin_file only when a listed enabled plugin file is relevant. Pass the exact plugin_name and package-relative path. Skill files must be read through activate_skill and read_skill_resource instead.",
+                    plugins = plugins.Select(plugin => new
+                    {
+                        name = plugin.Name,
+                        description = plugin.Description,
+                        version = plugin.Version,
+                        files = plugin.Files.Keys.OrderBy(path => path, StringComparer.Ordinal)
                     })
                 }
             }, JsonSerializerOptions.Web));

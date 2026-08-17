@@ -8,7 +8,8 @@ public partial class AgentChatClient(
     IHttpClientFactory httpClientFactory,
     Agent agent,
     IDictionary<string, string?> headers,
-    Func<string, CancellationToken, Task<string?>>? getMcpToken = null) : IChatClient
+    Func<string, CancellationToken, Task<string?>>? getMcpToken = null,
+    string? agentPluginExtensionNamespace = null) : IChatClient
 {
     private const string AgentNameHeader = "X-Agent-Name";
 

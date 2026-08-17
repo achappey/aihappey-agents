@@ -198,7 +198,8 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
                 agent,
                 HttpContext.Request.Headers.Where(a => a.Key.StartsWith("X-", StringComparison.OrdinalIgnoreCase))
                     .ToDictionary(a => a.Key, a => a.Value.FirstOrDefault()),
-                serviceProvider.GetMcpTokenAsync),
+                null,
+                options.Value.AgentPluginExtensionNamespace),
             (agentClient, messages) => agentClient.SetHistory(messages),
             cancellationToken);
 

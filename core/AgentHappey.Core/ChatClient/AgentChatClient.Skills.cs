@@ -18,6 +18,7 @@ public partial class AgentChatClient
 
     public string GetComposedInstructions() => agent.ComposeInstructions(
         skills: GetEnabledSkills(),
+        plugins: GetPluginsWithReadableFiles(),
         mcpImplementations: McpServerImplementations,
         mcpInstructions: McpServerInstructions,
         mcpResources: HasAgentTool(ResourceSearchType) ? null : McpServerResources,
@@ -32,7 +33,8 @@ public partial class AgentChatClient
         if (configuredSkills.Any(skill => skill is SkillReference))
             throw new InvalidOperationException("Referenced agent skills must be downloaded before skills are exposed.");
 
-        return loadedSkills = AgentSkillCatalog.Load(configuredSkills);
+        var pluginSkills = EnsurePluginsLoaded().SelectMany(plugin => plugin.Skills);
+        return loadedSkills = [.. AgentSkillCatalog.Load(configuredSkills), .. pluginSkills];
     }
 
     private Task<IReadOnlyList<LoadedAgentSkill>> EnsureSkillsLoadedAsync(CancellationToken cancellationToken)
@@ -75,6 +77,8 @@ public partial class AgentChatClient
                     exception);
             }
         }
+
+        result.AddRange(EnsurePluginsLoaded().SelectMany(plugin => plugin.Skills));
 
         loadedSkills = result;
         return result;
