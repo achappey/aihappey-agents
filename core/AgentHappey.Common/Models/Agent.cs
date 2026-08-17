@@ -46,7 +46,24 @@ public class Agent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IEnumerable<Icon>? Icons { get; set; }
 
+    [JsonPropertyName("plugins")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IEnumerable<AIPluginFile>? Plugins { get; set; }
+
 }
+
+public class AIPluginFile
+{
+    [JsonPropertyName("data")]
+    public string Data { get; set; } = null!;
+
+    [JsonPropertyName("media_type")]
+    public string MediaType { get; set; } = "application/zip";
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "base64";
+}
+
 
 public class AgentTool
 {
