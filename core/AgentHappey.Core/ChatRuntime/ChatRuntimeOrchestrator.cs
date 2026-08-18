@@ -9,6 +9,7 @@ using Microsoft.Agents.AI.Workflows;
 using Microsoft.AspNetCore.Http;
 using AIHappey.Vercel.Models;
 using Microsoft.Extensions.AI;
+using System.Text.Json.Serialization;
 
 namespace AgentHappey.Core.ChatRuntime;
 
@@ -89,6 +90,14 @@ public sealed record ChatRuntimeContext(
 
 public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IModelCatalog modelCatalog) : IChatRuntimeOrchestrator
 {
+
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerOptions.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+
     public async Task<ChatRuntimeContext> PrepareAsync(
         HttpResponse response,
         AgentRequest chatRequest,
@@ -354,7 +363,7 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
                 Output = new ModelContextProtocol.Protocol.CallToolResult
                 {
                     IsError = false,
-                    StructuredContent = JsonSerializer.SerializeToElement(connection)
+                    StructuredContent = JsonSerializer.SerializeToElement(connection, JsonOptions)
                 },
                 ProviderExecuted = true
             })
