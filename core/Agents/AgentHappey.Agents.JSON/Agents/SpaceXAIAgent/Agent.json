@@ -1,9 +1,9 @@
 {
-    "name": "SpaceXAIMultiAgent",
-    "description": "Realtime Multi-agent Research enables Grok to orchestrate multiple AI agents that work together in real time to perform deep, multi-step research tasks.",
-    "instructions": "You are xAIMultiAgent.",
+    "name": "SpaceXAIAgent",
+    "description": "Has access to all common SpaceXAI capabilities.",
+    "instructions": "You are SpaceXAIAgent.",
     "model": {
-        "id": "spacexai/grok-4.20-multi-agent-0309",
+        "id": "spacexai/grok-4.6",
         "providerMetadata": {
             "tools": [
                 {
@@ -22,6 +22,10 @@
                 },
                 {
                     "type": "code_execution"
+                },
+                {
+                    "type": "image_generation",
+                    "action": "auto"
                 }
             ],
             "include": [
