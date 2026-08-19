@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
+using Microsoft.Agents.AI.Workflows.Specialized.Magentic;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
@@ -115,10 +116,60 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         HashSet<string> authorNames = [];
         List<UsageContent> usageContents = [];
         var finishMetadata = new Dictionary<string, object?>(StringComparer.Ordinal);
+        var lifecycleSequence = 0;
+        var progressRound = 0;
 
         await foreach (var update in updates.WithCancellation(cancellationToken))
         {
-            if (update is AgentResponseUpdateEvent agentRunUpdateEvent)
+            if (update is MagenticPlanCreatedEvent planCreatedEvent)
+            {
+                foreach (var part in CreateMagenticLifecycleParts(
+                    "magentic_plan_created",
+                    ++lifecycleSequence,
+                    new
+                    {
+                        eventType = "plan_created",
+                        sequence = lifecycleSequence,
+                        phase = "initial"
+                    },
+                    planCreatedEvent.FullTaskLedger))
+                {
+                    yield return part;
+                }
+            }
+            else if (update is MagenticProgressLedgerUpdatedEvent progressUpdatedEvent)
+            {
+                foreach (var part in CreateMagenticLifecycleParts(
+                    "magentic_progress_updated",
+                    ++lifecycleSequence,
+                    new
+                    {
+                        eventType = "progress_updated",
+                        sequence = lifecycleSequence,
+                        round = ++progressRound
+                    },
+                    progressUpdatedEvent.ProgressLedger))
+                {
+                    yield return part;
+                }
+            }
+            else if (update is MagenticReplannedEvent replannedEvent)
+            {
+                foreach (var part in CreateMagenticLifecycleParts(
+                    "magentic_replanned",
+                    ++lifecycleSequence,
+                    new
+                    {
+                        eventType = "replanned",
+                        sequence = lifecycleSequence,
+                        reason = "stall"
+                    },
+                    replannedEvent.FullTaskLedger))
+                {
+                    yield return part;
+                }
+            }
+            else if (update is AgentResponseUpdateEvent agentRunUpdateEvent)
             {
                 var u = agentRunUpdateEvent.Update;
 
@@ -176,6 +227,23 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         {
             yield return part;
         }
+    }
+
+    private static IEnumerable<UIMessagePart> CreateMagenticLifecycleParts(
+        string toolName,
+        int sequence,
+        object input,
+        object ledger)
+    {
+        var callId = $"magentic-{sequence}-{Guid.NewGuid():N}";
+
+        yield return ToolCallPart.CreateProviderExecuted(callId, toolName, input);
+        yield return new ToolOutputAvailablePart
+        {
+            ToolCallId = callId,
+            Output = JsonSerializer.SerializeToElement(ledger, JsonWeb),
+            ProviderExecuted = true
+        };
     }
 
     private static IEnumerable<UIMessagePart> MapContent(
