@@ -29,6 +29,8 @@ public class WorkflowMetadata
 
     public Handoff? Handoff { get; set; }
 
+    public Magentic? Magentic { get; set; }
+
 }
 
 public class Groupchat
@@ -41,4 +43,15 @@ public class Handoff
 {
     public JsonArray? Handoffs { get; set; }
 
+}
+
+public class Magentic
+{
+    public int? MaxRounds { get; set; }
+
+    public int? MaxResets { get; set; }
+
+    public int? MaxStalls { get; set; }
+
+    public string? ResponseLanguage { get; set; }
 }

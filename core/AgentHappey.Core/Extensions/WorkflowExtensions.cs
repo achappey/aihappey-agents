@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using AgentHappey.Common.Models;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Agents.AI.Workflows.Declarative;
@@ -66,6 +67,36 @@ public static class WorkflowExtensions
                 _ => throw new InvalidOperationException("Invalid handoff format.")
             };
         }
+        return builder.Build();
+    }
+
+    public static Workflow BuildMagenticWorkflow(
+        this IReadOnlyList<AIAgent> agents,
+        Magentic? options)
+    {
+        if (agents.Count < 2)
+            throw new InvalidOperationException(
+                "Magentic workflow requires a manager agent followed by at least one participant agent.");
+
+        var builder = AgentWorkflowBuilder
+            .CreateMagenticBuilderWith(agents[0])
+            .AddParticipants(agents.Skip(1))
+            // The runtime currently has no request/resume channel for plan review.
+            // Keep this explicit so plan signoff can be enabled when that channel is added.
+            .RequirePlanSignoff(false);
+
+        if (options?.MaxRounds is int maxRounds)
+            builder.WithMaxRounds(maxRounds);
+
+        if (options?.MaxResets is int maxResets)
+            builder.WithMaxResets(maxResets);
+
+        if (options?.MaxStalls is int maxStalls)
+            builder.WithMaxStalls(maxStalls);
+
+        if (!string.IsNullOrWhiteSpace(options?.ResponseLanguage))
+            builder.WithResponseLanguage(options.ResponseLanguage);
+
         return builder.Build();
     }
 

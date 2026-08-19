@@ -311,6 +311,7 @@ public partial class AgentChatClient
                         servers.Value,
                         mcpClient.ServerInfo);
                 }
+                
             }
 
             if (mcpClient.ServerCapabilities.Resources != null)

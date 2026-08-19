@@ -172,30 +172,38 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
     }
 
     private async Task<IReadOnlyList<Agent>> ResolveAgentsAsync(
-        ChatRuntimeRequest chatRequest,
-        CancellationToken cancellationToken)
+    ChatRuntimeRequest chatRequest,
+    CancellationToken cancellationToken)
     {
+        var agents = new List<Agent>();
+
+        if (chatRequest.Agents is { Count: > 0 })
+            agents.AddRange(chatRequest.Agents);
+
         var requestedModels = chatRequest.Models?
             .Where(modelId => !string.IsNullOrWhiteSpace(modelId))
             .ToList();
 
         if (requestedModels is { Count: > 0 })
         {
-            var resolvedAgents = await modelCatalog.ResolveAgentsAsync(requestedModels, cancellationToken);
+            var resolvedAgents = await modelCatalog.ResolveAgentsAsync(
+                requestedModels,
+                cancellationToken);
 
-            if (resolvedAgents.Count == requestedModels.Count)
-                return resolvedAgents;
+            agents.AddRange(resolvedAgents);
         }
 
         if (!string.IsNullOrWhiteSpace(chatRequest.Model))
         {
-            var resolvedAgent = await modelCatalog.ResolveAgentAsync(chatRequest.Model, cancellationToken);
+            var resolvedAgent = await modelCatalog.ResolveAgentAsync(
+                chatRequest.Model,
+                cancellationToken);
 
             if (resolvedAgent != null)
-                return [resolvedAgent];
+                agents.Add(resolvedAgent);
         }
 
-        return chatRequest.Agents?.ToList() ?? [];
+        return agents;
     }
 
     public Workflow BuildWorkflow(AgentRequest chatRequest, IReadOnlyList<AIAgent> agents) =>
@@ -206,6 +214,7 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         {
             "sequential" => AgentWorkflowBuilder.BuildSequential(agents),
             "concurrent" => AgentWorkflowBuilder.BuildConcurrent(agents),
+            "magentic" => agents.BuildMagenticWorkflow(chatRequest.WorkflowMetadata?.Magentic),
             "groupchat" => AgentWorkflowBuilder.CreateGroupChatBuilderWith(team =>
                     new RoundRobinGroupChatManager(team)
                     {
