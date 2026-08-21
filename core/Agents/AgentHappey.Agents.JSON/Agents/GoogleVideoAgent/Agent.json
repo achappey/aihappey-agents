@@ -1,0 +1,32 @@
+{
+    "name": "GoogleVideoAgent",
+    "description": "You help creating videos.",
+    "instructions": "Create videos for users as requested.",
+    "model": {
+        "id": "google/gemini-omni-flash-preview",
+        "providerMetadata": {
+            "service_tier": "standard",
+            "store": false,
+            "generation_config": {
+                "thinking_level": "high",
+                "thinking_summaries": "auto",
+                "video_config": {}
+            },
+            "response_format": [
+                {
+                    "type": "video",
+                    "delivery": "inline"
+                }
+            ]
+        }
+    },
+    "mcpClient": {
+        "capabilities": {},
+        "policy": {
+            "readOnlyHint": true,
+            "openWorldHint": false,
+            "idempotentHint": true,
+            "destructiveHint": false
+        }
+    }
+}
