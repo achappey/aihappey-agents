@@ -1,6 +1,7 @@
 
 using System.Text.Json.Serialization;
 using System.Text.Json;
+using AIHappey.Vercel.Models;
 using ModelContextProtocol.Protocol;
 
 namespace AgentHappey.Common.Models;
@@ -22,9 +23,9 @@ public class Agent
     [JsonPropertyName("argumentHint")]
     public string? ArgumentHint { get; set; }
 
-    [JsonPropertyName("outputSchema")]
+    [JsonPropertyName("responseFormat")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public OutputSchema? OutputSchema { get; set; }
+    public ResponseFormat? ResponseFormat { get; set; }
 
     [JsonPropertyName("mcpServers")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -73,27 +74,6 @@ public class AgentTool
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
 }
-
-public class OutputSchema
-{
-    [JsonPropertyName("properties")]
-    public Dictionary<string, Property> Properties { get; set; } = [];
-}
-
-public class Property
-{
-    [JsonPropertyName("type")]
-    public string Type { get; set; } = null!;
-
-    [JsonPropertyName("required")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? Required { get; set; }
-
-    [JsonPropertyName("description")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Description { get; set; }
-}
-
 
 public class McpClient
 {

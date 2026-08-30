@@ -424,7 +424,7 @@ public partial class AgentChatClient
             });
         }
 
-        if (agent.OutputSchema != null)
+        if (agent.ResponseFormat != null)
         {
             var structuredText = GetStructuredOutputText(response);
             if (!string.IsNullOrWhiteSpace(structuredText))

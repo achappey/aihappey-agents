@@ -21,7 +21,7 @@ public partial class AgentChatClient
             Model = agent.Model.Id,
             Input = new ResponseInput(ToResponseInputItems(messages)),
             Tools = BuildResponseToolDefinitions(options?.Tools),
-            Text = agent.GetCompletionsOutputSchema(),
+            Text = agent.GetResponsesText(),
             Metadata = BuildResponsesProviderMetadata(),
             Instructions = options?.Instructions,
             Stream = false,
@@ -840,7 +840,7 @@ public partial class AgentChatClient
             parts.Add(new TextContent(response.OutputText));
         }
 
-        if (agent.OutputSchema != null)
+        if (agent.ResponseFormat != null)
         {
             var structuredText = parts.OfType<TextContent>().Select(a => a.Text).FirstOrDefault(a => !string.IsNullOrWhiteSpace(a))
                 ?? SerializeStructuredOutput(response.Text);

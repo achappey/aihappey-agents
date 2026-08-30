@@ -14,63 +14,27 @@ public static class AgentHelpers
         return $"data:{mimeType};base64,{base64}";
     }
 
-    public static object? GetCompletionsOutputSchema(this Agent agent)
+    public static object? GetResponsesText(this Agent agent)
     {
-        if (agent.OutputSchema == null)
+        var jsonSchema = agent.ResponseFormat?.JsonSchema;
+        if (jsonSchema is null)
             return null;
 
-        return new Dictionary<string, object?>
+        return new
         {
-            ["type"] = "json_schema",
-            ["json_schema"] = agent.GetJsonOutputSchema()?
-                .Where(a => a.Key != "type")
-                .ToDictionary(a => a.Key, a => a.Value)
-        };
-    }
-
-    public static string GetOutputName(this Agent agent) => $"{agent.Name.ToLowerInvariant()}_output";
-
-    public static Dictionary<string, object?>? GetJsonOutputSchema(this Agent agent)
-    {
-        if (agent.OutputSchema == null)
-            return null;
-
-        // Extract properties into plain dictionaries
-        var props = agent.OutputSchema.Properties
-            .ToDictionary(
-                p => p.Key,
-                p => (object)new Dictionary<string, object?>
-                {
-                    ["type"] = p.Value.Type,                // assume string
-                    ["description"] = p.Value.Description,  // assume string
-                }
-            );
-
-        // Required list
-        var required = agent.OutputSchema.Properties
-            .Where(p => p.Value.Required == true)
-            .Select(p => p.Key)
-            .ToList();
-
-        // Final payload — NOTHING custom, NOTHING typed
-        return new Dictionary<string, object?>
-        {
-            ["type"] = "json_schema",
-            ["json_schema"] = new Dictionary<string, object?>
+            format = new
             {
-                ["name"] = agent.GetOutputName(),
-                ["description"] = agent.Description,
-                ["schema"] = new Dictionary<string, object?>
-                {
-                    ["type"] = "object",
-                    ["properties"] = props,
-                    ["required"] = required,
-                    ["additionalProperties"] = false
-                },
-                ["strict"] = true,
-            },
+                type = "json_schema",
+                name = jsonSchema.Name,
+                description = jsonSchema.Description,
+                schema = jsonSchema.Schema,
+                strict = jsonSchema.Strict
+            }
         };
     }
+
+    public static string GetOutputName(this Agent agent)
+        => agent.ResponseFormat?.JsonSchema.Name ?? $"{agent.Name.ToLowerInvariant()}_output";
 
     public static IEnumerable<McpServer> ToMcpServers(this IEnumerable<string> urls) => urls.Select(a => a.ToMcpServer());
 }

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
 using AIHappey.Abstractions.Http;
@@ -1073,12 +1074,24 @@ public sealed class AgentChatClientFixtureTests
         using var httpClient = CreateHttpClient(_ => CreateJsonResponse(fixture));
         using var client = CreateClient(
             httpClient,
-            CreateAgent(outputSchema: new OutputSchema
+            CreateAgent(responseFormat: new AIHappey.Vercel.Models.ResponseFormat
             {
-                Properties = new Dictionary<string, Property>
+                JsonSchema = new AIHappey.Vercel.Models.JSONSchema
                 {
-                    ["summary"] = new() { Type = "string", Required = true, Description = "Short summary" },
-                    ["tone"] = new() { Type = "string", Description = "Detected tone" }
+                    Name = "structuredagent_output",
+                    Description = "Structured result",
+                    Strict = true,
+                    Schema = JsonSerializer.SerializeToElement(new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            summary = new { type = "string", description = "Short summary" },
+                            tone = new { type = "string", description = "Detected tone" }
+                        },
+                        required = new[] { "summary" },
+                        additionalProperties = false
+                    })
                 }
             }));
 
@@ -1095,6 +1108,35 @@ public sealed class AgentChatClientFixtureTests
         Assert.Equal("data-structuredagent_output", uiPart.Type);
         Assert.Equal("hello", data.GetProperty("summary").GetString());
         Assert.Equal("friendly", data.GetProperty("tone").GetString());
+    }
+
+    [Fact]
+    public async Task Streaming_mapper_emits_structured_json_as_data_only_not_as_file_attachment()
+    {
+        static async IAsyncEnumerable<AgentResponseUpdate> Updates()
+        {
+            yield return new AgentResponseUpdate
+            {
+                MessageId = "structured-message",
+                AuthorName = "StructuredAgent",
+                Contents =
+                [
+                    new DataContent(
+                        Encoding.UTF8.GetBytes("{\"summary\":\"hello\"}"),
+                        MediaTypeNames.Application.Json)
+                    {
+                        Name = "runtime_test_schema"
+                    }
+                ]
+            };
+            await Task.CompletedTask;
+        }
+
+        var parts = await CollectAsync(new StreamingContentMapper().MapAsync(Updates()));
+
+        var data = Assert.Single(parts.OfType<DataUIPart>());
+        Assert.Equal("data-runtime_test_schema", data.Type);
+        Assert.Empty(parts.OfType<FileUIPart>());
     }
 
     [Fact]
@@ -1226,7 +1268,7 @@ public sealed class AgentChatClientFixtureTests
 
     private static Agent CreateAgent(
         Dictionary<string, object>? providerMetadata = null,
-        OutputSchema? outputSchema = null,
+        AIHappey.Vercel.Models.ResponseFormat? responseFormat = null,
         string modelId = "openai/gpt-fixture",
         Dictionary<string, string>? providerHeaders = null)
         => new()
@@ -1234,7 +1276,7 @@ public sealed class AgentChatClientFixtureTests
             Name = "StructuredAgent",
             Description = "Fixture test agent",
             Instructions = "Return concise answers.",
-            OutputSchema = outputSchema,
+            ResponseFormat = responseFormat,
             Model = new Common.Models.AIModel
             {
                 Id = modelId,

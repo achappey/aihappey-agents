@@ -301,7 +301,14 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
 
             case DataContent d when includeFileParts:
                 {
-                    if (!string.IsNullOrEmpty(d.Uri))
+                    var isJson = d.MediaType.Equals(
+                        MediaTypeNames.Application.Json,
+                        StringComparison.InvariantCultureIgnoreCase);
+
+                    // JSON data parts are application payloads (for example structured
+                    // agent output), not downloadable attachments. Emitting both made
+                    // the same structured result appear as a data part and a file chip.
+                    if (!isJson && !string.IsNullOrEmpty(d.Uri))
                         yield return new FileUIPart
                         {
                             MediaType = d.MediaType,
@@ -317,7 +324,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                             } : null
                         };
 
-                    if (d.MediaType.Equals(MediaTypeNames.Application.Json, StringComparison.InvariantCultureIgnoreCase))
+                    if (isJson)
                         yield return d.ToDataUIPart();
 
                     break;
