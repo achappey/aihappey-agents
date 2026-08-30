@@ -114,7 +114,7 @@ public partial class AgentChatClient
                     yield break;
                 }
 
-            case ResponseOutputTextDelta textDelta when !string.IsNullOrWhiteSpace(textDelta.Delta):
+            case ResponseOutputTextDelta textDelta when !string.IsNullOrEmpty(textDelta.Delta):
                 state.MarkTextDelta(textDelta.ItemId, textDelta.ContentIndex);
                 yield return CreateStreamingUpdate(
                     ChatRole.Assistant,
@@ -123,14 +123,14 @@ public partial class AgentChatClient
                 yield break;
 
             case ResponseOutputTextDone textDone when !state.HasTextDelta(textDone.ItemId, textDone.ContentIndex)
-                                                     && !string.IsNullOrWhiteSpace(textDone.Text):
+                                                     && !string.IsNullOrEmpty(textDone.Text):
                 yield return CreateStreamingUpdate(
                     ChatRole.Assistant,
                     [new TextContent(textDone.Text)],
                     textDone.ItemId);
                 yield break;
 
-            case ResponseReasoningTextDelta reasoningDelta when !string.IsNullOrWhiteSpace(reasoningDelta.Delta):
+            case ResponseReasoningTextDelta reasoningDelta when !string.IsNullOrEmpty(reasoningDelta.Delta):
                 state.MarkReasoningDelta(reasoningDelta.ItemId, reasoningDelta.ContentIndex);
                 yield return CreateStreamingUpdate(
                     ChatRole.Assistant,
@@ -139,14 +139,14 @@ public partial class AgentChatClient
                 yield break;
 
             case ResponseReasoningTextDone reasoningDone when !state.HasReasoningDelta(reasoningDone.ItemId, reasoningDone.ContentIndex)
-                                                            && !string.IsNullOrWhiteSpace(reasoningDone.Text):
+                                                            && !string.IsNullOrEmpty(reasoningDone.Text):
                 yield return CreateStreamingUpdate(
                     ChatRole.Assistant,
                     [new TextReasoningContent(reasoningDone.Text)],
                     reasoningDone.ItemId);
                 yield break;
 
-            case ResponseReasoningSummaryTextDelta reasoningSummaryDelta when !string.IsNullOrWhiteSpace(reasoningSummaryDelta.Delta):
+            case ResponseReasoningSummaryTextDelta reasoningSummaryDelta when !string.IsNullOrEmpty(reasoningSummaryDelta.Delta):
                 var reasoningSummaryDeltaId = reasoningSummaryDelta.ItemId + reasoningSummaryDelta.SummaryIndex.ToString();
                 state.MarkReasoningDelta(reasoningSummaryDeltaId, reasoningSummaryDelta.ContentIndex);
                 yield return CreateStreamingUpdate(
@@ -155,9 +155,11 @@ public partial class AgentChatClient
                     reasoningSummaryDeltaId);
                 yield break;
 
-            case ResponseReasoningSummaryTextDone reasoningSummaryDone when !state.HasReasoningDelta(reasoningSummaryDone.ItemId, reasoningSummaryDone.ContentIndex)
-                                                                        && !string.IsNullOrWhiteSpace(reasoningSummaryDone.Text):
+            case ResponseReasoningSummaryTextDone reasoningSummaryDone when !string.IsNullOrEmpty(reasoningSummaryDone.Text):
                 var reasoningSummaryDoneId = reasoningSummaryDone.ItemId + reasoningSummaryDone.SummaryIndex.ToString();
+
+                if (state.HasReasoningDelta(reasoningSummaryDoneId, reasoningSummaryDone.ContentIndex))
+                    yield break;
 
                 yield return CreateStreamingUpdate(
                     ChatRole.Assistant,

@@ -550,6 +550,63 @@ public sealed class AgentChatClientFixtureTests
         }) + "\n\n";
     }
 
+    private static string CreateChunkedTextResponseStream(string eventPrefix, IReadOnlyList<string> chunks)
+    {
+        var response = new
+        {
+            id = "response-chunked-text",
+            @object = "response",
+            created_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            status = "completed",
+            model = "gpt-fixture",
+            output = Array.Empty<object>(),
+            tools = Array.Empty<object>()
+        };
+        var itemId = "chunked-text-item";
+        var events = new List<string>
+        {
+            Sse("response.created", new { type = "response.created", sequence_number = 1, response })
+        };
+
+        for (var index = 0; index < chunks.Count; index++)
+        {
+            var delta = chunks[index];
+            var type = $"response.{eventPrefix}.delta";
+            events.Add(Sse(type, new
+            {
+                type,
+                sequence_number = index + 2,
+                item_id = itemId,
+                content_index = 0,
+                output_index = 0,
+                summary_index = 0,
+                delta
+            }));
+        }
+
+        var fullText = string.Concat(chunks);
+        var doneType = $"response.{eventPrefix}.done";
+        events.Add(Sse(doneType, new
+        {
+            type = doneType,
+            sequence_number = chunks.Count + 2,
+            item_id = itemId,
+            content_index = 0,
+            output_index = 0,
+            summary_index = 0,
+            text = fullText
+        }));
+        events.Add(Sse("response.completed", new
+        {
+            type = "response.completed",
+            sequence_number = chunks.Count + 3,
+            response
+        }));
+        events.Add("data: [DONE]");
+
+        return string.Join("\n\n", events) + "\n\n";
+    }
+
     private static string Sse(string eventName, object data)
         => $"event: {eventName}\ndata: {JsonSerializer.Serialize(data, JsonSerializerOptions.Web)}";
 
@@ -697,6 +754,52 @@ public sealed class AgentChatClientFixtureTests
 
         Assert.Equal("Hello world", uiPart.Text);
         Assert.Contains(updates, update => update.FinishReason is not null);
+    }
+
+    [Fact]
+    public async Task Streaming_output_preserves_every_non_empty_chunk_exactly()
+    {
+        string[] chunks =
+        [
+            "Intro", "\n", "# Heading", "\n", "> Quote", "\n", "- List item",
+            "\n", "---", "\n", "\tindented", " ", string.Empty
+        ];
+        var fixture = CreateChunkedTextResponseStream("output_text", chunks);
+
+        using var httpClient = CreateHttpClient(_ => CreateStreamingResponse(fixture));
+        using var client = CreateClient(httpClient, CreateAgent());
+
+        var updates = await CollectAsync(client.GetStreamingResponseAsync(CreateUserMessages("Preserve formatting")));
+        var emitted = updates
+            .SelectMany(update => update.Contents)
+            .OfType<TextContent>()
+            .Select(content => content.Text)
+            .ToList();
+
+        Assert.Equal(chunks.Where(chunk => chunk.Length > 0), emitted);
+        Assert.Equal(string.Concat(chunks), string.Concat(emitted));
+    }
+
+    [Theory]
+    [InlineData("reasoning_text")]
+    [InlineData("reasoning_summary_text")]
+    public async Task Streaming_reasoning_preserves_whitespace_only_chunks(string eventPrefix)
+    {
+        string[] chunks = ["Think", "\n", " ", "\t", "again", string.Empty];
+        var fixture = CreateChunkedTextResponseStream(eventPrefix, chunks);
+
+        using var httpClient = CreateHttpClient(_ => CreateStreamingResponse(fixture));
+        using var client = CreateClient(httpClient, CreateAgent());
+
+        var updates = await CollectAsync(client.GetStreamingResponseAsync(CreateUserMessages("Think")));
+        var emitted = updates
+            .SelectMany(update => update.Contents)
+            .OfType<TextReasoningContent>()
+            .Select(content => content.Text)
+            .ToList();
+
+        Assert.Equal(chunks.Where(chunk => chunk.Length > 0), emitted);
+        Assert.Equal(string.Concat(chunks), string.Concat(emitted));
     }
 
     [Fact]

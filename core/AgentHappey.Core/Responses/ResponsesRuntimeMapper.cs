@@ -37,7 +37,7 @@ public static class ResponsesRuntimeMapper
 
     private static IEnumerable<ChatMessage> ToChatMessages(AIInput? input)
     {
-        if (!string.IsNullOrWhiteSpace(input?.Text))
+        if (!string.IsNullOrEmpty(input?.Text))
             yield return new ChatMessage(ChatRole.User, input.Text!);
 
         foreach (var item in input?.Items ?? [])
@@ -94,7 +94,7 @@ public static class ResponsesRuntimeMapper
             case "reasoning":
                 {
                     var text = string.Join("\n", item.Content?.OfType<AITextContentPart>().Select(part => part.Text) ?? []);
-                    if (string.IsNullOrWhiteSpace(text))
+                    if (string.IsNullOrEmpty(text))
                         yield break;
 
                     yield return new ChatMessage(ChatRole.Assistant,
@@ -136,7 +136,7 @@ public static class ResponsesRuntimeMapper
                     yield return new TextContent(text.Text);
                     break;
 
-                case AIReasoningContentPart reasoning when !string.IsNullOrWhiteSpace(reasoning.Text):
+                case AIReasoningContentPart reasoning when !string.IsNullOrEmpty(reasoning.Text):
                     yield return new TextReasoningContent(reasoning.Text!);
                     break;
 

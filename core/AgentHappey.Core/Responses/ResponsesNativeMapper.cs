@@ -344,13 +344,13 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
 
         private IEnumerable<ResponseStreamPart> AppendReasoning(string itemId, TextReasoningContent reasoning)
         {
-            if (string.IsNullOrWhiteSpace(reasoning.Text) && string.IsNullOrWhiteSpace(reasoning.ProtectedData))
+            if (string.IsNullOrEmpty(reasoning.Text) && string.IsNullOrEmpty(reasoning.ProtectedData))
                 return [];
 
             var state = GetOrCreateReasoning(itemId);
             var parts = new List<ResponseStreamPart>();
 
-            if (!string.IsNullOrWhiteSpace(reasoning.ProtectedData))
+            if (!string.IsNullOrEmpty(reasoning.ProtectedData))
                 state.ProtectedData = reasoning.ProtectedData;
 
             if (!state.Started)
