@@ -16,6 +16,7 @@ public static class AuthenticationExtensions
       var context = services.GetRequiredService<IHttpContextAccessor>();
       var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
       var mcpConfig = services.GetRequiredService<McpConfig>();
+      var conversationsConfig = services.GetService<ConversationsConfig>();
       var azureAd = services.GetRequiredService<AzureAd>();
 
       if (azureAd is null || context.HttpContext is null || mcpConfig is null)
@@ -34,14 +35,44 @@ public static class AuthenticationExtensions
 
       return await httpClientFactory.GetMcpTokenAsync(serverUrl,
                         userAccessToken!,
-                        azureAd, mcpConfig, ct);
+                        azureAd, mcpConfig, conversationsConfig, ct);
    }
 
    public static async Task<string?> GetMcpTokenAsync(this IHttpClientFactory httpClientFactory, string serverUrl, string userAccessToken,
       AzureAd azureAd,
       McpConfig mcpConfig,
       CancellationToken ct = default)
+      => await httpClientFactory.GetMcpTokenAsync(
+         serverUrl,
+         userAccessToken,
+         azureAd,
+         mcpConfig,
+         conversationsConfig: null,
+         ct);
+
+   public static async Task<string?> GetMcpTokenAsync(this IHttpClientFactory httpClientFactory, string serverUrl, string userAccessToken,
+      AzureAd azureAd,
+      McpConfig mcpConfig,
+      ConversationsConfig? conversationsConfig,
+      CancellationToken ct = default)
    {
+      if (IsConversationMcpServer(serverUrl, conversationsConfig))
+      {
+         if (string.IsNullOrEmpty(userAccessToken))
+            throw new InvalidOperationException("No access token found in request.");
+
+         if (string.IsNullOrWhiteSpace(conversationsConfig!.Scopes))
+            throw new InvalidOperationException("ConversationsConfig:Scopes is required for conversation MCP OBO.");
+
+         var conversationApp = CreateConfidentialClient(azureAd);
+         var conversationToken = await conversationApp.AcquireTokenOnBehalfOf(
+               [conversationsConfig.Scopes],
+               new UserAssertion(userAccessToken))
+            .ExecuteAsync(ct);
+
+         return conversationToken.AccessToken;
+      }
+
       HttpClient client = httpClientFactory.CreateClient();
 
       if (!new Uri(serverUrl).Host.Contains(new Uri(mcpConfig.McpBaseUrl).Host,
@@ -51,11 +82,7 @@ public static class AuthenticationExtensions
       if (string.IsNullOrEmpty(userAccessToken))
          throw new InvalidOperationException("No access token found in request.");
 
-      var cca = ConfidentialClientApplicationBuilder
-         .Create(azureAd.ClientId)
-         .WithClientSecret(azureAd.ClientSecret)
-         .WithAuthority($"https://login.microsoftonline.com/{azureAd.TenantId}")
-         .Build();
+      var cca = CreateConfidentialClient(azureAd);
 
       /* --- 1.  Discover protected-resource metadata --------------- */
       var baseUri = new Uri(serverUrl);
@@ -127,6 +154,19 @@ public static class AuthenticationExtensions
 
       return access;
    }
+
+   private static IConfidentialClientApplication CreateConfidentialClient(AzureAd azureAd)
+      => ConfidentialClientApplicationBuilder
+         .Create(azureAd.ClientId)
+         .WithClientSecret(azureAd.ClientSecret)
+         .WithAuthority($"https://login.microsoftonline.com/{azureAd.TenantId}")
+         .Build();
+
+   private static bool IsConversationMcpServer(string serverUrl, ConversationsConfig? conversationsConfig)
+      => conversationsConfig is not null
+         && Uri.TryCreate(serverUrl, UriKind.Absolute, out var serverUri)
+         && Uri.TryCreate(conversationsConfig.McpBaseUrl, UriKind.Absolute, out var conversationsUri)
+         && IsSameOrigin(serverUri, conversationsUri);
 
    private static bool IsSameOrigin(Uri left, Uri right)
       => string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)

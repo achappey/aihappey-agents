@@ -50,10 +50,11 @@ public sealed class AzureAuthAsyncResponsesProcessor(
                 new Dictionary<string, string?>(),
                 (serverUrl, ct) => httpClientFactory.GetMcpTokenAsync(
                     serverUrl,
-                    userAccessToken,
-                     config.AzureAd,
-                     config.McpConfig,
-                     ct),
+                     userAccessToken,
+                      config.AzureAd,
+                      config.McpConfig,
+                      config.ConversationsConfig,
+                      ct),
                 config.AgentPluginExtensionNamespace),
             (agentClient, messages) => agentClient.SetHistory(messages),
             cancellationToken);

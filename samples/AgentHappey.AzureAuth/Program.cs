@@ -61,6 +61,9 @@ builder.Services.AddSingleton(appConfig?.AiConfig!);
 builder.Services.AddSingleton(appConfig?.AzureAd!);
 builder.Services.AddSingleton(appConfig?.McpConfig!);
 
+if (appConfig?.ConversationsConfig is { } conversationsConfig)
+    builder.Services.AddSingleton(conversationsConfig);
+
 var app = builder.Build();
 
 app.UseRouting();

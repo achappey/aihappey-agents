@@ -95,6 +95,28 @@ public sealed class McpAuthenticationExtensionsTests
         Assert.Equal(0, factory.CreateClientCalls);
     }
 
+    [Theory]
+    [InlineData("http://localhost:3021/mcp", "http://localhost:3021", true)]
+    [InlineData("http://LOCALHOST:3021/mcp/conversations", "http://localhost:3021/other", true)]
+    [InlineData("https://localhost:3021/mcp", "http://localhost:3021", false)]
+    [InlineData("http://localhost:3022/mcp", "http://localhost:3021", false)]
+    [InlineData("http://conversations.localhost:3021/mcp", "http://localhost:3021", false)]
+    public void Conversation_mcp_requires_matching_scheme_host_and_effective_port(
+        string serverUrl,
+        string conversationsBaseUrl,
+        bool expected)
+    {
+        Assert.Equal(expected, InvokeIsConversationMcpServer(
+            serverUrl,
+            new ConversationsConfig { McpBaseUrl = conversationsBaseUrl }));
+    }
+
+    [Fact]
+    public void Missing_conversation_configuration_does_not_select_conversation_authentication()
+    {
+        Assert.False(InvokeIsConversationMcpServer("http://localhost:3021/mcp", null));
+    }
+
     private static (IServiceProvider Services, TrackingHttpClientFactory Factory) CreateServices(
         string requestScheme,
         string requestHost,
@@ -134,6 +156,16 @@ public sealed class McpAuthenticationExtensionsTests
             ?? throw new InvalidOperationException("IsSameOrigin was not found.");
 
         return (bool)method.Invoke(null, [left, right])!;
+    }
+
+    private static bool InvokeIsConversationMcpServer(string serverUrl, ConversationsConfig? conversationsConfig)
+    {
+        var method = typeof(AuthenticationExtensions).GetMethod(
+            "IsConversationMcpServer",
+            BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("IsConversationMcpServer was not found.");
+
+        return (bool)method.Invoke(null, [serverUrl, conversationsConfig])!;
     }
 
     private sealed class TrackingHttpClientFactory : IHttpClientFactory

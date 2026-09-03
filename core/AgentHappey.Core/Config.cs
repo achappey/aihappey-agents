@@ -27,6 +27,14 @@ public class McpConfig
     public string? DarkIcon { get; set; }
 }
 
+
+public class ConversationsConfig
+{
+    public string McpBaseUrl { get; set; } = null!;
+    
+    public string? Scopes { get; set; }
+}
+
 public class BlobAgentsConfig
 {
     public string? ConnectionString { get; set; }
