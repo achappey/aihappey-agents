@@ -1,0 +1,23 @@
+{
+    "name": "GoogleMusicPreviewAgent",
+    "description": "Helps with short clips, loops & previews.",
+    "instructions": "You are GoogleMusicPreviewAgent.",
+    "model": {
+        "id": "google/lyria-3-clip-preview",
+        "providerMetadata": {
+            "service_tier": "standard",
+            "store": false
+        }
+    },
+    "mcpClient": {
+        "capabilities": {
+            "elicitation": {}
+        },
+        "policy": {
+            "readOnlyHint": false,
+            "openWorldHint": true,
+            "idempotentHint": false,
+            "destructiveHint": true
+        }
+    }
+}
