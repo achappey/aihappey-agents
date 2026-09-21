@@ -142,31 +142,75 @@ public partial class AgentChatClient
             };
 
             options.Handlers.NotificationHandlers = handlers;
-           
+
             McpClient? mcpClient = null;
 
             try
             {
-                mcpClient = await McpClient.CreateAsync(transport,
+                mcpClient = await McpClient.CreateAsync(
+                    transport,
                     clientOptions: options,
                     cancellationToken: cancellationToken);
-
             }
-            catch (Exception)
+            catch (HttpRequestException exception)
+                when (exception.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                if (getMcpToken != null)
+                try
                 {
+                    if (getMcpToken == null)
+                    {
+                        throw new Exception(
+                            $"Could not connect to MCP server {url}: Unauthorized (401).",
+                            exception);
+                    }
+
                     var token = await getMcpToken(url, cancellationToken);
 
-                    if (token != null)
+                    if (string.IsNullOrWhiteSpace(token))
                     {
-                        httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-
-                        mcpClient = await McpClient.CreateAsync(transport,
-                                           clientOptions: options,
-                                           cancellationToken: cancellationToken);
+                        throw new Exception(
+                            $"Could not connect to MCP server {url}: Unauthorized (401) and no access token was available.",
+                            exception);
                     }
+
+                    httpClient.DefaultRequestHeaders.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+                    mcpClient = await McpClient.CreateAsync(
+                        transport,
+                        clientOptions: options,
+                        cancellationToken: cancellationToken);
                 }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception retryException)
+                {
+                    throw new Exception(
+                        $"Could not connect to MCP server {url}: {retryException.Message}",
+                        retryException);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (HttpRequestException exception)
+            {
+                var status = exception.StatusCode.HasValue
+                    ? $"HTTP {(int)exception.StatusCode.Value} ({exception.StatusCode.Value})"
+                    : "HTTP request failed";
+
+                throw new Exception(
+                    $"Could not connect to MCP server {url}: {status}. {exception.Message}",
+                    exception);
+            }
+            catch (Exception exception)
+            {
+                throw new Exception(
+                    $"Could not connect to MCP server {url}: {exception.Message}",
+                    exception);
             }
 
             if (mcpClient == null)
@@ -196,7 +240,7 @@ public partial class AgentChatClient
                         servers.Value,
                         mcpClient.ServerInfo);
                 }
-                
+
             }
 
             if (mcpClient.ServerCapabilities.Resources != null)
