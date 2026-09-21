@@ -3,7 +3,6 @@ using System.Text.Json;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.Plugins;
-using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
 
 namespace AgentHappey.Core.ChatClient;

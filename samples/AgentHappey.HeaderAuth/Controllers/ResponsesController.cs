@@ -4,7 +4,6 @@ using AIHappey.Responses;
 using Microsoft.Extensions.Options;
 using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.ChatRuntime;
-using AgentHappey.Core.MCP;
 using AgentHappey.Core.Responses;
 using AIHappey.Responses.Streaming;
 using AgentHappey.AsyncResponses;
