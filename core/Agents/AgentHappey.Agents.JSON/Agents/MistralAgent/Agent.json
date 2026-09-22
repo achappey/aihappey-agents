@@ -23,7 +23,7 @@
   },
   "mcpClient": {
     "capabilities": {
-      "elicitation": {}
+      
     },
     "policy": {
       "readOnlyHint": false,

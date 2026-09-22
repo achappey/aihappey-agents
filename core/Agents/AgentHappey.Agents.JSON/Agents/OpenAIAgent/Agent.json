@@ -14,7 +14,6 @@
                 {
                     "type": "image_generation",
                     "model": "gpt-image-2",
-                    "partial_images": 3,
                     "quality": "auto",
                     "action": "auto",
                     "moderation": "auto",
@@ -52,8 +51,6 @@
     },
     "mcpClient": {
         "capabilities": {
-            "elicitation": {},
-            "sampling": {}
         },
         "policy": {
             "readOnlyHint": false,
