@@ -3,10 +3,8 @@
     "description": "Has access to all common Anthropic capabilities.",
     "instructions": "You are Anthropic Agent.",
     "model": {
-        "id": "anthropic/claude-haiku-4-5-20251001",
-        "providerHeaders": {
-            "anthropic-beta": "skills-2025-10-02,code-execution-2025-05-22"
-        },
+        "id": "anthropic/claude-sonnet-5",
+        "providerHeaders": {},
         "providerMetadata": {
             "tools": [
                 {
@@ -14,11 +12,11 @@
                     "allowed_callers": [
                         "direct"
                     ],
-                    "type": "code_execution_20260120"
+                    "type": "code_execution_20260521"
                 },
                 {
                     "name": "web_fetch",
-                    "type": "web_fetch_20260309",
+                    "type": "web_fetch_20260318",
                     "max_uses": 5,
                     "allowed_domains": null,
                     "blocked_domains": null,
@@ -31,7 +29,7 @@
                 },
                 {
                     "name": "web_search",
-                    "type": "web_search_20260209",
+                    "type": "web_search_20260318",
                     "max_uses": 5,
                     "allowed_callers": [
                         "direct"
@@ -41,11 +39,13 @@
                     "user_location": null
                 }
             ],
-            "max_tokens": 64000,
+            "max_tokens": 128000,
             "thinking": {
-                "type": "enabled",
-                "budget_tokens": 16000,
+                "type": "adaptive",
                 "display": "summarized"
+            },
+            "output_config": {
+                "effort": "high"
             },
             "container": {
                 "skills": [
@@ -74,9 +74,7 @@
         }
     },
     "mcpClient": {
-        "capabilities": {
-        
-        },
+        "capabilities": {},
         "policy": {
             "readOnlyHint": false,
             "openWorldHint": true,
