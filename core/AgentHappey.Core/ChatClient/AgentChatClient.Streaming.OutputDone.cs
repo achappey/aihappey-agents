@@ -49,60 +49,79 @@ public partial class AgentChatClient
 
                 yield break;
             case "image_generation_call":
-                var resultEl = done.Item.AdditionalProperties?["result"];
-                var formatEl = done.Item.AdditionalProperties?["output_format"];
-
-                var base64String = resultEl is JsonElement re && re.ValueKind == JsonValueKind.String
-                    ? re.GetString()
-                    : null;
-
-                var outputFormat = formatEl is JsonElement fe && fe.ValueKind == JsonValueKind.String
-                    ? fe.GetString()
-                    : "png"; // fallback
-
-                if (string.IsNullOrEmpty(base64String))
-                    yield break;
-
-                // strip data URL prefix if present
-                var commaIndex = base64String.IndexOf(',');
-                if (commaIndex >= 0)
-                    base64String = base64String[(commaIndex + 1)..];
-
-                var bytes = Convert.FromBase64String(base64String);
-
-                var mimeType = outputFormat switch
                 {
-                    "png" => "image/png",
-                    "jpeg" or "jpg" => "image/jpeg",
-                    "webp" => "image/webp",
-                    _ => "application/octet-stream"
-                };
+                    var additionalProps = done.Item.AdditionalProperties;
 
-                CallToolResult resultIg = new()
-                {
-                    StructuredContent = JsonSerializer.SerializeToElement(new
+                    JsonElement resultEl = default;
+                    JsonElement formatEl = default;
+
+                    var hasResult = additionalProps?.TryGetValue("result", out resultEl) == true;
+                    var hasFormat = additionalProps?.TryGetValue("output_format", out formatEl) == true;
+
+                    var rawBase64String = hasResult
+                        && resultEl is JsonElement re
+                        && re.ValueKind == JsonValueKind.String
+                            ? re.GetString()
+                            : null;
+
+                    var outputFormat = hasFormat
+                        && formatEl is JsonElement fe
+                        && fe.ValueKind == JsonValueKind.String
+                            ? fe.GetString()
+                            : "png";
+
+                    if (string.IsNullOrEmpty(rawBase64String))
+                        yield break;
+
+                    var base64String = rawBase64String;
+
+                    var commaIndex = base64String.IndexOf(',');
+                    if (commaIndex >= 0)
+                        base64String = base64String[(commaIndex + 1)..];
+
+                    byte[] bytes;
+
+                    try
                     {
-                        action = done.Item.AdditionalProperties?["action"].GetString(),
-                        revised_prompt = done.Item.AdditionalProperties?["revised_prompt"].GetString(),
-                        size = done.Item.AdditionalProperties?["size"].GetString(),
-                        quality = done.Item.AdditionalProperties?["quality"].GetString(),
-                        background = done.Item.AdditionalProperties?["background"].GetString(),
-                        output_format = done.Item.AdditionalProperties?["output_format"].GetString()
-                    }),
-                    Content =
-                    [
-                        ImageContentBlock.FromBytes(bytes, mimeType)
-                    ]
-                };
+                        bytes = Convert.FromBase64String(base64String);
+                    }
+                    catch (FormatException)
+                    {
+                        yield break;
+                    }
 
-                yield return new ChatResponseUpdate(
-                    ChatRole.Assistant,
-                    [new DataContent(base64String.ToDataUri(mimeType), mimeType), new FunctionResultContent(done.Item.Id!, resultIg)])
-                {
-                    MessageId = done.Item.Id,
-                };
+                    var mimeType = outputFormat switch
+                    {
+                        "png" => "image/png",
+                        "jpeg" or "jpg" => "image/jpeg",
+                        "webp" => "image/webp",
+                        _ => "application/octet-stream"
+                    };
 
-                yield break;
+                    CallToolResult resultIg = new()
+                    {
+                        StructuredContent = additionalProps is not null
+                            ? JsonSerializer.SerializeToElement(additionalProps)
+                            : JsonSerializer.SerializeToElement(new Dictionary<string, object?>()),
+
+                        Content =
+                        [
+                            ImageContentBlock.FromBytes(bytes, mimeType)
+                        ]
+                    };
+
+                    yield return new ChatResponseUpdate(
+                        ChatRole.Assistant,
+                        [
+                            new DataContent(base64String.ToDataUri(mimeType), mimeType),
+                             new FunctionResultContent(done.Item.Id!, resultIg)
+                        ])
+                    {
+                        MessageId = done.Item.Id,
+                    };
+
+                    yield break;
+                }
 
             case "code_interpreter_call":
 
