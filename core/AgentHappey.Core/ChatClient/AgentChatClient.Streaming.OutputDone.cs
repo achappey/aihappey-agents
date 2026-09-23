@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AgentHappey.Common.Extensions;
+using AIHappey.Responses;
 using AIHappey.Responses.Streaming;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
@@ -208,27 +209,18 @@ public partial class AgentChatClient
                                 }
                             }
 
-                            yield return new ChatResponseUpdate(
-                                ChatRole.Assistant,
-                                [new FunctionCallContent(done.Item.Id!, typeEl.GetString()!, new Dictionary<string, object?>() {
-                            { "queries", queries },
-                            { "query", query }
-                                })
-                                {
-                                    InformationalOnly = true
-                                }])
+                            var searchCall = new FunctionCallContent(done.Item.Id!, "web_search", new Dictionary<string, object?>() {
+                                { "queries", queries },
+                                { "query", query }
+                            })
                             {
-                                MessageId = done.Item.Id,
+                                InformationalOnly = true,
+                                RawRepresentation = CreateNativeResponseItemRawRepresentation(done.Item)
                             };
 
-                            var sourcesIt = JsonSerializer.SerializeToElement(sources);
-
                             yield return new ChatResponseUpdate(
                                 ChatRole.Assistant,
-                                [new FunctionResultContent(done.Item.Id!, new Dictionary<string, JsonElement>
-                        {
-                            ["sources"] = sourcesIt
-                        })])
+                                [searchCall])
                             {
                                 MessageId = done.Item.Id,
                             };
@@ -248,23 +240,17 @@ public partial class AgentChatClient
                                 }
                             }
 
-                            yield return new ChatResponseUpdate(
-                                ChatRole.Assistant,
-                                [new FunctionCallContent(done.Item.Id!, typeEl.GetString()!, new Dictionary<string, object?>() {
-                            { "url", url }
-                                })
-                                {
-                                    InformationalOnly = true
-                                }])
+                            var openPageCall = new FunctionCallContent(done.Item.Id!, "web_search", new Dictionary<string, object?>() {
+                                { "url", url }
+                            })
                             {
-                                MessageId = done.Item.Id,
+                                InformationalOnly = true,
+                                RawRepresentation = CreateNativeResponseItemRawRepresentation(done.Item)
                             };
 
                             yield return new ChatResponseUpdate(
                                 ChatRole.Assistant,
-                                [new FunctionResultContent(done.Item.Id!, new Dictionary<string, JsonElement>
-                                        {
-                                        })])
+                                [openPageCall])
                             {
                                 MessageId = done.Item.Id,
                             };
@@ -282,5 +268,12 @@ public partial class AgentChatClient
 
         }
     }
+
+    private static Dictionary<string, object?> CreateNativeResponseItemRawRepresentation(ResponseStreamItem item)
+        => new(StringComparer.Ordinal)
+        {
+            ["responses_type"] = item.Type,
+            ["responses_item"] = JsonSerializer.SerializeToElement(item, ResponseJson.Default)
+        };
 
 }

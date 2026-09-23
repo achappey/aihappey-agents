@@ -374,6 +374,19 @@ public partial class AgentChatClient
                         break;
                     }
 
+                    if (IsWebSearchCall(call))
+                    {
+                        if (TryReadResponseItem<ResponseWebSearchCallItem>(call.RawRepresentation, out var webSearchCall))
+                            yield return webSearchCall;
+                        break;
+                    }
+
+                    // Informational calls describe provider-managed execution. If a
+                    // provider tool is not a recognized native Responses item, omit it
+                    // rather than changing its semantics into a client function call.
+                    if (call.InformationalOnly)
+                        break;
+
                     if (TryReadResponseItem<ResponseProgramItem>(call.RawRepresentation, out var program))
                     {
                         RegisterResponseProgram(program);
@@ -444,6 +457,16 @@ public partial class AgentChatClient
            || string.Equals(
                ReadNestedResponseItemType(call.RawRepresentation),
                "tool_search_call",
+               StringComparison.Ordinal);
+
+    private static bool IsWebSearchCall(FunctionCallContent call)
+        => string.Equals(
+               ReadResponseMetadataString(call.RawRepresentation, "responses_type"),
+               "web_search_call",
+               StringComparison.Ordinal)
+           || string.Equals(
+               ReadNestedResponseItemType(call.RawRepresentation),
+               "web_search_call",
                StringComparison.Ordinal);
 
     private static ResponseToolSearchCallItem ToResponseToolSearchCallItem(FunctionCallContent call)

@@ -224,6 +224,13 @@ public static class VercelHelpers
                                 || IsConnectMcpControlPart(ti, toolName))
                                 break;
 
+                            // Dynamic provider-executed UI parts are descriptive
+                            // artifacts, never client function calls. Their exact
+                            // native identity is not recoverable unless the standard
+                            // ToolCallPart path carried a Responses item.
+                            if (ti.ProviderExecuted == true)
+                                break;
+
                             var args = JsonSerializer.Deserialize<Dictionary<string, object?>>(
                                 JsonSerializer.Serialize(ti.Input)
                             ) ?? [];
