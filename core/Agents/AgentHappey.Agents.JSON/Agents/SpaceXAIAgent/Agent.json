@@ -1,9 +1,9 @@
 {
     "name": "SpaceXAIAgent",
-    "description": "Has access to all common SpaceXAI capabilities.",
+    "description": "Has access to all default SpaceXAI capabilities.",
     "instructions": "You are SpaceXAIAgent.",
     "model": {
-        "id": "spacexai/grok-4.6",
+        "id": "spacexai/grok-4.7",
         "providerMetadata": {
             "tools": [
                 {
@@ -33,14 +33,14 @@
                 "web_search_call.action.sources",
                 "code_interpreter_call.outputs"
             ],
-            "reasoning": {},
+            "reasoning": {
+                "effort": "high"
+            },
             "parallel_tool_calls": true
         }
     },
     "mcpClient": {
-        "capabilities": {
-          
-        },
+        "capabilities": {},
         "policy": {
             "readOnlyHint": false,
             "openWorldHint": true,
