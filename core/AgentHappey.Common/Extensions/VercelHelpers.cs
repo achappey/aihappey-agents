@@ -6,6 +6,7 @@ namespace AgentHappey.Common.Extensions;
 
 public static class VercelHelpers
 {
+    private const string GoogleAntigravityStateToolName = "google_antigravity_state";
     private static string NormalizeToolName(string? type) =>
         type?.StartsWith("tool-", StringComparison.OrdinalIgnoreCase) == true
             ? type["tool-".Length..]
@@ -188,7 +189,8 @@ public static class VercelHelpers
 
                             assistantContents.Add(new FunctionCallContent(tc.ToolCallId, tc.ToolName, args)
                             {
-                                InformationalOnly = tc.ProviderExecuted == true,
+                                InformationalOnly = tc.ProviderExecuted == true
+                                    && !string.Equals(tc.ToolName, GoogleAntigravityStateToolName, StringComparison.OrdinalIgnoreCase),
                                 RawRepresentation = CreateToolCallRawRepresentation(tc)
                             });
 
@@ -228,7 +230,8 @@ public static class VercelHelpers
                             // artifacts, never client function calls. Their exact
                             // native identity is not recoverable unless the standard
                             // ToolCallPart path carried a Responses item.
-                            if (ti.ProviderExecuted == true)
+                            if (ti.ProviderExecuted == true
+                                && !string.Equals(toolName, GoogleAntigravityStateToolName, StringComparison.OrdinalIgnoreCase))
                                 break;
 
                             var args = JsonSerializer.Deserialize<Dictionary<string, object?>>(
@@ -245,7 +248,10 @@ public static class VercelHelpers
                                 || string.Equals(ti.State, "output-available", StringComparison.OrdinalIgnoreCase)
                                 || string.Equals(ti.State, "output-error", StringComparison.OrdinalIgnoreCase))
                             {
-                                assistantContents.Add(new FunctionCallContent(ti.ToolCallId, toolName, args));
+                                assistantContents.Add(new FunctionCallContent(ti.ToolCallId, toolName, args)
+                                {
+                                    InformationalOnly = ti.ProviderExecuted == true
+                                });
 
                                 FlushAssistantContents();
 

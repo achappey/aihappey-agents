@@ -462,7 +462,8 @@ public partial class AgentChatClient
     {
         update = null!;
 
-        var callId = GetAdditionalPropertyString(item.AdditionalProperties, "call_id")
+        var callId = item.CallId
+            ?? GetAdditionalPropertyString(item.AdditionalProperties, "call_id")
             ?? item.Id;
 
         if (string.IsNullOrWhiteSpace(callId))
@@ -472,7 +473,15 @@ public partial class AgentChatClient
 
         update = CreateStreamingUpdate(
             ChatRole.Tool,
-            [new FunctionResultContent(callId, ToFunctionResult(output))],
+            [new FunctionResultContent(callId, ToFunctionResult(output))
+            {
+                RawRepresentation = new Dictionary<string, object?>
+                {
+                    ["item_id"] = item.Id,
+                    ["call_id"] = callId,
+                    ["status"] = item.Status
+                }
+            }],
             item.Id ?? callId);
 
         return true;

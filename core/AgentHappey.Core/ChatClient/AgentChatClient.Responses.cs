@@ -11,6 +11,7 @@ namespace AgentHappey.Core.ChatClient;
 
 public partial class AgentChatClient
 {
+    private const string GoogleAntigravityStateToolName = "google_antigravity_state";
     private readonly Dictionary<string, ResponseCaller> responseCallers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ResponseProgramItem> responsePrograms = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ResponseProgramOutputItem> responseProgramOutputs = new(StringComparer.Ordinal);
@@ -384,7 +385,8 @@ public partial class AgentChatClient
                     // Informational calls describe provider-managed execution. If a
                     // provider tool is not a recognized native Responses item, omit it
                     // rather than changing its semantics into a client function call.
-                    if (call.InformationalOnly)
+                    if (call.InformationalOnly
+                        && !string.Equals(call.Name, GoogleAntigravityStateToolName, StringComparison.OrdinalIgnoreCase))
                         break;
 
                     if (TryReadResponseItem<ResponseProgramItem>(call.RawRepresentation, out var program))
