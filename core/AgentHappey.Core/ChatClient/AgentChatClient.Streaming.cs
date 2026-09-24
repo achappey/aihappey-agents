@@ -56,6 +56,9 @@ public partial class AgentChatClient
 
             case ResponseOutputTextAnnotationAdded e:
                 {
+                    if (state.MultiAgentActive)
+                        yield break;
+
                     var ann = e.Annotation;
                     var props = ann?.AdditionalProperties;
 
@@ -115,6 +118,9 @@ public partial class AgentChatClient
                 }
 
             case ResponseOutputTextDelta textDelta when !string.IsNullOrEmpty(textDelta.Delta):
+                if (state.MultiAgentActive)
+                    yield break;
+
                 state.MarkTextDelta(textDelta.ItemId, textDelta.ContentIndex);
                 yield return CreateStreamingUpdate(
                     ChatRole.Assistant,
@@ -124,6 +130,9 @@ public partial class AgentChatClient
 
             case ResponseOutputTextDone textDone when !state.HasTextDelta(textDone.ItemId, textDone.ContentIndex)
                                                      && !string.IsNullOrEmpty(textDone.Text):
+                if (state.MultiAgentActive)
+                    yield break;
+
                 yield return CreateStreamingUpdate(
                     ChatRole.Assistant,
                     [new TextContent(textDone.Text)],
@@ -171,6 +180,12 @@ public partial class AgentChatClient
                 state.RegisterOutputItem(added.Item, added.OutputIndex);
                 RegisterProgramReplayStreamItem(added.Item);
                 RegisterResponseCallerStreamItem(added.Item);
+
+                if (string.Equals(added.Item.Type, "multi_agent_call", StringComparison.OrdinalIgnoreCase))
+                {
+                    state.MultiAgentActive = true;
+                    yield break;
+                }
 
                 if (string.Equals(added.Item.Type, "program", StringComparison.OrdinalIgnoreCase)
                     && state.TryCreateProgramStartUpdate(added.Item, added.OutputIndex, out ChatResponseUpdate programStartUpdate))
@@ -304,6 +319,23 @@ public partial class AgentChatClient
                     yield break;
                 }
 
+                if (string.Equals(done.Item.Type, "multi_agent_call", StringComparison.OrdinalIgnoreCase)
+                    && TryCreateMultiAgentCallUpdate(done.Item, out ChatResponseUpdate multiAgentCallUpdate))
+                {
+                    yield return multiAgentCallUpdate;
+                    yield break;
+                }
+
+                if (string.Equals(done.Item.Type, "multi_agent_call_output", StringComparison.OrdinalIgnoreCase)
+                    && TryCreateMultiAgentOutputUpdate(done.Item, out ChatResponseUpdate multiAgentOutputUpdate))
+                {
+                    yield return multiAgentOutputUpdate;
+                    yield break;
+                }
+
+                if (string.Equals(done.Item.Type, "agent_message", StringComparison.OrdinalIgnoreCase))
+                    yield break;
+
                 if (string.Equals(done.Item.Type, "function_call_output", StringComparison.OrdinalIgnoreCase)
                     && TryCreateFunctionResultUpdate(done.Item, out ChatResponseUpdate functionResultUpdate))
                 {
@@ -335,6 +367,11 @@ public partial class AgentChatClient
 
             case ResponseCompleted completed:
                 state.RegisterModel(completed.Response.Model);
+                if (state.MultiAgentActive
+                    && TryCreateAuthoritativeMultiAgentFinalUpdate(completed.Response, out var finalTextUpdate))
+                {
+                    yield return finalTextUpdate;
+                }
                 yield return CreateCompletionUpdate(completed.Response, "stop");
                 yield break;
 
@@ -414,10 +451,11 @@ public partial class AgentChatClient
             });
         }
 
-        if (response.Metadata is not null)
+        var responseMetadata = CreateResponseCompletionMetadata(response);
+        if (responseMetadata.Count > 0)
         {
             parts.Add(new DataContent(
-                Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response.Metadata, JsonSerializerOptions.Web)),
+                Encoding.UTF8.GetBytes(JsonSerializer.Serialize(responseMetadata, JsonSerializerOptions.Web)),
                 MediaTypeNames.Application.Json)
             {
                 Name = "finish_metadata"
@@ -761,6 +799,7 @@ public partial class AgentChatClient
         public string ModelId { get; } = modelId;
         public string AuthorName { get; } = authorName;
         public string? ProviderId { get; private set; }
+        public bool MultiAgentActive { get; set; }
 
         public void RegisterModel(string? model)
         {
