@@ -367,7 +367,7 @@ public sealed class AgentChatClientFixtureTests
                     name = "github_rest_countries_get_detail",
                     arguments = "{\"cca\":\"PL\"}",
                     status = "completed",
-                    caller = new { type = "program", caller_id = programItemId }
+                    caller = new { type = "program", caller_id = programCallId }
                 },
             },
             tools = Array.Empty<object>()
@@ -382,7 +382,9 @@ public sealed class AgentChatClientFixtureTests
         using var client = CreateClient(httpClient, CreateAgent());
 
         var firstResponse = await client.GetResponseAsync(CreateUserMessages("Look up Poland"));
-        var functionCall = Assert.Single(firstResponse.Messages.Single().Contents.OfType<FunctionCallContent>());
+        var functionCall = Assert.Single(firstResponse.Messages.Single().Contents
+            .OfType<FunctionCallContent>()
+            .Where(call => !call.InformationalOnly));
 
         var messages = CreateUserMessages("Look up Poland").ToList();
         messages.Add(firstResponse.Messages.Single());
@@ -408,8 +410,8 @@ public sealed class AgentChatClientFixtureTests
         Assert.Equal(programCallId, program.GetProperty("call_id").GetString());
         Assert.Equal("program-fingerprint-1", program.GetProperty("fingerprint").GetString());
 
-        AssertProgramCaller(input[functionCallIndex], programItemId);
-        AssertProgramCaller(input[functionOutputIndex], programItemId);
+        AssertProgramCaller(input[functionCallIndex], programCallId);
+        AssertProgramCaller(input[functionOutputIndex], programCallId);
         Assert.Equal(functionItemId, input[functionCallIndex].GetProperty("id").GetString());
         Assert.Equal("completed", input[functionCallIndex].GetProperty("status").GetString());
         Assert.Equal(functionCallId, input[functionOutputIndex].GetProperty("call_id").GetString());
@@ -465,11 +467,89 @@ public sealed class AgentChatClientFixtureTests
         Assert.True(functionCallIndex > programIndex, requestBodies[1]);
         Assert.True(functionOutputIndex > functionCallIndex, requestBodies[1]);
         Assert.DoesNotContain(input, item => item.GetProperty("type").GetString() == "program_output");
-        AssertProgramCaller(input[functionCallIndex], programItemId);
-        AssertProgramCaller(input[functionOutputIndex], programItemId);
+        AssertProgramCaller(input[functionCallIndex], programCallId);
+        AssertProgramCaller(input[functionOutputIndex], programCallId);
         Assert.Equal("function-item-agent-loop", input[functionCallIndex].GetProperty("id").GetString());
-        Assert.Equal("completed", input[functionCallIndex].GetProperty("status").GetString());
+        Assert.Equal("in_progress", input[functionCallIndex].GetProperty("status").GetString());
         Assert.Equal(functionCallId, input[functionOutputIndex].GetProperty("call_id").GetString());
+    }
+
+    [Fact]
+    public async Task Programmatic_tool_graph_roundtrips_through_ui_history_with_a_fresh_agent_client()
+    {
+        const string programItemId = "prog-item-stateless";
+        const string programCallId = "prog-call-stateless";
+        const string functionCallId = "function-call-stateless";
+        var requestNumber = 0;
+
+        using var firstHttpClient = CreateHttpClient(_ =>
+        {
+            requestNumber++;
+            return requestNumber == 1
+                ? CreateStreamingResponse(CreateProgrammaticToolCallStream(
+                    programItemId,
+                    programCallId,
+                    functionCallId))
+                : CreateStreamingResponse(CreateTextResponseStream("Poland uses PLN."));
+        });
+        using var firstClient = CreateClient(firstHttpClient, CreateAgent());
+        var tool = AIFunctionFactory.Create(
+            ([System.ComponentModel.Description("Country code")] string cca) => new { cca, currency = "PLN" },
+            "github_rest_countries_get_detail");
+        var agent = new ChatClientAgent(
+            firstClient,
+            instructions: "Use the tool.",
+            name: "ProgrammaticAgent",
+            tools: [tool]);
+        var mapper = new StreamingContentMapper();
+        var uiParts = await CollectAsync(mapper.MapAsync(agent.RunStreamingAsync(
+            CreateUserMessages("Look up Poland"),
+            options: new ChatClientAgentRunOptions(new ChatOptions { Tools = [tool] }))));
+
+        var programPart = uiParts
+            .OfType<ToolCallPart>()
+            .Last(part => part.ToolCallId == programCallId);
+        var functionPart = uiParts
+            .OfType<ToolCallPart>()
+            .Single(part => part.ToolCallId == functionCallId);
+        var functionOutput = uiParts
+            .OfType<ToolOutputAvailablePart>()
+            .Single(part => part.ToolCallId == functionCallId);
+
+        Assert.True(programPart.ProviderExecuted);
+        Assert.False(functionPart.ProviderExecuted);
+        Assert.False(functionOutput.ProviderExecuted);
+        var functionProviderMetadata = Assert.Single(functionPart.ProviderMetadata ?? []);
+        var outputProviderMetadata = Assert.Single(functionOutput.ProviderMetadata ?? []);
+        Assert.Equal(functionProviderMetadata.Key, outputProviderMetadata.Key);
+
+        var requestBody = await CaptureRequestBodyAsync(
+            [new UIMessage
+            {
+                Id = "assistant-stateless",
+                Role = AIHappey.Vercel.Models.Role.assistant,
+                Parts = [programPart, functionPart, functionOutput]
+            }],
+            activeAgentNames: ["ProgrammaticAgent"]);
+
+        using var document = JsonDocument.Parse(requestBody);
+        var input = document.RootElement.GetProperty("input").EnumerateArray().ToList();
+        var programIndex = input.FindIndex(item => item.GetProperty("type").GetString() == "program");
+        var functionCallIndex = input.FindIndex(item => item.GetProperty("type").GetString() == "function_call");
+        var functionOutputIndex = input.FindIndex(item => item.GetProperty("type").GetString() == "function_call_output");
+
+        Assert.True(programIndex >= 0, requestBody);
+        Assert.True(functionCallIndex > programIndex, requestBody);
+        Assert.True(functionOutputIndex > functionCallIndex, requestBody);
+        AssertProgramCaller(input[functionCallIndex], programCallId);
+        AssertProgramCaller(input[functionOutputIndex], programCallId);
+        Assert.Equal("function-item-agent-loop", input[functionCallIndex].GetProperty("id").GetString());
+        Assert.Equal(functionCallId, input[functionOutputIndex].GetProperty("call_id").GetString());
+
+        using var output = JsonDocument.Parse(input[functionOutputIndex].GetProperty("output").GetString()!);
+        Assert.Equal("PL", output.RootElement.GetProperty("cca").GetString());
+        Assert.Equal("PLN", output.RootElement.GetProperty("currency").GetString());
+        Assert.False(output.RootElement.TryGetProperty("provider_metadata", out _));
     }
 
     private static string CreateProgrammaticToolCallStream(
@@ -511,8 +591,8 @@ public sealed class AgentChatClientFixtureTests
             call_id = functionCallId,
             name = "github_rest_countries_get_detail",
             arguments = "{\"cca\":\"PL\"}",
-            status = "completed",
-            caller = new { type = "program", caller_id = programItemId }
+            status = "in_progress",
+            caller = new { type = "program", caller_id = programCallId }
         };
 
         return string.Join("\n\n", new[]

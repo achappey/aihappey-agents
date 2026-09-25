@@ -313,7 +313,7 @@ public partial class AgentChatClient
                 }
 
                 if (string.Equals(done.Item.Type, "function_call", StringComparison.OrdinalIgnoreCase)
-                    && state.TryCreateFunctionCallUpdate(done.Item.Id, out ChatResponseUpdate functionCallDoneUpdate))
+                    && state.TryCreateFunctionCallUpdate(done.Item, done.OutputIndex, out ChatResponseUpdate functionCallDoneUpdate))
                 {
                     yield return functionCallDoneUpdate;
                     yield break;
@@ -691,6 +691,28 @@ public partial class AgentChatClient
         };
 
         RegisterResponseCaller(item.Id, item.CallId, caller);
+
+        var callId = item.CallId ?? GetAdditionalPropertyString(item.AdditionalProperties, "call_id");
+        var name = item.Name ?? GetAdditionalPropertyString(item.AdditionalProperties, "name");
+        if (string.IsNullOrWhiteSpace(callId) || string.IsNullOrWhiteSpace(name))
+            return;
+
+        var arguments = item.Arguments is JsonElement argumentsElement
+            ? argumentsElement.ValueKind == JsonValueKind.String
+                ? argumentsElement.GetString() ?? "{}"
+                : argumentsElement.GetRawText()
+            : GetAdditionalPropertyString(item.AdditionalProperties, "arguments") ?? "{}";
+
+        RegisterResponseFunctionCall(new ResponseFunctionCallItem
+        {
+            Id = item.Id,
+            CallId = callId,
+            Name = name,
+            Namespace = item.Namespace ?? GetAdditionalPropertyString(item.AdditionalProperties, "namespace"),
+            Arguments = arguments,
+            Status = item.Status ?? GetAdditionalPropertyString(item.AdditionalProperties, "status"),
+            Caller = caller
+        });
     }
 
     private static string? GetUnknownEventString(ResponseUnknownEvent unknown, string propertyName)
@@ -1119,9 +1141,13 @@ public partial class AgentChatClient
             state.Arguments.Append(arguments ?? "{}");
         }
 
-        public bool TryCreateFunctionCallUpdate(string? itemId, out ChatResponseUpdate update)
+        public bool TryCreateFunctionCallUpdate(
+            ResponseStreamItem item,
+            int outputIndex,
+            out ChatResponseUpdate update)
         {
             update = null!;
+            var itemId = item.Id;
 
             if (string.IsNullOrWhiteSpace(itemId)
                 || !toolCalls.TryGetValue(itemId, out var state)
@@ -1134,6 +1160,8 @@ public partial class AgentChatClient
 
             var callId = state.CallId ?? itemId;
             var arguments = DeserializeArguments(state.ArgumentsText);
+            var nativeItem = JsonSerializer.SerializeToElement(item, ResponseJson.Default);
+            var providerMetadata = CreateFunctionCallProviderMetadata(item, state, outputIndex, nativeItem);
 
             update = new ChatResponseUpdate(
                 ChatRole.Assistant,
@@ -1145,7 +1173,12 @@ public partial class AgentChatClient
                         ["call_id"] = callId,
                         ["namespace"] = state.Namespace,
                         ["status"] = state.Status,
-                        ["caller"] = state.Caller
+                        ["caller"] = state.Caller,
+                        ["output_index"] = outputIndex,
+                        ["responses_type"] = "function_call",
+                        ["responses_item"] = nativeItem,
+                        ["provider_metadata"] = providerMetadata,
+                        ["title"] = state.Name
                     }
                 }])
             {
@@ -1157,6 +1190,26 @@ public partial class AgentChatClient
             state.InputEmitted = true;
             return true;
         }
+
+        private Dictionary<string, Dictionary<string, object>?> CreateFunctionCallProviderMetadata(
+            ResponseStreamItem item,
+            StreamingToolCallState state,
+            int outputIndex,
+            JsonElement nativeItem)
+            => new(StringComparer.Ordinal)
+            {
+                [ProviderId ?? "openai"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["type"] = "function_call",
+                    ["id"] = item.Id,
+                    ["call_id"] = state.CallId ?? item.CallId,
+                    ["status"] = state.Status ?? item.Status,
+                    ["caller"] = state.Caller,
+                    ["namespace"] = state.Namespace,
+                    ["output_index"] = outputIndex,
+                    ["responses_item"] = nativeItem
+                }
+            };
 
         public bool TryCreateToolSearchCallUpdate(
             ResponseStreamItem item,

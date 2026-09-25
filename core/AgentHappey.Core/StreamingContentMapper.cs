@@ -425,16 +425,16 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                         };
                     }
 
-                    var providerExecuted = true;
+                    var providerExecuted = toolCallPart.ProviderExecuted ?? false;
                     bool? preliminary = null;
-                    Dictionary<string, Dictionary<string, object>?>? providerMetadata = null;
+                    Dictionary<string, Dictionary<string, object>?>? providerMetadata = toolCallPart.ProviderMetadata;
 
                     if (TryUnwrapToolOutputEnvelope(output, out var unwrappedOutput, out var envelopePreliminary, out var envelopeProviderExecuted, out var envelopeProviderMetadata))
                     {
                         output = unwrappedOutput ?? new { };
                         preliminary = envelopePreliminary;
                         providerExecuted = envelopeProviderExecuted;
-                        providerMetadata = envelopeProviderMetadata;
+                        providerMetadata = envelopeProviderMetadata ?? providerMetadata;
                     }
 
                     yield return new ToolOutputAvailablePart
@@ -831,7 +831,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         return new ToolCallPart
         {
             ToolCallId = fc.CallId!,
-            ProviderExecuted = true,
+            ProviderExecuted = fc.InformationalOnly,
             ToolName = fc.Name,
             Title = title,
             Input = normalizedInput,

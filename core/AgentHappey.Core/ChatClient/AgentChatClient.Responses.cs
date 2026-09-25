@@ -15,6 +15,7 @@ public partial class AgentChatClient
     private readonly Dictionary<string, ResponseCaller> responseCallers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ResponseProgramItem> responsePrograms = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ResponseProgramOutputItem> responseProgramOutputs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ResponseFunctionCallItem> responseFunctionCalls = new(StringComparer.Ordinal);
 
     private ResponseRequest BuildResponseRequest(IEnumerable<ChatMessage> messages, ChatOptions? options)
         => new()
@@ -256,9 +257,20 @@ public partial class AgentChatClient
             {
                 foreach (var result in message.Contents.OfType<FunctionResultContent>())
                 {
-                    items.Add(TryCreateToolSearchOutputItem(result, out var toolSearchOutput)
-                        ? toolSearchOutput
-                        : ToResponseFunctionCallOutputItem(result));
+                    if (TryCreateToolSearchOutputItem(result, out var toolSearchOutput))
+                    {
+                        items.Add(toolSearchOutput);
+                        continue;
+                    }
+
+                    if (TryReadResponseItem<ResponseProgramOutputItem>(result.Result, out var programOutput))
+                    {
+                        RegisterResponseProgramOutput(programOutput);
+                        items.Add(programOutput);
+                        continue;
+                    }
+
+                    items.Add(ToResponseFunctionCallOutputItem(result));
                 }
 
                 continue;
@@ -273,6 +285,7 @@ public partial class AgentChatClient
 
     private List<ResponseInputItem> InsertReferencedPrograms(List<ResponseInputItem> items)
     {
+        items = DeduplicateReplayItems(items);
         var result = new List<ResponseInputItem>(items.Count);
         var insertedProgramIds = new HashSet<string>(
             items.OfType<ResponseProgramItem>().SelectMany(GetProgramReplayIds),
@@ -280,6 +293,12 @@ public partial class AgentChatClient
         var insertedProgramOutputCallIds = new HashSet<string>(
             items.OfType<ResponseProgramOutputItem>().Select(output => output.CallId),
             StringComparer.Ordinal);
+        var insertedFunctionCallIds = new HashSet<string>(StringComparer.Ordinal);
+        var functionCallsByCallId = items
+            .OfType<ResponseFunctionCallItem>()
+            .Where(call => !string.IsNullOrWhiteSpace(call.CallId))
+            .GroupBy(call => call.CallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
 
         var linkedPrograms = items
             .Select((item, index) => new { CallerId = GetCallerId(item), Index = index })
@@ -311,6 +330,27 @@ public partial class AgentChatClient
                 insertedProgramIds.UnionWith(GetProgramReplayIds(linkedProgram.Program));
             }
 
+            if (item is ResponseFunctionCallOutputItem functionOutput
+                && !insertedFunctionCallIds.Contains(functionOutput.CallId))
+            {
+                if (!functionCallsByCallId.TryGetValue(functionOutput.CallId, out var functionCall)
+                    && !TryGetResponseFunctionCall(functionOutput.CallId, out functionCall))
+                {
+                    // Never send an orphan function_call_output. Provider-managed
+                    // program results must replay as program_output instead.
+                    continue;
+                }
+
+                result.Add(functionCall);
+                insertedFunctionCallIds.Add(functionCall.CallId);
+            }
+
+            if (item is ResponseFunctionCallItem insertedFunctionCall)
+            {
+                if (!insertedFunctionCallIds.Add(insertedFunctionCall.CallId))
+                    continue;
+            }
+
             result.Add(item);
 
             linkedProgram = linkedPrograms.Values.FirstOrDefault(link => link.LastIndex == index);
@@ -321,6 +361,44 @@ public partial class AgentChatClient
                 result.Add(programOutput);
                 insertedProgramOutputCallIds.Add(programOutput.CallId);
             }
+        }
+
+        return result;
+    }
+
+    private static List<ResponseInputItem> DeduplicateReplayItems(IReadOnlyList<ResponseInputItem> items)
+    {
+        var latestPrograms = items
+            .OfType<ResponseProgramItem>()
+            .Where(item => !string.IsNullOrWhiteSpace(item.CallId))
+            .GroupBy(item => item.CallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+        var latestProgramOutputs = items
+            .OfType<ResponseProgramOutputItem>()
+            .Where(item => !string.IsNullOrWhiteSpace(item.CallId))
+            .GroupBy(item => item.CallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+        var emittedPrograms = new HashSet<string>(StringComparer.Ordinal);
+        var emittedProgramOutputs = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<ResponseInputItem>(items.Count);
+
+        foreach (var item in items)
+        {
+            if (item is ResponseProgramItem program && !string.IsNullOrWhiteSpace(program.CallId))
+            {
+                if (emittedPrograms.Add(program.CallId))
+                    result.Add(latestPrograms[program.CallId]);
+                continue;
+            }
+
+            if (item is ResponseProgramOutputItem programOutput && !string.IsNullOrWhiteSpace(programOutput.CallId))
+            {
+                if (emittedProgramOutputs.Add(programOutput.CallId))
+                    result.Add(latestProgramOutputs[programOutput.CallId]);
+                continue;
+            }
+
+            result.Add(item);
         }
 
         return result;
@@ -384,13 +462,6 @@ public partial class AgentChatClient
                         break;
                     }
 
-                    // Informational calls describe provider-managed execution. If a
-                    // provider tool is not a recognized native Responses item, omit it
-                    // rather than changing its semantics into a client function call.
-                    if (call.InformationalOnly
-                        && !string.Equals(call.Name, GoogleAntigravityStateToolName, StringComparison.OrdinalIgnoreCase))
-                        break;
-
                     if (TryReadResponseItem<ResponseProgramItem>(call.RawRepresentation, out var program))
                     {
                         RegisterResponseProgram(program);
@@ -398,7 +469,22 @@ public partial class AgentChatClient
                         break;
                     }
 
-                    yield return new ResponseFunctionCallItem
+                    // Informational calls describe provider-managed execution. Check
+                    // recognized native Responses items first so their exact replay
+                    // representation survives a stateless UI-history round trip.
+                    if (call.InformationalOnly
+                        && !string.Equals(call.Name, GoogleAntigravityStateToolName, StringComparison.OrdinalIgnoreCase))
+                        break;
+
+                    if (TryReadResponseItem<ResponseFunctionCallItem>(call.RawRepresentation, out var nativeFunctionCall))
+                    {
+                        RegisterResponseCaller(nativeFunctionCall.Id, nativeFunctionCall.CallId, nativeFunctionCall.Caller);
+                        RegisterResponseFunctionCall(nativeFunctionCall);
+                        yield return nativeFunctionCall;
+                        break;
+                    }
+
+                    var functionCall = new ResponseFunctionCallItem
                     {
                         Id = ReadResponseMetadataString(call.RawRepresentation, "item_id"),
                         CallId = call.CallId,
@@ -409,6 +495,8 @@ public partial class AgentChatClient
                         Caller = ReadResponseCaller(call.RawRepresentation)
                             ?? GetResponseCaller(call.CallId)
                     };
+                    RegisterResponseFunctionCall(functionCall);
+                    yield return functionCall;
                     break;
 
                 case FunctionResultContent result:
@@ -444,14 +532,29 @@ public partial class AgentChatClient
     }
 
     private ResponseFunctionCallOutputItem ToResponseFunctionCallOutputItem(FunctionResultContent result)
-        => new()
+    {
+        var output = ReadToolOutput(result.Result);
+        return new()
         {
             CallId = result.CallId,
-            Output = SerializeResponseValue(result.Result),
+            Output = SerializeResponseValue(output),
             Status = "completed",
             Caller = ReadResponseCaller(result.RawRepresentation)
+                ?? ReadResponseCaller(result.Result)
                 ?? GetResponseCaller(result.CallId)
         };
+    }
+
+    private static object? ReadToolOutput(object? value)
+    {
+        var json = TryReadRawRepresentation(value);
+        return json is { ValueKind: JsonValueKind.Object }
+            && json.Value.TryGetProperty("output", out var output)
+            && (json.Value.TryGetProperty("provider_executed", out _)
+                || json.Value.TryGetProperty("provider_metadata", out _))
+                ? output.Clone()
+                : value;
+    }
 
     private static bool IsToolSearchCall(FunctionCallContent call)
         => string.Equals(
@@ -532,7 +635,7 @@ public partial class AgentChatClient
     }
 
     private static bool TryReadResponseItem<T>(object? value, out T item)
-        where T : ResponseInputItem
+        where T : ResponseInputItem, new()
     {
         item = null!;
         var json = TryReadRawRepresentation(value);
@@ -545,6 +648,14 @@ public partial class AgentChatClient
 
         try
         {
+            var expectedType = new T().Type;
+            if (!responseItem.TryGetProperty("type", out var type)
+                || type.ValueKind != JsonValueKind.String
+                || !string.Equals(type.GetString(), expectedType, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
             var parsed = responseItem.Deserialize<T>(ResponseJson.Default);
             if (parsed is null)
                 return false;
@@ -668,6 +779,17 @@ public partial class AgentChatClient
             responseProgramOutputs[output.CallId] = output;
     }
 
+    private void RegisterResponseFunctionCall(ResponseFunctionCallItem call)
+    {
+        if (!string.IsNullOrWhiteSpace(call.Id))
+            responseFunctionCalls[call.Id] = call;
+        if (!string.IsNullOrWhiteSpace(call.CallId))
+            responseFunctionCalls[call.CallId] = call;
+    }
+
+    private bool TryGetResponseFunctionCall(string callId, out ResponseFunctionCallItem call)
+        => responseFunctionCalls.TryGetValue(callId, out call!);
+
     private static string? ReadResponseMetadataString(object? rawRepresentation, string propertyName)
     {
         var json = TryReadRawRepresentation(rawRepresentation);
@@ -681,12 +803,53 @@ public partial class AgentChatClient
     private static ResponseCaller? ReadResponseCaller(object? rawRepresentation)
     {
         var json = TryReadRawRepresentation(rawRepresentation);
-        if (json is not { ValueKind: JsonValueKind.Object }
-            || !json.Value.TryGetProperty("caller", out var caller)
-            || caller.ValueKind != JsonValueKind.Object)
+        if (json is not { ValueKind: JsonValueKind.Object })
             return null;
 
-        return caller.Deserialize<ResponseCaller>(JsonSerializerOptions.Web);
+        if (TryDeserializeResponseCaller(json.Value, out var directCaller))
+            return directCaller;
+
+        if (json.Value.TryGetProperty("responses_item", out var responseItem)
+            && responseItem.ValueKind == JsonValueKind.Object
+            && TryDeserializeResponseCaller(responseItem, out var itemCaller))
+        {
+            return itemCaller;
+        }
+
+        if (json.Value.TryGetProperty("provider_metadata", out var providerMetadata)
+            && providerMetadata.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var provider in providerMetadata.EnumerateObject())
+            {
+                if (provider.Value.ValueKind != JsonValueKind.Object)
+                    continue;
+
+                if (TryDeserializeResponseCaller(provider.Value, out var providerCaller))
+                    return providerCaller;
+
+                if (provider.Value.TryGetProperty("responses_item", out var providerItem)
+                    && providerItem.ValueKind == JsonValueKind.Object
+                    && TryDeserializeResponseCaller(providerItem, out var providerItemCaller))
+                {
+                    return providerItemCaller;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryDeserializeResponseCaller(JsonElement value, out ResponseCaller? caller)
+    {
+        caller = null;
+        if (!value.TryGetProperty("caller", out var callerElement)
+            || callerElement.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        caller = callerElement.Deserialize<ResponseCaller>(JsonSerializerOptions.Web);
+        return caller is not null;
     }
 
     private static JsonElement? TryReadRawRepresentation(object? rawRepresentation)
