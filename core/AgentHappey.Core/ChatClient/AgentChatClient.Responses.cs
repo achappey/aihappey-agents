@@ -178,13 +178,15 @@ public partial class AgentChatClient
                 continue;
             }
 
+            var toolOverride = FindAgentToolOverride(declaration.Name);
+
             if (!McpToolSources.TryGetValue(declaration.Name, out var source))
             {
-                definitions.Add(ToResponseToolDefinition(declaration));
+                definitions.Add(ToResponseToolDefinition(declaration, toolOverride: toolOverride));
                 continue;
             }
 
-            var function = ToResponseToolDefinition(declaration, source.Configuration);
+            var function = ToResponseToolDefinition(declaration, source.Configuration, toolOverride);
             if (source.Configuration.Namespace != true)
             {
                 definitions.Add(function);
@@ -764,9 +766,58 @@ public partial class AgentChatClient
         return null;
     }
 
+    private AgentHappey.Common.Models.AgentTool? FindAgentToolOverride(string declarationName)
+    {
+        if (agent.Tools is null)
+            return null;
+
+        var runtimeType = declarationName switch
+        {
+            ClientToolSearchName => ToolSearchType,
+            ResourceSearchName => ResourceSearchType,
+            "read_resource" => "read_resource",
+            _ => null
+        };
+
+        if (runtimeType is not null)
+            return agent.Tools.FirstOrDefault(tool => string.Equals(tool.Type, runtimeType, StringComparison.Ordinal));
+
+        return agent.Tools.FirstOrDefault(tool =>
+            string.Equals(tool.Type, "function", StringComparison.Ordinal)
+            && TryGetAgentToolString(tool, "name", out var name)
+            && string.Equals(name, declarationName, StringComparison.Ordinal));
+    }
+
+    private static bool TryGetAgentToolString(
+        AgentHappey.Common.Models.AgentTool tool,
+        string propertyName,
+        out string? value)
+    {
+        value = null;
+        if (tool.AdditionalProperties?.TryGetValue(propertyName, out var element) != true
+            || element.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = element.GetString();
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    private static bool TryGetAgentToolProperty(
+        AgentHappey.Common.Models.AgentTool? tool,
+        string propertyName,
+        out JsonElement value)
+    {
+        value = default;
+        return tool?.AdditionalProperties?.TryGetValue(propertyName, out value) == true
+            && value.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null;
+    }
+
     private static ResponseToolDefinition ToResponseToolDefinition(
         AIFunctionDeclaration declaration,
-        AgentHappey.Common.Models.McpServer? server = null)
+        AgentHappey.Common.Models.McpServer? server = null,
+        AgentHappey.Common.Models.AgentTool? toolOverride = null)
     {
         var extra = new Dictionary<string, JsonElement>
         {
@@ -845,6 +896,27 @@ public partial class AgentChatClient
 
         if (server?.DeferLoading == true)
             extra["defer_loading"] = JsonSerializer.SerializeToElement(true, JsonSerializerOptions.Web);
+
+        // Agent tool entries are sparse, per-property overrides. Missing values
+        // deliberately retain declaration/MCP-server defaults.
+        if (TryGetAgentToolProperty(toolOverride, "allowed_callers", out var toolAllowedCallers)
+            && toolAllowedCallers.ValueKind == JsonValueKind.Array)
+        {
+            var callers = toolAllowedCallers.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.String)
+                .Select(item => item.GetString())
+                .Where(caller => caller is "direct" or "programmatic")
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (callers.Length > 0)
+                extra["allowed_callers"] = JsonSerializer.SerializeToElement(callers, JsonSerializerOptions.Web);
+        }
+
+        if (TryGetAgentToolProperty(toolOverride, "defer_loading", out var toolDeferLoading)
+            && toolDeferLoading.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            extra["defer_loading"] = toolDeferLoading.Clone();
+        }
 
         return new ResponseToolDefinition
         {
