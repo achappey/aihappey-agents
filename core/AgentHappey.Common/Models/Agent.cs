@@ -51,6 +51,10 @@ public class Agent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IEnumerable<AIPluginFile>? Plugins { get; set; }
 
+    [JsonPropertyName("evaluations")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Evaluations? Evaluations { get; set; }
+
 }
 
 public class AIPluginFile
@@ -322,4 +326,61 @@ public class McpPolicy
 
     [JsonPropertyName("destructiveHint")]
     public bool? Destructive { get; set; }
+}
+
+public class Evaluations
+{
+    [JsonPropertyName("localEvaluator")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LocalEvaluator? LocalEvaluator { get; set; }
+}
+
+public class LocalEvaluator
+{
+    [JsonPropertyName("nonEmpty")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public NonEmpty? NonEmpty { get; set; }
+
+    [JsonPropertyName("keywordCheck")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public KeywordCheck? KeywordCheck { get; set; }
+
+    [JsonPropertyName("toolCallsPresent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ToolCallsPresent { get; set; }
+
+    [JsonPropertyName("toolCalledCheck")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ToolCalledCheck? ToolCalledCheck { get; set; }
+
+    [JsonPropertyName("hasImageContent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? HasImageContent { get; set; }
+}
+
+public class NonEmpty
+{
+    [JsonPropertyName("minLength")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MinLength { get; set; }
+}
+
+public class KeywordCheck
+{
+    [JsonPropertyName("keywords")]
+    public IEnumerable<string> Keywords { get; set; } = [];
+
+    [JsonPropertyName("caseSensitive")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CaseSensitive { get; set; }
+}
+
+public class ToolCalledCheck
+{
+    [JsonPropertyName("toolNames")]
+    public IEnumerable<string> ToolNames { get; set; } = [];
+
+    [JsonPropertyName("mode")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Mode { get; set; }
 }

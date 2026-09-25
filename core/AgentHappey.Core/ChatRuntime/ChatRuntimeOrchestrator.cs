@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.ChatClient;
+using AgentHappey.Core.Evaluations;
 using AgentHappey.Core.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
@@ -255,21 +256,48 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         await response.WritePartsAsync(mapped, cancellationToken);
     }
 
-    public Task<AgentResponse> RunAgentAsync(
+    public async Task<AgentResponse> RunAgentAsync(
         ChatRuntimeContext context,
         CancellationToken cancellationToken = default)
-        => context.PrimaryAgent.RunAsync(
+    {
+        var response = await context.PrimaryAgent.RunAsync(
             context.Messages,
             options: context.SingleAgentRunOptions,
             cancellationToken: cancellationToken);
 
+        var evaluator = LocalEvaluation.Create(context.PrimaryResolvedAgent.Evaluations?.LocalEvaluator);
+        if (evaluator is null)
+            return response;
+
+        var evaluation = await EvaluateAgentAsync(
+            context.PrimaryAgent,
+            response,
+            LocalEvaluation.GetQuery(context.Messages),
+            evaluator,
+            context.PrimaryResolvedAgent.Name,
+            cancellationToken);
+
+        response.Messages.Add(new ChatMessage(
+            ChatRole.Assistant,
+            LocalEvaluation.CreateMetadataUpdate(evaluation).Contents));
+
+        return response;
+    }
+
     public IAsyncEnumerable<AgentResponseUpdate> StreamAgentAsync(
         ChatRuntimeContext context,
         CancellationToken cancellationToken = default)
-        => context.PrimaryAgent.RunStreamingAsync(
+    {
+        var updates = context.PrimaryAgent.RunStreamingAsync(
             context.Messages,
             options: context.SingleAgentRunOptions,
             cancellationToken: cancellationToken);
+        var evaluator = LocalEvaluation.Create(context.PrimaryResolvedAgent.Evaluations?.LocalEvaluator);
+
+        return evaluator is null
+            ? updates
+            : ObserveAndEvaluateAgentAsync(context, updates, evaluator, cancellationToken);
+    }
 
     public async Task<IReadOnlyList<WorkflowEvent>> RunWorkflowAsync(
         ChatRuntimeRequest chatRequest,
@@ -284,7 +312,15 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
             context.Messages,
             cancellationToken: cancellationToken);
 
-        return run.OutgoingEvents.ToList();
+        var events = run.OutgoingEvents.ToList();
+        var evaluation = await EvaluateWorkflowAsync(run, context, cancellationToken);
+
+        if (evaluation is not null)
+            events.Add(new AgentResponseUpdateEvent(
+                nameof(LocalEvaluation),
+                LocalEvaluation.CreateMetadataUpdate(evaluation)));
+
+        return events;
     }
 
     public async IAsyncEnumerable<WorkflowEvent> StreamWorkflowAsync(
@@ -303,8 +339,153 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         if (emitTurnToken)
             await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
 
+        var events = new List<WorkflowEvent>();
         await foreach (var update in run.WatchStreamAsync(cancellationToken).WithCancellation(cancellationToken))
+        {
+            events.Add(update);
             yield return update;
+        }
+
+        var evaluation = await EvaluateWorkflowEventsAsync(events, context, cancellationToken);
+        if (evaluation is not null)
+            yield return new AgentResponseUpdateEvent(
+                nameof(LocalEvaluation),
+                LocalEvaluation.CreateMetadataUpdate(evaluation));
+    }
+
+    private static async IAsyncEnumerable<AgentResponseUpdate> ObserveAndEvaluateAgentAsync(
+        ChatRuntimeContext context,
+        IAsyncEnumerable<AgentResponseUpdate> updates,
+        IAgentEvaluator evaluator,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var observed = new List<AgentResponseUpdate>();
+
+        await foreach (var update in updates.WithCancellation(cancellationToken))
+        {
+            observed.Add(update);
+            yield return update;
+        }
+
+        var response = observed.ToAgentResponse();
+        var evaluation = await EvaluateAgentAsync(
+            context.PrimaryAgent,
+            response,
+            LocalEvaluation.GetQuery(context.Messages),
+            evaluator,
+            context.PrimaryResolvedAgent.Name,
+            cancellationToken);
+
+        yield return LocalEvaluation.CreateMetadataUpdate(evaluation);
+    }
+
+    private static async Task<AgentEvaluationResults> EvaluateAgentAsync(
+        AIAgent agent,
+        AgentResponse response,
+        string query,
+        IAgentEvaluator evaluator,
+        string evalName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await agent.EvaluateAsync(
+                [response],
+                [query],
+                evaluator,
+                evalName,
+                cancellationToken: cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return LocalEvaluation.CreateFailedResult(exception);
+        }
+    }
+
+    private static async Task<AgentEvaluationResults?> EvaluateWorkflowAsync(
+        Run run,
+        ChatRuntimeContext context,
+        CancellationToken cancellationToken)
+        => await EvaluateWorkflowEventsAsync(run.OutgoingEvents, context, cancellationToken);
+
+    private static async Task<AgentEvaluationResults?> EvaluateWorkflowEventsAsync(
+        IEnumerable<WorkflowEvent> events,
+        ChatRuntimeContext context,
+        CancellationToken cancellationToken)
+    {
+        var evaluators = context.ResolvedAgents
+            .Select((agent, index) => new
+            {
+                Agent = agent,
+                RuntimeAgent = context.Agents[index],
+                Evaluator = LocalEvaluation.Create(agent.Evaluations?.LocalEvaluator)
+            })
+            .Where(item => item.Evaluator is not null)
+            .ToList();
+
+        if (evaluators.Count == 0)
+            return null;
+
+        var subResults = new Dictionary<string, AgentEvaluationResults>(StringComparer.Ordinal);
+
+        foreach (var item in evaluators)
+        {
+            try
+            {
+                var agentResult = await EvaluateWorkflowAgentAsync(
+                    events,
+                    item.RuntimeAgent,
+                    item.Agent.Name,
+                    item.Evaluator!,
+                    cancellationToken);
+
+                subResults[item.Agent.Name] = agentResult;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                subResults[item.Agent.Name] = LocalEvaluation.CreateFailedResult(exception);
+            }
+        }
+
+        return new AgentEvaluationResults("Local", [], [])
+        {
+            Status = subResults.Values.All(result => !string.Equals(result.Status, "failed", StringComparison.OrdinalIgnoreCase))
+                ? "completed"
+                : "failed",
+            Error = subResults.Values.FirstOrDefault(result => !string.IsNullOrWhiteSpace(result.Error))?.Error,
+            SubResults = subResults
+        };
+    }
+
+    private static async Task<AgentEvaluationResults> EvaluateWorkflowAgentAsync(
+        IEnumerable<WorkflowEvent> events,
+        AIAgent agent,
+        string agentName,
+        IAgentEvaluator evaluator,
+        CancellationToken cancellationToken)
+    {
+        var updates = events
+            .OfType<AgentResponseUpdateEvent>()
+            .Where(item => string.Equals(item.Update.AuthorName, agentName, StringComparison.Ordinal)
+                || string.Equals(item.Update.AgentId, agent.Id, StringComparison.Ordinal))
+            .Select(item => item.Update)
+            .ToList();
+
+        if (updates.Count == 0)
+            return new AgentEvaluationResults("Local", [], []);
+
+        var response = updates.ToAgentResponse();
+        var conversation = response.Messages.ToList();
+        var item = new EvalItem(conversation, ConversationSplitters.LastTurn);
+        return await evaluator.EvaluateAsync([item], agentName, cancellationToken);
     }
 
     public async Task ExecuteWorkflowAsync<TInput>(

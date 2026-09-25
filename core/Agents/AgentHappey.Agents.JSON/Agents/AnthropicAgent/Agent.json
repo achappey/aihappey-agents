@@ -81,5 +81,13 @@
             "idempotentHint": false,
             "destructiveHint": true
         }
+    },
+    "evaluations": {
+        "localEvaluator": {
+            "nonEmpty": {
+                "minLength": 1
+            },
+            "hasImageContent": false
+        }
     }
 }
