@@ -357,6 +357,16 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                     if (string.IsNullOrEmpty(fc.CallId)) yield break;
 
                     var call = CreateToolCallPart(fc);
+                    if (call.ProviderExecuted == true && !string.IsNullOrWhiteSpace(authorName))
+                        call = new ToolCallPart
+                        {
+                            ToolCallId = call.ToolCallId,
+                            ToolName = call.ToolName,
+                            Title = call.Title,
+                            Input = call.Input,
+                            ProviderExecuted = true,
+                            ProviderMetadata = ScopeToolProviderMetadata(call.ProviderMetadata, authorName)
+                        };
                     pendingCalls[fc.CallId!] = call;
                     yield return call;
                     break;
@@ -442,7 +452,9 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                         ToolCallId = fr.CallId,
                         ProviderExecuted = providerExecuted,
                         Preliminary = preliminary,
-                        ProviderMetadata = providerMetadata,
+                        ProviderMetadata = providerExecuted
+                            ? ScopeToolProviderMetadata(providerMetadata, authorName)
+                            : providerMetadata,
                         Output = output
                     };
 
@@ -837,6 +849,17 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             Input = normalizedInput,
             ProviderMetadata = providerMetadata
         };
+    }
+
+    private static Dictionary<string, Dictionary<string, object>?>? ScopeToolProviderMetadata(
+        Dictionary<string, Dictionary<string, object>?>? metadata, string? authorName)
+    {
+        if (string.IsNullOrWhiteSpace(authorName)) return metadata;
+        var result = metadata is null
+            ? new Dictionary<string, Dictionary<string, object>?>(StringComparer.Ordinal)
+            : new Dictionary<string, Dictionary<string, object>?>(metadata, StringComparer.Ordinal);
+        result[authorName] = new Dictionary<string, object> { ["agent_name"] = authorName };
+        return result;
     }
 
     private static Dictionary<string, object?>? TryGetFunctionCallRawRepresentation(FunctionCallContent fc)

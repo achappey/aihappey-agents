@@ -270,6 +270,30 @@ public partial class AgentChatClient
                 RegisterProgramReplayStreamItem(done.Item);
                 RegisterResponseCallerStreamItem(done.Item);
 
+                if (string.Equals(done.Item.Type, "custom_tool_call", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (state.TryCreateCustomToolCallInputUpdate(done.Item.Id, out ChatResponseUpdate customDoneInput))
+                        yield return customDoneInput;
+                    if (!state.HasToolOutputEmitted(done.Item.Id)
+                        && done.Item.AdditionalProperties?.TryGetValue("output", out var customDoneOutput) == true
+                        && customDoneOutput.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+                    {
+                        yield return new ChatResponseUpdate(ChatRole.Tool,
+                            [new FunctionResultContent(done.Item.CallId ?? done.Item.Id!, new Dictionary<string, object?>
+                            {
+                                ["output"] = customDoneOutput.Clone(),
+                                ["provider_executed"] = true,
+                                ["provider_metadata"] = done.Item.AdditionalProperties.TryGetValue("provider_metadata", out var customMetadata)
+                                    ? customMetadata.Clone() : null
+                            })])
+                        {
+                            MessageId = done.Item.Id
+                        };
+                        state.MarkToolOutputEmitted(done.Item.Id);
+                    }
+                    yield break;
+                }
+
                 if (string.Equals(done.Item.Type, "tool_search_call", StringComparison.OrdinalIgnoreCase)
                     && state.TryCreateToolSearchCallUpdate(done.Item, done.OutputIndex, out ChatResponseUpdate toolSearchCallUpdate))
                 {

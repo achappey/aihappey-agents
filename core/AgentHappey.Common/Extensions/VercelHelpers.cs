@@ -6,7 +6,63 @@ namespace AgentHappey.Common.Extensions;
 
 public static class VercelHelpers
 {
-    private const string GoogleAntigravityStateToolName = "google_antigravity_state";
+    public static bool IsContinuationStateTool(string? name) =>
+        string.Equals(name, "google_antigravity_state", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, "google_custom_agent_state", StringComparison.OrdinalIgnoreCase);
+
+    private static string? ReadMetadataToolName(Dictionary<string, Dictionary<string, object>?>? metadata)
+        => metadata?.Values.Where(value => value is not null)
+            .Select(value => value!.TryGetValue("tool_name", out var name) ? name?.ToString()
+                : value.TryGetValue("name", out name) ? name?.ToString() : null)
+            .FirstOrDefault(IsContinuationStateTool);
+
+    private static string? ReadOutputToolName(object? output)
+    {
+        if (output is null) return null;
+        try
+        {
+            var json = JsonSerializer.SerializeToElement(output, JsonSerializerOptions.Web);
+            if (json.ValueKind != JsonValueKind.Object) return null;
+            if (json.TryGetProperty("structuredContent", out var structured)
+                && structured.ValueKind == JsonValueKind.Object)
+                json = structured;
+            return json.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String
+                ? type.GetString() : null;
+        }
+        catch { return null; }
+    }
+
+    private static string? ResolveContinuationName(string? name, object? output,
+        Dictionary<string, Dictionary<string, object>?>? callMetadata,
+        Dictionary<string, Dictionary<string, object>?>? resultMetadata)
+        => IsContinuationStateTool(name) ? name
+            : ReadMetadataToolName(resultMetadata) ?? ReadMetadataToolName(callMetadata)
+                ?? (IsContinuationStateTool(ReadOutputToolName(output)) ? ReadOutputToolName(output) : null);
+
+    private static bool BelongsToAgent(UIMessage message, string agentName, HashSet<string> activeNames,
+        Dictionary<string, Dictionary<string, object>?>? callMetadata,
+        Dictionary<string, Dictionary<string, object>?>? resultMetadata)
+    {
+        if (message.Metadata?.TryGetValue("model", out var owner) == true && owner is not null)
+            return string.Equals(owner.ToString(), agentName, StringComparison.Ordinal);
+        if (callMetadata?.ContainsKey(agentName) == true || resultMetadata?.ContainsKey(agentName) == true)
+            return true;
+        // Old histories lack an owner. Replaying them into multiple agents would leak
+        // one provider session into another, so only accept them for a single agent.
+        return activeNames.Count == 1;
+    }
+
+    private static Dictionary<string, Dictionary<string, object>?> ScopeMetadata(
+        Dictionary<string, Dictionary<string, object>?>? metadata, string? owner)
+    {
+        var scoped = metadata is null
+            ? new Dictionary<string, Dictionary<string, object>?>(StringComparer.Ordinal)
+            : new Dictionary<string, Dictionary<string, object>?>(metadata, StringComparer.Ordinal);
+        if (!string.IsNullOrWhiteSpace(owner))
+            scoped[owner] = new Dictionary<string, object> { ["agent_name"] = owner };
+        return scoped;
+    }
+        
     private static string NormalizeToolName(string? type) =>
         type?.StartsWith("tool-", StringComparison.OrdinalIgnoreCase) == true
             ? type["tool-".Length..]
@@ -105,6 +161,8 @@ public static class VercelHelpers
 
         foreach (var ui in messages)
         {
+            var owner = ui.Metadata?.GetValueOrDefault("model")?.ToString()
+                ?? (activeAgentNameSet.Count == 1 ? activeAgentNameSet.Single() : null);
             var role = ui.Role switch
             {
                 Role.user => ChatRole.User,
@@ -187,11 +245,24 @@ public static class VercelHelpers
                                 JsonSerializer.Serialize(tc.Input)
                             ) ?? [];
 
-                            assistantContents.Add(new FunctionCallContent(tc.ToolCallId, tc.ToolName, args)
+                            var pairedOutput = partIndex + 1 < parts.Count && parts[partIndex + 1] is ToolOutputAvailablePart availableOutput
+                                && string.Equals(availableOutput.ToolCallId, tc.ToolCallId, StringComparison.Ordinal)
+                                ? availableOutput : null;
+                            var continuationName = ResolveContinuationName(tc.ToolName, pairedOutput?.Output,
+                                tc.ProviderMetadata, pairedOutput?.ProviderMetadata);
+                            if (tc.ProviderExecuted == true && continuationName is not null
+                                && activeAgentNameSet.Count > 0
+                                && !activeAgentNameSet.Any(name => BelongsToAgent(ui, name,
+                                    activeAgentNameSet, tc.ProviderMetadata, pairedOutput?.ProviderMetadata)))
+                                break;
+
+                            assistantContents.Add(new FunctionCallContent(tc.ToolCallId, continuationName ?? tc.ToolName, args)
                             {
-                                InformationalOnly = tc.ProviderExecuted == true
-                                    && !string.Equals(tc.ToolName, GoogleAntigravityStateToolName, StringComparison.OrdinalIgnoreCase),
-                                RawRepresentation = CreateToolCallRawRepresentation(tc)
+                                InformationalOnly = tc.ProviderExecuted == true,
+                                RawRepresentation = new Dictionary<string, object?>(CreateToolCallRawRepresentation(tc))
+                                {
+                                    ["agent_name"] = owner
+                                }
                             });
 
                             if (partIndex + 1 < parts.Count && IsToolOutputPart(parts[partIndex + 1], tc.ToolCallId))
@@ -203,7 +274,10 @@ public static class VercelHelpers
                                     [new FunctionResultContent(
                                         tc.ToolCallId,
                                         parts[partIndex + 1] is ToolOutputAvailablePart available
-                                            ? CreateToolOutputEnvelope(available)
+                                            ? new Dictionary<string, object?>(CreateToolOutputEnvelope(available))
+                                            {
+                                                ["agent_name"] = owner
+                                            }
                                             : GetToolOutput(parts[partIndex + 1]) ?? new { })])
                                 {
                                     MessageId = tc.ToolCallId
@@ -219,6 +293,8 @@ public static class VercelHelpers
                     case ToolInvocationPart ti:
                         {
                             var toolName = NormalizeToolName(ti.Type);
+                            var continuationName = ResolveContinuationName(toolName, ti.Output,
+                                ti.CallProviderMetadata, ti.ResultProviderMetadata);
 
                             // Approval control parts belong to the UI approval handshake.
                             // Agents auto-approve and never execute these as functions.
@@ -230,8 +306,13 @@ public static class VercelHelpers
                             // artifacts, never client function calls. Their exact
                             // native identity is not recoverable unless the standard
                             // ToolCallPart path carried a Responses item.
-                            if (ti.ProviderExecuted == true
-                                && !string.Equals(toolName, GoogleAntigravityStateToolName, StringComparison.OrdinalIgnoreCase))
+                            if (ti.ProviderExecuted == true && continuationName is null)
+                                break;
+
+                            if (ti.ProviderExecuted == true && continuationName is not null
+                                && activeAgentNameSet.Count > 0
+                                && !activeAgentNameSet.Any(name => BelongsToAgent(ui, name, activeAgentNameSet,
+                                    ti.CallProviderMetadata, ti.ResultProviderMetadata)))
                                 break;
 
                             var args = JsonSerializer.Deserialize<Dictionary<string, object?>>(
@@ -248,16 +329,31 @@ public static class VercelHelpers
                                 || string.Equals(ti.State, "output-available", StringComparison.OrdinalIgnoreCase)
                                 || string.Equals(ti.State, "output-error", StringComparison.OrdinalIgnoreCase))
                             {
-                                assistantContents.Add(new FunctionCallContent(ti.ToolCallId, toolName, args)
+                                assistantContents.Add(new FunctionCallContent(ti.ToolCallId, continuationName ?? toolName, args)
                                 {
-                                    InformationalOnly = ti.ProviderExecuted == true
+                                    InformationalOnly = ti.ProviderExecuted == true,
+                                    RawRepresentation = new Dictionary<string, object?>
+                                    {
+                                        ["provider_metadata"] = ScopeMetadata(ti.CallProviderMetadata, owner),
+                                        ["title"] = ti.Title,
+                                        ["agent_name"] = owner
+                                    }
                                 });
 
                                 FlushAssistantContents();
 
                                 mappedMessages.Add(new ChatMessage(
                                     ChatRole.Tool,
-                                    [new FunctionResultContent(ti.ToolCallId, ti.Output ?? new { })])
+                                    [new FunctionResultContent(ti.ToolCallId,
+                                        ti.ProviderExecuted == true
+                                            ? new Dictionary<string, object?>
+                                            {
+                                                ["output"] = ti.Output ?? new { },
+                                                ["provider_executed"] = true,
+                                                ["provider_metadata"] = ScopeMetadata(ti.ResultProviderMetadata, owner),
+                                                ["agent_name"] = owner
+                                            }
+                                            : ti.Output ?? new { })])
                                 {
                                     MessageId = ti.ToolCallId
                                 });

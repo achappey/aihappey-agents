@@ -11,7 +11,6 @@ namespace AgentHappey.Core.ChatClient;
 
 public partial class AgentChatClient
 {
-    private const string GoogleAntigravityStateToolName = "google_antigravity_state";
     private readonly Dictionary<string, ResponseCaller> responseCallers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ResponseProgramItem> responsePrograms = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ResponseProgramOutputItem> responseProgramOutputs = new(StringComparer.Ordinal);
@@ -251,12 +250,20 @@ public partial class AgentChatClient
     {
         var items = new List<ResponseInputItem>();
 
+        // A UI request may contain turns from several agents. Only the agent that
+        // produced a provider-managed continuation is allowed to replay its state.
+        var ownedCalls = new Dictionary<string, bool>(StringComparer.Ordinal);
+
         foreach (var message in messages)
         {
             if (message.Role == ChatRole.Tool)
             {
                 foreach (var result in message.Contents.OfType<FunctionResultContent>())
                 {
+                    if (ownedCalls.TryGetValue(result.CallId, out var owned) && !owned)
+                        continue;
+                    if (!IsOwnedContinuation(result.RawRepresentation ?? result.Result))
+                        continue;
                     if (TryCreateToolSearchOutputItem(result, out var toolSearchOutput))
                     {
                         items.Add(toolSearchOutput);
@@ -276,11 +283,33 @@ public partial class AgentChatClient
                 continue;
             }
 
-            foreach (var item in ToResponseInputItems(message))
+            foreach (var call in message.Contents.OfType<FunctionCallContent>()
+                .Where(call => VercelHelpers.IsContinuationStateTool(call.Name)))
+                ownedCalls[call.CallId] = IsOwnedContinuation(call.RawRepresentation);
+
+            var replayMessage = message;
+            if (message.Contents.OfType<FunctionCallContent>()
+                .Any(call => VercelHelpers.IsContinuationStateTool(call.Name)
+                    && !ownedCalls[call.CallId]))
+            {
+                replayMessage = new ChatMessage(message.Role, message.Contents
+                    .Where(content => content is not FunctionCallContent call
+                        || !VercelHelpers.IsContinuationStateTool(call.Name)
+                        || ownedCalls[call.CallId]).ToList()) { MessageId = message.MessageId };
+            }
+
+            foreach (var item in ToResponseInputItems(replayMessage))
                 items.Add(item);
         }
 
         return InsertReferencedPrograms(items);
+    }
+
+    private bool IsOwnedContinuation(object? raw)
+    {
+        var owner = ReadResponseMetadataString(raw, "agent_name");
+        return string.IsNullOrWhiteSpace(owner)
+            || string.Equals(owner, agent.Name, StringComparison.Ordinal);
     }
 
     private List<ResponseInputItem> InsertReferencedPrograms(List<ResponseInputItem> items)
@@ -473,7 +502,8 @@ public partial class AgentChatClient
                     // recognized native Responses items first so their exact replay
                     // representation survives a stateless UI-history round trip.
                     if (call.InformationalOnly
-                        && !string.Equals(call.Name, GoogleAntigravityStateToolName, StringComparison.OrdinalIgnoreCase))
+                        && !VercelHelpers.IsContinuationStateTool(call.Name)
+                        && ReadNestedResponseItemType(call.RawRepresentation) is not "function_call")
                         break;
 
                     if (TryReadResponseItem<ResponseFunctionCallItem>(call.RawRepresentation, out var nativeFunctionCall))
@@ -1203,6 +1233,10 @@ public partial class AgentChatClient
                 AppendProgramOutput(parts, json);
                 return;
 
+            case "custom_tool_call":
+                AppendCustomToolCall(parts, json);
+                return;
+
             default:
                 return;
         }
@@ -1256,6 +1290,48 @@ public partial class AgentChatClient
 
                     break;
             }
+        }
+    }
+
+    private static void AppendCustomToolCall(List<AIContent> parts, JsonElement item)
+    {
+        var callId = item.TryGetProperty("call_id", out var nativeCallId) && nativeCallId.ValueKind == JsonValueKind.String
+            ? nativeCallId.GetString()
+            : item.TryGetProperty("id", out var nativeItemId) && nativeItemId.ValueKind == JsonValueKind.String
+                ? nativeItemId.GetString()
+                : null;
+        if (string.IsNullOrWhiteSpace(callId))
+            return;
+
+        var name = item.TryGetProperty("name", out var nameProperty) && nameProperty.ValueKind == JsonValueKind.String
+            ? nameProperty.GetString()
+            : "custom_tool_call";
+        var input = item.TryGetProperty("input", out var inputProperty)
+            ? inputProperty.ValueKind == JsonValueKind.String ? inputProperty.GetString() : inputProperty.GetRawText()
+            : item.TryGetProperty("arguments", out var argumentsProperty)
+                ? argumentsProperty.ValueKind == JsonValueKind.String ? argumentsProperty.GetString() : argumentsProperty.GetRawText()
+                : null;
+        var metadata = item.TryGetProperty("provider_metadata", out var providerMetadata)
+            ? providerMetadata.Clone()
+            : default;
+        parts.Add(new FunctionCallContent(callId, name!, DeserializeArguments(input))
+        {
+            InformationalOnly = true,
+            RawRepresentation = new Dictionary<string, object?>
+            {
+                ["provider_metadata"] = metadata.ValueKind == JsonValueKind.Object ? metadata : null,
+                ["title"] = name
+            }
+        });
+
+        if (item.TryGetProperty("output", out var output) && output.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+        {
+            parts.Add(new FunctionResultContent(callId, new Dictionary<string, object?>
+            {
+                ["output"] = output.Clone(),
+                ["provider_executed"] = true,
+                ["provider_metadata"] = metadata.ValueKind == JsonValueKind.Object ? metadata : null
+            }));
         }
     }
 
