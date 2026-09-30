@@ -9,6 +9,7 @@ using AgentHappey.Core.Extensions;
 using System.Text.Json.Serialization;
 using System.Text.Json.Nodes;
 using System.ComponentModel.DataAnnotations;
+using ModelContextProtocol;
 
 namespace AgentHappey.Core.ChatClient;
 
@@ -47,6 +48,8 @@ public partial class AgentChatClient
     private readonly ConcurrentDictionary<string, AITool> Tools = new();
 
     private readonly ConcurrentDictionary<string, McpToolSource> McpToolSources = new(StringComparer.Ordinal);
+
+    private readonly ConcurrentDictionary<string, InputRequiredMcpTool> inputRequiredTools = new(StringComparer.Ordinal);
 
     private readonly ConcurrentDictionary<string, string> responseToolSearchCalls = new(StringComparer.Ordinal);
 
@@ -232,10 +235,35 @@ public partial class AgentChatClient
                         && (agent.McpClient?.Policy?.OpenWorld != false || a.ProtocolTool.Annotations?.OpenWorldHint != true)
                         && (agent.McpClient?.Policy?.Idempotent != true || a.ProtocolTool.Annotations?.IdempotentHint == true))];
 
-                foreach (var tool in allTools.Cast<AITool>())
+                foreach (var tool in allTools)
                 {
-                    tools.Add(tool);
-                    McpToolSources[tool.Name] = new McpToolSource(
+                    var useInputRequired =
+                        agent.McpClient?.Capabilities?.Elicitation is not null
+                        && mcpClient.NegotiatedProtocolVersion == "2026-07-28";
+
+                    AITool finalTool;
+
+                    if (useInputRequired)
+                    {
+                        var wrapped = new InputRequiredMcpTool(
+                            tool,
+                            httpClient,
+                            url,
+                            mcpClient.NegotiatedProtocolVersion,
+                            agent.ToImplementation(),
+                            agent.McpClient!.Capabilities);
+
+                        finalTool = wrapped;
+                        inputRequiredTools[tool.Name] = wrapped;
+                    }
+                    else
+                    {
+                        finalTool = tool;
+                    }
+
+                    tools.Add(finalTool);
+
+                    McpToolSources[finalTool.Name] = new McpToolSource(
                         servers.Key,
                         servers.Value,
                         mcpClient.ServerInfo);

@@ -291,6 +291,65 @@ public sealed class AgentChatClientFixtureTests
     }
 
     [Fact]
+    public void Input_required_tool_invocation_preserves_original_mcp_correlation_in_history()
+    {
+        var correlation = new Dictionary<string, object>
+        {
+            ["mcp_tool_name"] = "graph_outlook_mail_create_draft",
+            ["mcp_arguments"] = new { subject = "Draft", toRecipients = (string?)null },
+            ["mcp_server_url"] = "http://localhost:3001/microsoft-outlookmail",
+            ["mcp_input_key"] = "graphCreateMailDraft",
+            ["mcp_request_state"] = "elicit:graphCreateMailDraft",
+            ["custom_field"] = new { nested = true }
+        };
+        var history = new[]
+        {
+            new UIMessage
+            {
+                Id = "assistant-input-required",
+                Role = AIHappey.Vercel.Models.Role.assistant,
+                Parts =
+                [
+                    new ToolInvocationPart
+                    {
+                        ToolCallId = "call-input-required",
+                        Type = "tool-ai_input_required",
+                        Input = new { method = "elicitation/create", @params = new { mode = "form" } },
+                        Output = new
+                        {
+                            content = Array.Empty<object>(),
+                            structuredContent = new { action = "accept", content = new { subject = "Draft" } }
+                        },
+                        State = "output-available",
+                        CallProviderMetadata = new Dictionary<string, Dictionary<string, object>?>
+                        {
+                            ["MailAgent"] = correlation
+                        }
+                    }
+                ]
+            }
+        }.ToMessages(["MailAgent"]).ToList();
+
+        var call = Assert.Single(history.SelectMany(message => message.Contents)
+            .OfType<FunctionCallContent>());
+        Assert.Equal("ai_input_required", call.Name);
+        var metadata = JsonSerializer.SerializeToElement(call.RawRepresentation, JsonSerializerOptions.Web)
+            .GetProperty("provider_metadata").GetProperty("MailAgent");
+        Assert.Equal("MailAgent", metadata.GetProperty("agent_name").GetString());
+        Assert.Equal("graph_outlook_mail_create_draft", metadata.GetProperty("mcp_tool_name").GetString());
+        Assert.Equal("Draft", metadata.GetProperty("mcp_arguments").GetProperty("subject").GetString());
+        Assert.Equal("http://localhost:3001/microsoft-outlookmail", metadata.GetProperty("mcp_server_url").GetString());
+        Assert.Equal("graphCreateMailDraft", metadata.GetProperty("mcp_input_key").GetString());
+        Assert.Equal("elicit:graphCreateMailDraft", metadata.GetProperty("mcp_request_state").GetString());
+        Assert.True(metadata.GetProperty("custom_field").GetProperty("nested").GetBoolean());
+        Assert.Equal("elicitation/create", JsonSerializer.SerializeToElement(call.Arguments, JsonSerializerOptions.Web)
+            .GetProperty("method").GetString());
+        Assert.Single(history.SelectMany(message => message.Contents).OfType<FunctionResultContent>());
+        // Scoping must not mutate the UI history's original metadata dictionary.
+        Assert.False(correlation.ContainsKey("agent_name"));
+    }
+
+    [Fact]
     public async Task Assistant_tool_invocations_are_sent_as_interleaved_function_calls_and_outputs()
     {
         var requestBody = await CaptureRequestBodyAsync(
@@ -384,7 +443,7 @@ public sealed class AgentChatClientFixtureTests
         var firstResponse = await client.GetResponseAsync(CreateUserMessages("Look up Poland"));
         var functionCall = Assert.Single(firstResponse.Messages.Single().Contents
             .OfType<FunctionCallContent>()
-            .Where(call => !call.InformationalOnly));
+, call => !call.InformationalOnly);
 
         var messages = CreateUserMessages("Look up Poland").ToList();
         messages.Add(firstResponse.Messages.Single());

@@ -59,7 +59,15 @@ public static class VercelHelpers
             ? new Dictionary<string, Dictionary<string, object>?>(StringComparer.Ordinal)
             : new Dictionary<string, Dictionary<string, object>?>(metadata, StringComparer.Ordinal);
         if (!string.IsNullOrWhiteSpace(owner))
-            scoped[owner] = new Dictionary<string, object> { ["agent_name"] = owner };
+        {
+            // Do not replace the owner's existing metadata: ai_input_required
+            // carries its original MCP call correlation on this same UI part.
+            var owned = scoped.TryGetValue(owner, out var original) && original is not null
+                ? new Dictionary<string, object>(original, StringComparer.Ordinal)
+                : new Dictionary<string, object>(StringComparer.Ordinal);
+            owned["agent_name"] = owner;
+            scoped[owner] = owned;
+        }
         return scoped;
     }
         

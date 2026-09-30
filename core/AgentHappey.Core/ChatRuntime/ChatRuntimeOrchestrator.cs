@@ -153,17 +153,23 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
             var tools = await agentClient.ConnectMcp(cancellationToken);
             var instructions = agentClient.GetComposedInstructions();
 
-            agents.Add(new ChatClientAgent(
+            var chatAgent = new ChatClientAgent(
                 agentClient,
                 instructions: instructions,
                 name: agent.Name,
                 tools: tools,
-                description: agent.Description));
-
-            runOptions = new ChatClientAgentRunOptions(new ChatOptions
+                description: agent.Description);
+            agents.Add(chatAgent.AsBuilder().Use(async (_, invocation, next, ct) =>
             {
-                Tools = tools
-            });
+                var result = await next(invocation, ct);
+                if (result is McpToolInputRequiredException)
+                    invocation.Terminate = true;
+                return result;
+            }).Build());
+
+            // Constructor tools are augmented by run-option tools in the Agents SDK.
+            // Register each MCP declaration only once; the middleware stays on the agent.
+            runOptions = new ChatClientAgentRunOptions(new ChatOptions());
 
             if (emitConnectionParts)
                 await WriteConnectionPartsAsync(response, agentClient, cancellationToken);

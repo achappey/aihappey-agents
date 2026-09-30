@@ -18,9 +18,10 @@ public partial class AgentChatClient
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         EnsureHeaders();
-        SetHistory(messages);
+        var replay = await RestoreInputRequiredAsync(messages, cancellationToken);
+        SetHistory(replay);
 
-        var request = BuildResponseRequest(messages, options);
+        var request = BuildResponseRequest(replay, options);
         request.Stream = true;
         var capture = ResolveBackendCaptureRequest();
 

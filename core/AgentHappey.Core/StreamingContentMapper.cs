@@ -1,5 +1,6 @@
 
 using System.Runtime.CompilerServices;
+using AgentHappey.Core.ChatClient;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Agents.AI;
@@ -368,7 +369,8 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                             ProviderMetadata = ScopeToolProviderMetadata(call.ProviderMetadata, authorName)
                         };
                     pendingCalls[fc.CallId!] = call;
-                    yield return call;
+                    // Defer calls until their result: an MCP call may instead suspend,
+                    // in which case only ai_input_required may cross the UI boundary.
                     break;
                 }
 
@@ -376,6 +378,36 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                 {
                     if (string.IsNullOrEmpty(fr.CallId)) yield break;
                     if (!pendingCalls.TryGetValue(fr.CallId!, out ToolCallPart? toolCallPart)) yield break;
+                    pendingCalls.Remove(fr.CallId!);
+
+                    if (fr.Result is McpToolInputRequiredException required)
+                    {
+                        var input = required.Result.InputRequests?
+                            .FirstOrDefault(entry => entry.Value.Method == "elicitation/create");
+                        // State-only requests remain visible without triggering a form.
+                        yield return new ToolCallPart
+                        {
+                            ToolCallId = fr.CallId!,
+                            ToolName = "ai_input_required",
+                            Input = input?.Value,
+                            ProviderExecuted = input is null,
+                            ProviderMetadata = new Dictionary<string, Dictionary<string, object>?>
+                            {
+                                [authorName ?? "agent"] = new()
+                                {
+                                    ["agent_name"] = authorName,
+                                    ["mcp_tool_name"] = required.Request.Name,
+                                    ["mcp_arguments"] = required.Request.Arguments,
+                                    ["mcp_server_url"] = required.ServerUrl,
+                                    ["mcp_input_key"] = input?.Key,
+                                    ["mcp_request_state"] = required.Result.RequestState
+                                }
+                            }
+                        };
+                        yield break;
+                    }
+
+                    yield return toolCallPart;
 
                     var output = fr.Result is AIContent aiContent
                         && aiContent.RawRepresentation is ContentBlock contentBlock

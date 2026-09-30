@@ -32,8 +32,8 @@ public partial class AgentChatClient(
      CancellationToken cancellationToken = default)
     {
         EnsureHeaders();
-
-        var request = BuildResponseRequest(messages, options);
+        var replay = await RestoreInputRequiredAsync(messages, cancellationToken);
+        var request = BuildResponseRequest(replay, options);
         var capture = ResolveBackendCaptureRequest();
         var response = await http.GetResponses(
             request,
