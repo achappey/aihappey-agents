@@ -113,52 +113,49 @@ public partial class AgentChatClient
 
         foreach (var servers in enabledServers ?? [])
         {
-            var httpClient = httpClientFactory.CreateClient();
             var url = servers.Value.Url.ToLowerInvariant();
-            ApplyConfiguredMcpHeaders(httpClient, servers.Value);
-            ApplyInferenceAuthorizationForSameEndpoint(http, httpClient, url);
-            ApplyForwardedHeaders(httpClient);
-
-            var transport = new HttpClientTransport(new()
-            {
-                Endpoint = new Uri(url),
-                Name = agent.Name,
-            }, httpClient, ownsHttpClient: true);
-
-            var handlers = new Dictionary<string, Func<JsonRpcNotification, CancellationToken, ValueTask>>
-            {
-                ["notifications/message"] = async (n, ct) =>
-                {
-                    var msg = n.Params?.ToString();
-
-                    if (n.Params != null)
-                        Logs.Add(n.Params);
-
-                    await ValueTask.CompletedTask;
-                },
-
-                ["notifications/progress"] = async (n, ct) =>
-                {
-                    // handle progress
-                    await ValueTask.CompletedTask;
-                }
-            };
-
-            options.Handlers.NotificationHandlers = handlers;
-
             McpClient? mcpClient = null;
-
             try
             {
-                mcpClient = await McpClient.CreateAsync(
-                    transport,
-                    clientOptions: options,
-                    cancellationToken: cancellationToken);
-            }
-            catch (HttpRequestException exception)
-                when (exception.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-            {
+                var httpClient = httpClientFactory.CreateClient();
+                ApplyConfiguredMcpHeaders(httpClient, servers.Value);
+                ApplyInferenceAuthorizationForSameEndpoint(http, httpClient, url);
+                ApplyForwardedHeaders(httpClient);
+
+                var transport = new HttpClientTransport(new()
+                {
+                    Endpoint = new Uri(url),
+                    Name = agent.Name,
+                }, httpClient, ownsHttpClient: true);
+
+                var handlers = new Dictionary<string, Func<JsonRpcNotification, CancellationToken, ValueTask>>
+                {
+                    ["notifications/message"] = async (n, ct) =>
+                    {
+                        if (n.Params != null)
+                            Logs.Add(n.Params);
+
+                        await ValueTask.CompletedTask;
+                    },
+
+                    ["notifications/progress"] = async (n, ct) =>
+                    {
+                        // handle progress
+                        await ValueTask.CompletedTask;
+                    }
+                };
+
+                options.Handlers.NotificationHandlers = handlers;
+
                 try
+                {
+                    mcpClient = await McpClient.CreateAsync(
+                        transport,
+                        clientOptions: options,
+                        cancellationToken: cancellationToken);
+                }
+                catch (HttpRequestException exception)
+                when (exception.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
                     if (getMcpToken == null)
                     {
@@ -184,100 +181,110 @@ public partial class AgentChatClient
                         clientOptions: options,
                         cancellationToken: cancellationToken);
                 }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception retryException)
-                {
-                    throw new Exception(
-                        $"Could not connect to MCP server {url}: {retryException.Message}",
-                        retryException);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (HttpRequestException exception)
-            {
-                var status = exception.StatusCode.HasValue
-                    ? $"HTTP {(int)exception.StatusCode.Value} ({exception.StatusCode.Value})"
-                    : "HTTP request failed";
 
-                throw new Exception(
-                    $"Could not connect to MCP server {url}: {status}. {exception.Message}",
-                    exception);
+                if (mcpClient == null)
+                    continue;
+
+                List<AITool> serverTools = [];
+                Dictionary<string, InputRequiredMcpTool> serverInputRequiredTools = new(StringComparer.Ordinal);
+                IEnumerable<object>? serverResources = null;
+                IEnumerable<object>? serverResourceTemplates = null;
+
+                if (mcpClient.ServerCapabilities.Tools != null)
+                {
+                    IList<McpClientTool> allTools = await mcpClient.ListToolsAsync(cancellationToken: cancellationToken);
+
+                    if (servers.Value.AllowedTools is not null)
+                    {
+                        var allowed = servers.Value.AllowedTools.ToHashSet(StringComparer.Ordinal);
+                        allTools = [.. allTools.Where(tool => allowed.Contains(tool.Name))];
+                    }
+
+                    if (agent.McpClient?.Policy != null) allTools = [.. allTools
+                        .Where(a => (agent.McpClient?.Policy?.ReadOnly != true || a.ProtocolTool.Annotations?.ReadOnlyHint == true)
+                            && (agent.McpClient?.Policy?.Destructive != false || a.ProtocolTool.Annotations?.DestructiveHint != true)
+                            && (agent.McpClient?.Policy?.OpenWorld != false || a.ProtocolTool.Annotations?.OpenWorldHint != true)
+                            && (agent.McpClient?.Policy?.Idempotent != true || a.ProtocolTool.Annotations?.IdempotentHint == true))];
+
+                    foreach (var tool in allTools)
+                    {
+                        var useInputRequired =
+                            agent.McpClient?.Capabilities?.Elicitation is not null
+                            && mcpClient.NegotiatedProtocolVersion == "2026-07-28";
+
+                        AITool finalTool;
+
+                        if (useInputRequired)
+                        {
+                            var wrapped = new InputRequiredMcpTool(
+                                tool,
+                                httpClient,
+                                url,
+                                mcpClient.NegotiatedProtocolVersion,
+                                agent.ToImplementation(),
+                                agent.McpClient!.Capabilities);
+
+                            finalTool = wrapped;
+                            serverInputRequiredTools[tool.Name] = wrapped;
+                        }
+                        else
+                        {
+                            finalTool = tool;
+                        }
+
+                        serverTools.Add(finalTool);
+                    }
+                }
+
+                if (mcpClient.ServerCapabilities.Resources != null)
+                {
+                    var result = await mcpClient.ListResourcesAsync(cancellationToken: cancellationToken);
+                    var resultTemplates = await mcpClient.ListResourceTemplatesAsync(cancellationToken: cancellationToken);
+                    serverResources = [.. result.Cast<object>()];
+                    serverResourceTemplates = [.. resultTemplates.Cast<object>()];
+                }
+
+                if (serverResources is not null && serverResourceTemplates is not null)
+                {
+                    McpServerResources[url] = serverResources;
+                    McpServerResourceTemplates[url] = serverResourceTemplates;
+                }
+
+                McpClients.AddOrUpdate(url, mcpClient, (_, __) => mcpClient);
+                McpServerImplementations.AddOrUpdate(url, mcpClient.ServerInfo, (_, __) => mcpClient.ServerInfo);
+
+                if (!string.IsNullOrEmpty(mcpClient.ServerInstructions))
+                    McpServerInstructions.AddOrUpdate(url, mcpClient.ServerInstructions, (_, __) => mcpClient.ServerInstructions);
+
+                foreach (var tool in serverTools)
+                {
+                    tools.Add(tool);
+                    McpToolSources[tool.Name] = new McpToolSource(servers.Key, servers.Value, mcpClient.ServerInfo);
+                }
+
+                foreach (var (name, tool) in serverInputRequiredTools)
+                    inputRequiredTools[name] = tool;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                if (mcpClient is not null)
+                {
+                    try { await mcpClient.DisposeAsync(); }
+                    catch { }
+                }
+
+                throw;
             }
             catch (Exception exception)
             {
-                throw new Exception(
-                    $"Could not connect to MCP server {url}: {exception.Message}",
-                    exception);
-            }
-
-            if (mcpClient == null)
-                continue;
-
-            McpClients.AddOrUpdate(url, mcpClient, (_, __) => mcpClient);
-            McpServerImplementations.AddOrUpdate(url, mcpClient.ServerInfo, (_, __) => mcpClient.ServerInfo);
-
-            if (!string.IsNullOrEmpty(mcpClient.ServerInstructions))
-                McpServerInstructions.AddOrUpdate(url, mcpClient.ServerInstructions, (_, __) => mcpClient.ServerInstructions);
-
-            if (mcpClient.ServerCapabilities.Tools != null)
-            {
-                IList<McpClientTool>? allTools = await mcpClient.ListToolsAsync(cancellationToken: cancellationToken);
-
-                if (agent.McpClient?.Policy != null) allTools = [.. allTools
-                    .Where(a => (agent.McpClient?.Policy?.ReadOnly != true || a.ProtocolTool.Annotations?.ReadOnlyHint == true)
-                        && (agent.McpClient?.Policy?.Destructive != false || a.ProtocolTool.Annotations?.DestructiveHint != true)
-                        && (agent.McpClient?.Policy?.OpenWorld != false || a.ProtocolTool.Annotations?.OpenWorldHint != true)
-                        && (agent.McpClient?.Policy?.Idempotent != true || a.ProtocolTool.Annotations?.IdempotentHint == true))];
-
-                foreach (var tool in allTools)
+                if (mcpClient is not null)
                 {
-                    var useInputRequired =
-                        agent.McpClient?.Capabilities?.Elicitation is not null
-                        && mcpClient.NegotiatedProtocolVersion == "2026-07-28";
-
-                    AITool finalTool;
-
-                    if (useInputRequired)
-                    {
-                        var wrapped = new InputRequiredMcpTool(
-                            tool,
-                            httpClient,
-                            url,
-                            mcpClient.NegotiatedProtocolVersion,
-                            agent.ToImplementation(),
-                            agent.McpClient!.Capabilities);
-
-                        finalTool = wrapped;
-                        inputRequiredTools[tool.Name] = wrapped;
-                    }
-                    else
-                    {
-                        finalTool = tool;
-                    }
-
-                    tools.Add(finalTool);
-
-                    McpToolSources[finalTool.Name] = new McpToolSource(
-                        servers.Key,
-                        servers.Value,
-                        mcpClient.ServerInfo);
+                    try { await mcpClient.DisposeAsync(); }
+                    catch { /* Keep the connection/discovery error as the failure reason. */ }
                 }
 
-            }
-
-            if (mcpClient.ServerCapabilities.Resources != null)
-            {
-                var result = await mcpClient.ListResourcesAsync(cancellationToken: cancellationToken);
-                McpServerResources.AddOrUpdate(url, [.. result.Cast<object>()], (_, __) => [.. result.Cast<object>()]);
-
-                var resultTemplates = await mcpClient.ListResourceTemplatesAsync(cancellationToken: cancellationToken);
-                McpServerResourceTemplates.AddOrUpdate(url, [.. resultTemplates.Cast<object>()], (_, __) => [.. resultTemplates.Cast<object>()]);
+                if (servers.Value.Required == true)
+                    throw new InvalidOperationException($"Could not connect to or discover MCP server {url}: {exception.Message}", exception);
             }
         }
 
