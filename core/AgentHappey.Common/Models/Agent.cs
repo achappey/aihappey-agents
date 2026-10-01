@@ -311,6 +311,15 @@ public class McpServer
     [JsonPropertyName("headers")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, object>? Headers { get; set; }
+
+    [JsonPropertyName("required")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Required { get; set; }
+
+    [JsonPropertyName("allowed_tools")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IEnumerable<string>? AllowedTools { get; set; }
+
 }
 
 public class McpPolicy
