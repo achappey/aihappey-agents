@@ -16,6 +16,8 @@ public partial class AgentChatClient
 
     private readonly object loadSkillsLock = new();
 
+    private readonly List<LoadedAgentSkill> connectedSkills = [];
+
     public string GetComposedInstructions() => agent.ComposeInstructions(
         skills: GetEnabledSkills(),
         plugins: GetPluginsWithReadableFiles(),
@@ -27,14 +29,15 @@ public partial class AgentChatClient
     private IReadOnlyList<LoadedAgentSkill> GetEnabledSkills()
     {
         if (loadedSkills is not null)
-            return loadedSkills;
+            return [.. loadedSkills, .. connectedSkills];
 
         var configuredSkills = agent.Skills?.ToArray() ?? [];
         if (configuredSkills.Any(skill => skill is SkillReference))
             throw new InvalidOperationException("Referenced agent skills must be downloaded before skills are exposed.");
 
         var pluginSkills = EnsurePluginsLoaded().SelectMany(plugin => plugin.Skills);
-        return loadedSkills = [.. AgentSkillCatalog.Load(configuredSkills), .. pluginSkills];
+        loadedSkills = [.. AgentSkillCatalog.Load(configuredSkills), .. pluginSkills];
+        return [.. loadedSkills, .. connectedSkills];
     }
 
     private Task<IReadOnlyList<LoadedAgentSkill>> EnsureSkillsLoadedAsync(CancellationToken cancellationToken)
@@ -136,7 +139,7 @@ public partial class AgentChatClient
 
     [DisplayName("activate_skill")]
     [Description("Loads the body instructions for an enabled agent skill. Use this when one of the available skills matches the current task. After activation, use read_skill_resource to load referenced bundled files by relative path.")]
-    private Task<CallToolResult> ActivateSkillAsync(
+    private async Task<CallToolResult> ActivateSkillAsync(
         [Description("Exact enabled skill id to activate.")]
         string skill_id,
         CancellationToken cancellationToken)
@@ -144,6 +147,7 @@ public partial class AgentChatClient
         cancellationToken.ThrowIfCancellationRequested();
 
         var skill = ResolveEnabledSkill(skill_id);
+        var body = await skill.ReadBodyAsync(cancellationToken);
         var resourcePaths = skill.ResourcePaths;
         var resourcesXml = resourcePaths.Count > 0
             ? string.Join("\n", [
@@ -153,7 +157,7 @@ public partial class AgentChatClient
             ])
             : "<skill_resources />";
 
-        return Task.FromResult(new CallToolResult
+        return new CallToolResult
         {
             IsError = false,
             StructuredContent = JsonSerializer.SerializeToElement(new
@@ -164,26 +168,26 @@ public partial class AgentChatClient
                     name = skill.Name,
                     description = skill.Description,
                     resourcePaths,
-                    instructions = skill.Body
+                    instructions = body
                 }
             }, JsonSerializerOptions.Web),
             Content =
             [
                 string.Join("\n", [
                     $"<skill_content skill_id=\"{EscapeAttribute(skill.SkillId)}\" name=\"{EscapeAttribute(skill.Name)}\">",
-                    skill.Body,
+                    body,
                     string.Empty,
                     "Use read_skill_resource with this skill_id and a relative path from the resource list when you need bundled files referenced by the instructions.",
                     resourcesXml,
                     "</skill_content>"
                 ]).ToContentBlock()
             ]
-        });
+        };
     }
 
     [DisplayName("read_skill_resource")]
     [Description("Reads a bundled file from an enabled skill by relative path. Use this after activate_skill when the skill instructions reference scripts, references, or assets. Paths are relative to the skill root.")]
-    private Task<CallToolResult> ReadSkillResourceAsync(
+    private async Task<CallToolResult> ReadSkillResourceAsync(
         [Description("Exact enabled skill id that owns the resource.")]
         string skill_id,
         [Description("Relative path within the skill directory, for example references/REFERENCE.md or scripts/run.py.")]
@@ -197,13 +201,12 @@ public partial class AgentChatClient
         if (string.IsNullOrWhiteSpace(relativePath))
             throw new InvalidOperationException("Missing path. Provide a relative path inside the skill directory.");
 
-        if (!skill.Resources.TryGetValue(relativePath, out var resource))
-            throw new InvalidOperationException($"Resource '{relativePath}' was not found in skill '{skill.SkillId}'.");
+        var resource = await skill.ReadResourceAsync(relativePath, cancellationToken);
 
         if (resource.IsText)
         {
             var text = resource.ReadText();
-            return Task.FromResult(new CallToolResult
+            return new CallToolResult
             {
                 IsError = false,
                 StructuredContent = JsonSerializer.SerializeToElement(new
@@ -225,11 +228,11 @@ public partial class AgentChatClient
                         "</skill_resource>"
                     ]).ToContentBlock()
                 ]
-            });
+            };
         }
 
         var base64 = Convert.ToBase64String(resource.Bytes);
-        return Task.FromResult(new CallToolResult
+        return new CallToolResult
         {
             IsError = false,
             StructuredContent = JsonSerializer.SerializeToElement(new
@@ -248,7 +251,7 @@ public partial class AgentChatClient
             [
                 $"Binary skill resource {relativePath} from skill {skill.Name}. mimeType={resource.MimeType}. Base64 payload is available in structuredContent.skillResource.data.".ToContentBlock()
             ]
-        });
+        };
     }
 
     private static string EscapeAttribute(string value)

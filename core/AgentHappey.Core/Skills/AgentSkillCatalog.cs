@@ -11,7 +11,10 @@ public sealed class LoadedAgentSkill(
     string description,
     string body,
     string rootDirectoryName,
-    IReadOnlyDictionary<string, LoadedAgentSkillResource> resources)
+    IReadOnlyDictionary<string, LoadedAgentSkillResource> resources,
+    IReadOnlyList<string>? resourcePaths = null,
+    Func<CancellationToken, Task<string>>? readBody = null,
+    Func<string, CancellationToken, Task<LoadedAgentSkillResource>>? readResource = null)
 {
     public string SkillId { get; } = skillId;
 
@@ -25,7 +28,21 @@ public sealed class LoadedAgentSkill(
 
     public IReadOnlyDictionary<string, LoadedAgentSkillResource> Resources { get; } = resources;
 
-    public IReadOnlyList<string> ResourcePaths { get; } = resources.Keys.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
+    public IReadOnlyList<string> ResourcePaths { get; } = resourcePaths ?? resources.Keys.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
+
+    public Task<string> ReadBodyAsync(CancellationToken cancellationToken)
+        => readBody is null ? Task.FromResult(Body) : readBody(cancellationToken);
+
+    public Task<LoadedAgentSkillResource> ReadResourceAsync(string path, CancellationToken cancellationToken)
+    {
+        if (readResource is not null)
+            return readResource(path, cancellationToken);
+
+        if (!Resources.TryGetValue(path, out var resource))
+            throw new InvalidOperationException($"Resource '{path}' was not found in skill '{SkillId}'.");
+
+        return Task.FromResult(resource);
+    }
 }
 
 public sealed class LoadedAgentSkillResource(

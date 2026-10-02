@@ -253,6 +253,17 @@ public partial class AgentChatClient
                 McpClients.AddOrUpdate(url, mcpClient, (_, __) => mcpClient);
                 McpServerImplementations.AddOrUpdate(url, mcpClient.ServerInfo, (_, __) => mcpClient.ServerInfo);
 
+                // Skills are optional; a broken skill catalog must not discard this server's tools or resources.
+                if (SupportsMcpSkills(mcpClient))
+                {
+                    try
+                    {
+                        AddConnectedSkills(await ListConnectedSkillsAsync(mcpClient, url, cancellationToken), url);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                    catch (Exception) { /* Keep the normal MCP connection available. */ }
+                }
+
                 if (!string.IsNullOrEmpty(mcpClient.ServerInstructions))
                     McpServerInstructions.AddOrUpdate(url, mcpClient.ServerInstructions, (_, __) => mcpClient.ServerInstructions);
 
