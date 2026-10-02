@@ -305,7 +305,7 @@ public static class VercelHelpers
                                 ti.CallProviderMetadata, ti.ResultProviderMetadata);
 
                             // Approval control parts belong to the UI approval handshake.
-                            // Agents auto-approve and never execute these as functions.
+                            // These envelopes are never executed as functions.
                             if (IsApprovalControlPart(ti, toolName)
                                 || IsConnectMcpControlPart(ti, toolName))
                                 break;
@@ -327,13 +327,19 @@ public static class VercelHelpers
                                 JsonSerializer.Serialize(ti.Input)
                             ) ?? [];
 
+                            // Match the gateway's NormalizeToolInvocations behavior:
+                            // a denied result is replaced, not replayed to the model.
+                            var output = ti.State == "approval-responded" && ti.Approval?.Approved == false
+                                ? ti.Approval
+                                : ti.Output;
+
                             // 1) assistant function call
 
 
                             // 2) tool function result as separate tool-role message only when concrete output exists.
                             // If output is not present yet (approval-requested/approval-responded flow),
                             // let the agents runtime execute the tool call.
-                            if (HasConcreteOutput(ti.Output)
+                            if (HasConcreteOutput(output)
                                 || string.Equals(ti.State, "output-available", StringComparison.OrdinalIgnoreCase)
                                 || string.Equals(ti.State, "output-error", StringComparison.OrdinalIgnoreCase))
                             {
@@ -356,12 +362,12 @@ public static class VercelHelpers
                                         ti.ProviderExecuted == true
                                             ? new Dictionary<string, object?>
                                             {
-                                                ["output"] = ti.Output ?? new { },
+                                                ["output"] = output ?? new { },
                                                 ["provider_executed"] = true,
                                                 ["provider_metadata"] = ScopeMetadata(ti.ResultProviderMetadata, owner),
                                                 ["agent_name"] = owner
                                             }
-                                            : ti.Output ?? new { })])
+                                            : output ?? new { })])
                                 {
                                     MessageId = ti.ToolCallId
                                 });

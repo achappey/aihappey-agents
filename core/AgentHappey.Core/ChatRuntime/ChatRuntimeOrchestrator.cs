@@ -81,6 +81,8 @@ public sealed record ChatRuntimeContext(
     ChatClientAgentRunOptions? SingleAgentRunOptions,
     IReadOnlyList<Agent> ResolvedAgents)
 {
+    public bool RequestToolApproval { get; init; }
+
     public AIAgent PrimaryAgent => Agents.FirstOrDefault() ?? throw new InvalidOperationException("No agent found");
 
     public Agent PrimaryResolvedAgent => ResolvedAgents.FirstOrDefault() ?? throw new InvalidOperationException("No resolved agent found");
@@ -109,13 +111,24 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         var runtimeRequest = CreateRuntimeRequest(chatRequest);
         ConfigureStreamingResponse(response);
 
-        return await PrepareCoreAsync(
+        var context = await PrepareCoreAsync(
             response,
             runtimeRequest,
             agentClientFactory,
             configureAgentClient,
             emitConnectionParts: true,
             cancellationToken);
+
+        if (context.RequestToolApproval && chatRequest.Messages
+            .SelectMany(message => message.Parts)
+            .OfType<ToolInvocationPart>()
+            .Any(tool => tool.ProviderExecuted != true && tool.Approval is not null
+                && (tool.State == "approval-requested" || tool.Approval.Approved is null)))
+        {
+            throw new InvalidOperationException("All pending tool approvals must be answered before continuing.");
+        }
+
+        return context;
     }
 
     public Task<ChatRuntimeContext> PrepareAsync(
@@ -144,6 +157,9 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         ChatClientAgentRunOptions? runOptions = null;
         var messages = chatRequest.Messages.ToList();
         var resolvedAgents = await ResolveAgentsAsync(chatRequest, cancellationToken);
+        // Only the single-agent UI chat endpoint participates in this handshake.
+        // Responses, background runs, and workflows retain their automatic tool loop.
+        var requestToolApproval = emitConnectionParts && resolvedAgents.Count == 1;
 
         foreach (var agent in resolvedAgents)
         {
@@ -162,7 +178,7 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
             agents.Add(chatAgent.AsBuilder().Use(async (_, invocation, next, ct) =>
             {
                 var result = await next(invocation, ct);
-                if (result is McpToolInputRequiredException)
+                if (requestToolApproval || result is McpToolInputRequiredException)
                     invocation.Terminate = true;
                 return result;
             }).Build());
@@ -175,7 +191,10 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
                 await WriteConnectionPartsAsync(response, agentClient, cancellationToken);
         }
 
-        return new ChatRuntimeContext(messages, agents, runOptions, resolvedAgents);
+        return new ChatRuntimeContext(messages, agents, runOptions, resolvedAgents)
+        {
+            RequestToolApproval = requestToolApproval
+        };
     }
 
     private async Task<IReadOnlyList<Agent>> ResolveAgentsAsync(
@@ -258,7 +277,7 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         }
 
         var updates = StreamAgentAsync(context, cancellationToken);
-        var mapped = mapper.MapAsync(updates, cancellationToken);
+        var mapped = mapper.MapAsync(updates, cancellationToken, context.RequestToolApproval);
         await response.WritePartsAsync(mapped, cancellationToken);
     }
 

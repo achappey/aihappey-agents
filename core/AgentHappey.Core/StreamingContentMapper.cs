@@ -19,7 +19,8 @@ public interface IStreamingContentMapper
 {
     IAsyncEnumerable<UIMessagePart> MapAsync(
         IAsyncEnumerable<AgentResponseUpdate> updates,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool requestToolApproval = false);
 
     IAsyncEnumerable<UIMessagePart> MapAsync(
         IAsyncEnumerable<WorkflowEvent> updates,
@@ -76,7 +77,8 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
 
     public async IAsyncEnumerable<UIMessagePart> MapAsync(
         IAsyncEnumerable<AgentResponseUpdate> updates,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default,
+        bool requestToolApproval = false)
     {
         var text = new TextStreamState();
         var reasoning = new ReasoningStreamState();
@@ -98,7 +100,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                 else if (TryReadFinishMetadata(content, out var metadata))
                     MergeFinishMetadata(finishMetadata, metadata);
                 else
-                    foreach (var part in MapContent(content, update.MessageId, update.AuthorName, pendingCalls, text, reasoning, includeFileParts: true))
+                    foreach (var part in MapContent(content, update.MessageId, update.AuthorName, pendingCalls, text, reasoning, includeFileParts: true, requestToolApproval))
                         yield return part;
             }
         }
@@ -254,7 +256,8 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         Dictionary<string, ToolCallPart> pendingCalls,
         TextStreamState text,
         ReasoningStreamState reasoning,
-        bool includeFileParts)
+        bool includeFileParts,
+        bool requestToolApproval = false)
     {
         switch (content)
         {
@@ -407,7 +410,19 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                         yield break;
                     }
 
-                    yield return toolCallPart;
+                    var requiresApproval = requestToolApproval && toolCallPart.ProviderExecuted != true;
+                    // The input event must suppress the browser's onToolCall callback:
+                    // this function has already executed here. The output event below
+                    // restores the client-continuable marker for the approval round trip.
+                    yield return requiresApproval ? new ToolCallPart
+                    {
+                        ToolCallId = toolCallPart.ToolCallId,
+                        ToolName = toolCallPart.ToolName,
+                        Title = toolCallPart.Title,
+                        Input = toolCallPart.Input,
+                        ProviderExecuted = true,
+                        ProviderMetadata = toolCallPart.ProviderMetadata
+                    } : toolCallPart;
 
                     var output = fr.Result is AIContent aiContent
                         && aiContent.RawRepresentation is ContentBlock contentBlock
@@ -482,13 +497,22 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                     yield return new ToolOutputAvailablePart
                     {
                         ToolCallId = fr.CallId,
-                        ProviderExecuted = providerExecuted,
+                        ProviderExecuted = requiresApproval ? false : providerExecuted,
                         Preliminary = preliminary,
                         ProviderMetadata = providerExecuted
                             ? ScopeToolProviderMetadata(providerMetadata, authorName)
                             : providerMetadata,
                         Output = output
                     };
+
+                    // Output must precede approval: the UI stream consumer otherwise
+                    // replaces approval-requested with output-available.
+                    if (requiresApproval)
+                        yield return new ToolApprovalRequestUIPart
+                        {
+                            ToolCallId = fr.CallId,
+                            ApprovalId = fr.CallId
+                        };
 
                     if (providerExecuted
                         && IsDownloadFileToolOutput(toolCallPart.ToolName, providerMetadata, authorName)
