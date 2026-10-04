@@ -14,11 +14,6 @@ using Microsoft.Identity.Web;
 var builder = WebApplication.CreateBuilder(args);
 var appConfig = builder.Configuration.Get<Config>();
 
-if (builder.Environment.IsDevelopment())
-    ProviderBackendCapture.ConfigureDevelopmentDefaults(builder.Environment.ContentRootPath);
-else
-    ProviderBackendCapture.Disable();
-
 builder.Services.Configure<Config>(builder.Configuration);
 
 var basePath = Path.Combine(AppContext.BaseDirectory, "Agents");

@@ -67,7 +67,6 @@ public partial class AgentChatClient
             EnsureHeaders();
             var response = await http.GetResponses(
                 request,
-                capture: ResolveBackendCaptureRequest(),
                 providerHeaders: agent.Model.ProviderHeaders,
                 ct: cancellationToken);
 

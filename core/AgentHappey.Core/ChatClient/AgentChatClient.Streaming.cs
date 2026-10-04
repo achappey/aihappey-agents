@@ -23,7 +23,6 @@ public partial class AgentChatClient
 
         var request = BuildResponseRequest(replay, options);
         request.Stream = true;
-        var capture = ResolveBackendCaptureRequest();
 
         var state = new StreamingResponseState(
             GetStreamingModelId(),
@@ -32,7 +31,6 @@ public partial class AgentChatClient
 
         await foreach (var part in http.GetResponsesUpdates(
             request,
-            capture: capture,
             providerHeaders: agent.Model.ProviderHeaders,
             ct: cancellationToken).WithCancellation(cancellationToken))
         {

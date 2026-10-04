@@ -34,10 +34,8 @@ public partial class AgentChatClient(
         EnsureHeaders();
         var replay = await RestoreInputRequiredAsync(messages, cancellationToken);
         var request = BuildResponseRequest(replay, options);
-        var capture = ResolveBackendCaptureRequest();
         var response = await http.GetResponses(
             request,
-            capture: capture,
             providerHeaders: agent.Model.ProviderHeaders,
             ct: cancellationToken);
 
