@@ -2,7 +2,6 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Net.Http.Headers;
-using AIHappey.Abstractions.Http;
 using AIHappey.Responses.Streaming;
 using AIHappey.Responses;
 
@@ -21,7 +20,6 @@ public static class HttpExtensions
         ResponseRequest options,
         string relativeUrl = "v1/responses",
         JsonElement? extraRootProperties = null,
-        ProviderBackendCaptureRequest? capture = null,
         IReadOnlyDictionary<string, string>? providerHeaders = null,
         CancellationToken ct = default)
     {
@@ -39,7 +37,6 @@ public static class HttpExtensions
         await ThrowIfNotSuccess(resp, ct);
 
         var body = await resp.Content.ReadAsStringAsync(ct);
-        await ProviderBackendCapture.CaptureJsonAsync("responses", resp, body, capture, ct);
 
         var result = JsonSerializer.Deserialize<ResponseResult>(body, ResponseJson.Default);
 
@@ -58,7 +55,6 @@ public static class HttpExtensions
         ResponseRequest options,
         string relativeUrl = "v1/responses",
         JsonElement? extraRootProperties = null,
-        ProviderBackendCaptureRequest? capture = null,
         IReadOnlyDictionary<string, string>? providerHeaders = null,
         [EnumeratorCancellation] CancellationToken ct = default
 )
@@ -81,9 +77,8 @@ public static class HttpExtensions
 
         await using var stream = await resp.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(stream);
-        await using var captureSink = ProviderBackendCapture.BeginStreamCapture("responses", resp, capture);
 
-        await foreach (var evt in ReadResponseSseEventsAsync(reader, captureSink, ct))
+        await foreach (var evt in ReadResponseSseEventsAsync(reader, ct))
             yield return evt;
     }
 
@@ -112,7 +107,6 @@ public static class HttpExtensions
 
     private static async IAsyncEnumerable<ResponseStreamPart> ReadResponseSseEventsAsync(
         StreamReader reader,
-        ProviderBackendCaptureSink? captureSink,
         [EnumeratorCancellation] CancellationToken ct)
     {
         var dataBuilder = new StringBuilder();
@@ -121,9 +115,6 @@ public static class HttpExtensions
         while (!ct.IsCancellationRequested &&
                (line = await reader.ReadLineAsync(ct)) != null)
         {
-            if (captureSink is not null)
-                await captureSink.WriteLineAsync(line, ct);
-
             if (line.Length == 0)
             {
                 if (!TryTakeSseDataEvent(dataBuilder, out var data))

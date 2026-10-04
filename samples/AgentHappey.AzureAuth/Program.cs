@@ -8,7 +8,6 @@ using AgentHappey.Core;
 using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.MCP;
 using AgentHappey.Core.Responses;
-using AIHappey.Abstractions.Http;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Identity.Web;
 

@@ -1,7 +1,6 @@
 using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
-using AIHappey.Abstractions.Http;
 using AIHappey.Responses;
 using AgentHappey.Common.Extensions;
 using Microsoft.Extensions.AI;
@@ -101,55 +100,6 @@ public partial class AgentChatClient
             };
     }
 
-    private ProviderBackendCaptureRequest? ResolveBackendCaptureRequest()
-    {
-        if (agent.Model.ProviderMetadata is not { Count: > 0 } providerMetadata)
-            return null;
-
-        return TryGetBackendCaptureRequest(providerMetadata, "capture")
-            ?? TryGetBackendCaptureRequest(providerMetadata, "backend_capture")
-            ?? TryGetNestedBackendCaptureRequest(providerMetadata, GetProviderKey(), "capture")
-            ?? TryGetNestedBackendCaptureRequest(providerMetadata, GetProviderKey(), "backend_capture");
-    }
-
-    private static ProviderBackendCaptureRequest? TryGetNestedBackendCaptureRequest(
-        Dictionary<string, object> providerMetadata,
-        string providerKey,
-        string optionName)
-    {
-        if (!providerMetadata.TryGetValue(providerKey, out var nestedMetadata) || nestedMetadata is null)
-            return null;
-
-        try
-        {
-            var json = ToJsonElement(nestedMetadata);
-            if (json.ValueKind != JsonValueKind.Object || !json.TryGetProperty(optionName, out var option))
-                return null;
-
-            return JsonSerializer.Deserialize<ProviderBackendCaptureRequest>(option.GetRawText(), JsonSerializerOptions.Web);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static ProviderBackendCaptureRequest? TryGetBackendCaptureRequest(
-        Dictionary<string, object> providerMetadata,
-        string optionName)
-    {
-        if (!providerMetadata.TryGetValue(optionName, out var option) || option is null)
-            return null;
-
-        try
-        {
-            return JsonSerializer.Deserialize<ProviderBackendCaptureRequest>(ToJsonElement(option).GetRawText(), JsonSerializerOptions.Web);
-        }
-        catch
-        {
-            return null;
-        }
-    }
 
     private static JsonElement ToJsonElement(object value)
         => value is JsonElement element
