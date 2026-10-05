@@ -10,10 +10,12 @@ namespace AgentHappey.Core.MCP;
 
 public static class ServiceExtensions
 {
-   public static void AddMcpMappings(this WebApplication app, bool withAuthentication = false)
+   public static void AddMcpMappings(this WebApplication app, bool withAuthentication = false, bool portableOnly = false)
    {
       foreach (var server in ModelContextServers.Servers)
       {
+         if (portableOnly && server.Value)
+            continue;
          var endpoint = app.MapMcp($"/{server.Key}");
 
          if (withAuthentication)
@@ -138,7 +140,7 @@ public static class ServiceExtensions
       return string.Join(".", parts);
    }
 
-   public static void AddMcpRegistry(this WebApplication app, McpConfig mcpConfig, bool withAuthentication = false)
+   public static void AddMcpRegistry(this WebApplication app, McpConfig mcpConfig, bool withAuthentication = false, bool portableOnly = false)
    {
       app.MapGet("/v0.1/servers", (HttpContext context) =>
       {
@@ -184,6 +186,8 @@ public static class ServiceExtensions
 
          foreach (var server in ModelContextServers.Servers)
          {
+            if (portableOnly && server.Value)
+               continue;
             if (!server.Value || withAuthentication)
                servers.Add(ServerEntry(server.Key));
          }

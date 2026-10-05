@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.OpenApi" Version="2.12.0" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\core\AgentHappey.Gateway.HeaderAuth\AgentHappey.Gateway.HeaderAuth.csproj" />
     <ProjectReference Include="..\..\core\AgentHappey.Common\AgentHappey.Common.csproj" />
     <ProjectReference Include="..\..\core\AgentHappey.Async\AgentHappey.Async.csproj" />
     <ProjectReference Include="..\..\core\AgentHappey.Core\AgentHappey.Core.csproj" />

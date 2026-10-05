@@ -7,6 +7,7 @@ using AgentHappey.Core;
 
 namespace AgentHappey.HeaderAuth.Controllers;
 
+// Shared protocol endpoint; hosts supply downstream configuration.
 [ApiController]
 [Route("api/chat")]
 public class ChatController(IHttpClientFactory httpClientFactory,

@@ -13,6 +13,7 @@ public sealed class HeaderAuthAsyncResponsesProcessor(
     IHttpClientFactory httpClientFactory,
     IChatRuntimeOrchestrator orchestrator,
     IResponsesNativeMapper responsesMapper,
+    IOptions<HeaderAuthHostOptions> hostOptions,
     IServiceProvider serviceProvider) : IAsyncResponsesProcessor
 {
     private readonly Config config = options.Value;
@@ -38,7 +39,7 @@ public sealed class HeaderAuthAsyncResponsesProcessor(
                 httpClientFactory,
                 agent,
                 message.Context.Headers,
-                serviceProvider.GetMcpTokenAsync,
+                hostOptions.Value.PortableMcpOnly ? null : serviceProvider.GetMcpTokenAsync,
                 config.AgentPluginExtensionNamespace),
             (agentClient, messages) => agentClient.SetHistory(messages),
             cancellationToken);

@@ -17,7 +17,8 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
     [FromServices] IChatRuntimeOrchestrator orchestrator,
     [FromServices] IResponsesNativeMapper responsesMapper,
     [FromServices] IAsyncResponsesService asyncResponses,
-    IServiceProvider serviceProvider) : ControllerBase
+    IOptions<HeaderAuthHostOptions> hostOptions,
+    ForegroundResponsePersistence persistence) : ControllerBase
 {
     private readonly string Endpoint = options.Value.AiConfig.AiEndpoint!;
 
@@ -95,7 +96,10 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
                         cancellationToken);
 
                 await foreach (var part in stream.WithCancellation(cancellationToken))
+                {
+                    await persistence.SaveTerminalAsync(requestDto, part, cancellationToken);
                     await WriteEventAsync(writer, part, cancellationToken);
+                }
 
                 await writer.WriteAsync("data: [DONE]\n\n");
                 await writer.FlushAsync(cancellationToken);
@@ -128,6 +132,7 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
                     providerKey,
                     await orchestrator.RunAgentAsync(context, cancellationToken));
 
+            await persistence.SaveAsync(requestDto, result, cancellationToken);
             return Ok(result);
         }
         catch (OperationCanceledException)
@@ -148,8 +153,14 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
     }
 
     [HttpGet]
-    public IActionResult List()
-        => Ok(new { @object = "list", data = Array.Empty<ResponseResult>() });
+    public async Task<IActionResult> List(CancellationToken cancellationToken)
+        => Ok(new
+        {
+            @object = "list",
+            data = hostOptions.Value.ListStoredResponses
+                ? await asyncResponses.ListAsync(cancellationToken)
+                : Array.Empty<ResponseResult>()
+        });
 
     [HttpGet("{responseId}")]
     public async Task<IActionResult> Get(string responseId, CancellationToken cancellationToken)

@@ -71,7 +71,7 @@ public sealed class AsyncResponsesWorker(
 
             await MarkInProgressAsync(message, cancellationToken);
             var result = await processor.ProcessAsync(message, cancellationToken);
-            await store.SaveAsync(NormalizeBackgroundResult(message, result), cancellationToken, message.Context.UserId);
+            await store.SaveAsync(AsyncResponseLifecycle.NormalizeBackgroundResult(message, result), cancellationToken, message.Context.UserId);
             await DeleteMessageAsync(queueMessage, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -100,7 +100,7 @@ public sealed class AsyncResponsesWorker(
         response.Status = "in_progress";
         response.CompletedAt = null;
         response.Error = null;
-        EnsureBackgroundProperty(response);
+        AsyncResponseLifecycle.EnsureBackgroundProperty(response);
         await store.SaveAsync(response, cancellationToken, message.Context.UserId);
     }
 
@@ -123,7 +123,7 @@ public sealed class AsyncResponsesWorker(
                 Code = "server_error",
                 Message = exception.Message
             };
-            EnsureBackgroundProperty(response);
+            AsyncResponseLifecycle.EnsureBackgroundProperty(response);
 
             await store.SaveAsync(response, cancellationToken, message.Context.UserId);
         }
@@ -131,23 +131,6 @@ public sealed class AsyncResponsesWorker(
         {
             logger.LogError(persistException, "Failed to persist failed background response {ResponseId}.", message.ResponseId);
         }
-    }
-
-    private static ResponseResult NormalizeBackgroundResult(AsyncResponsesQueueMessage message, ResponseResult result)
-    {
-        result.Id = message.ResponseId;
-        result.CreatedAt = message.CreatedAt;
-        result.Status = result.Error is null ? "completed" : "failed";
-        result.CompletedAt ??= DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        result.Model = string.IsNullOrWhiteSpace(result.Model) ? (message.Request.Model ?? "agent") : result.Model;
-        EnsureBackgroundProperty(result);
-        return result;
-    }
-
-    private static void EnsureBackgroundProperty(ResponseResult response)
-    {
-        response.AdditionalProperties ??= new Dictionary<string, JsonElement>();
-        response.AdditionalProperties["background"] = JsonSerializer.SerializeToElement(true, ResponseJson.Default);
     }
 
     private Task DeleteMessageAsync(QueueMessage message, CancellationToken cancellationToken)

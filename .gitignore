@@ -56,3 +56,4 @@ msbuild.log
 msbuild.err
 msbuild.wrn
 captures/
+/artifacts

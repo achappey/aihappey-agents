@@ -31,7 +31,6 @@ public class RuntimeTools
         var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
         var modelCatalog = services.GetRequiredService<IModelCatalog>();
         var aiConfig = services.GetRequiredService<AiConfig>();
-        var tokenAcquisition = services.GetRequiredService<ITokenAcquisition>();
         var client = httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(aiConfig.AiEndpoint);
         var agent = await modelCatalog.ResolveAgentAsync(agentName, cancellationToken)
@@ -40,6 +39,7 @@ public class RuntimeTools
 
         if (context.HttpContext?.User != null && !string.IsNullOrEmpty(aiConfig.AiScopes))
         {
+            var tokenAcquisition = services.GetRequiredService<ITokenAcquisition>();
             string downstreamToken = await tokenAcquisition.GetAccessTokenForUserAsync(
                             scopes: [aiConfig.AiScopes],
                             user: context.HttpContext?.User);
@@ -100,7 +100,6 @@ public class RuntimeTools
         var context = services.GetRequiredService<IHttpContextAccessor>();
         var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
         var aiConfig = services.GetRequiredService<AiConfig>();
-        var tokenAcquisition = services.GetRequiredService<ITokenAcquisition>();
         var client = httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(aiConfig.AiEndpoint);
 
@@ -132,6 +131,7 @@ public class RuntimeTools
 
         if (context.HttpContext?.User != null && !string.IsNullOrEmpty(aiConfig.AiScopes))
         {
+            var tokenAcquisition = services.GetRequiredService<ITokenAcquisition>();
             string downstreamToken = await tokenAcquisition.GetAccessTokenForUserAsync(
                             scopes: [aiConfig.AiScopes],
                             user: context.HttpContext?.User);

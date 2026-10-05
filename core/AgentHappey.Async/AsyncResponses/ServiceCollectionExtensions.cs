@@ -6,6 +6,19 @@ namespace AgentHappey.AsyncResponses;
 
 public static class ServiceCollectionExtensions
 {
+    public static IServiceCollection AddLocalAgentResponses<TProcessor>(
+        this IServiceCollection services, IConfiguration configuration)
+        where TProcessor : class, IAsyncResponsesProcessor
+    {
+        services.Configure<LocalResponseStorageOptions>(configuration.GetSection("LocalResponses"));
+        services.AddSingleton<IAsyncResponseStore, LocalAsyncResponseStore>();
+        services.AddSingleton<LocalAsyncResponsesQueue>();
+        services.AddSingleton<IAsyncResponsesService, LocalAsyncResponsesService>();
+        services.AddSingleton<IAsyncResponsesProcessor, TProcessor>();
+        services.AddHostedService<LocalAsyncResponsesWorker>();
+        return services;
+    }
+
     public static IServiceCollection AddAsyncAgentResponses<TProcessor>(
         this IServiceCollection services,
         IConfiguration configuration)

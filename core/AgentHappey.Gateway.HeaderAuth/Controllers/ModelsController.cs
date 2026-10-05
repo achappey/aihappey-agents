@@ -7,6 +7,7 @@ namespace AgentHappey.HeaderAuth.Controllers;
 [Route("v1/models")]
 public class ModelsController(IModelCatalog modelCatalog) : ControllerBase
 {
+    // Shared by the hosted HeaderAuth deployment and the standalone host.
     [HttpGet]
     public async Task<ActionResult<ModelListResponse>> Get(CancellationToken cancellationToken)
     {

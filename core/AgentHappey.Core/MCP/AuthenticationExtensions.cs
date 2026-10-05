@@ -17,7 +17,7 @@ public static class AuthenticationExtensions
       var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
       var mcpConfig = services.GetRequiredService<McpConfig>();
       var conversationsConfig = services.GetService<ConversationsConfig>();
-      var azureAd = services.GetRequiredService<AzureAd>();
+      var azureAd = services.GetService<AzureAd>();
 
       if (azureAd is null || context.HttpContext is null || mcpConfig is null)
          return null;
