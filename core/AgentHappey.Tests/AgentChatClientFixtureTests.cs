@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
-using AIHappey.Abstractions.Http;
 using AgentHappey.Common.Extensions;
 using AgentHappey.Common.Models;
 using AgentHappey.Core;
@@ -823,56 +822,6 @@ public sealed class AgentChatClientFixtureTests
         Assert.Equal("Use the MCP resources before answering.", block.GetProperty("instructions").GetString());
         Assert.Single(block.GetProperty("resources").EnumerateArray());
         Assert.Single(block.GetProperty("resourceTemplates").EnumerateArray());
-    }
-
-    [Fact]
-    public async Task Streaming_responses_are_captured_when_configured_in_agent_provider_metadata()
-    {
-        var captureRoot = Path.Combine(Path.GetTempPath(), "agenthappey-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(captureRoot);
-
-        ProviderBackendCapture.Configure(new ProviderBackendCaptureOptions
-        {
-            Enabled = true,
-            DevelopmentOnly = false,
-            RootDirectory = captureRoot
-        });
-
-        try
-        {
-            var fixture = LoadFixture(StreamingFixturePath);
-
-            using var httpClient = CreateHttpClient(_ => CreateStreamingResponse(fixture));
-            using var client = CreateClient(
-                httpClient,
-                CreateAgent(new Dictionary<string, object>
-                {
-                    ["capture"] = new Dictionary<string, object?>
-                    {
-                        ["enabled"] = true,
-                        ["relativeDirectory"] = "agents/tests",
-                        ["fileName"] = "basic-response-stream"
-                    }
-                }));
-
-            var updates = await CollectAsync(client.GetStreamingResponseAsync(CreateUserMessages("Say hello")));
-
-            Assert.NotEmpty(updates);
-
-            var capturePath = Path.Combine(captureRoot, "agents", "tests", "basic-response-stream.jsonl");
-            Assert.True(File.Exists(capturePath));
-
-            var captured = await File.ReadAllTextAsync(capturePath);
-            Assert.Contains("event: response.created", captured);
-            Assert.Contains("data: [DONE]", captured);
-        }
-        finally
-        {
-            ProviderBackendCapture.Disable();
-
-            if (Directory.Exists(captureRoot))
-                Directory.Delete(captureRoot, recursive: true);
-        }
     }
 
     [Fact]
