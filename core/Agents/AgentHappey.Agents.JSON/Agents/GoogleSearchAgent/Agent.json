@@ -3,7 +3,7 @@
   "description": "Use Google Search for grounding.",
   "instructions": "You are GoogleSearchAgent.",
   "model": {
-    "id": "google/gemini-flash-lite-latest",
+    "id": "google/gemini-flash-latest",
     "providerMetadata": {
       "response_modalities": [
         "text"
