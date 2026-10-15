@@ -86,6 +86,8 @@ internal sealed class ClientToolDeclaration : AIFunction
                 {
                     RawRepresentation = call.RawRepresentation,
                     AdditionalProperties = call.AdditionalProperties,
+                    Annotations = call.Annotations,
+                    Exception = call.Exception,
                     InformationalOnly = false
                 });
             }
