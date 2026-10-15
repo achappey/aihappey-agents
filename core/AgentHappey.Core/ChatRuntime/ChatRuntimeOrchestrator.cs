@@ -167,6 +167,7 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
             configureAgentClient?.Invoke(agentClient, messages);
 
             var tools = await agentClient.ConnectMcp(cancellationToken);
+            ClientToolDeclaration.AddTo(tools, chatRequest.Tools);
             var instructions = agentClient.GetComposedInstructions();
 
             var chatAgent = new ChatClientAgent(
@@ -551,7 +552,8 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
                 .ToList(),
             chatRequest.Agents?.ToList(),
             chatRequest.WorkflowType,
-            chatRequest.WorkflowMetadata);
+            chatRequest.WorkflowMetadata,
+            chatRequest.Tools);
 
     private static async Task WriteConnectionPartsAsync(
         HttpResponse response,

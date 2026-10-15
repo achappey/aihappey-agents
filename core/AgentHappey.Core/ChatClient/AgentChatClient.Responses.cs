@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using AIHappey.Responses;
 using AgentHappey.Common.Extensions;
+using AgentHappey.Core.ChatRuntime;
 using Microsoft.Extensions.AI;
 using System.Text.RegularExpressions;
 
@@ -116,6 +117,12 @@ public partial class AgentChatClient
 
         foreach (var declaration in tools.OfType<AIFunctionDeclaration>())
         {
+            if (declaration is ClientToolDeclaration)
+            {
+                definitions.Add(ToResponseToolDefinition(declaration));
+                continue;
+            }
+
             if (string.Equals(declaration.Name, ClientToolSearchName, StringComparison.Ordinal)
                 && !HasAgentTool(ToolSearchType))
             {

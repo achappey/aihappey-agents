@@ -32,7 +32,33 @@ public static class ResponsesRuntimeMapper
             models,
             agents,
             workflowType,
-            workflowMetadata);
+            workflowMetadata,
+            ReadClientTools(request));
+    }
+
+    private static IReadOnlyList<AIHappey.Vercel.Models.Tool>? ReadClientTools(ResponseRequest request)
+    {
+        var tools = new List<AIHappey.Vercel.Models.Tool>();
+        foreach (var definition in request.Tools ?? [])
+        {
+            if (!string.Equals(definition.Type, "function", StringComparison.Ordinal))
+                continue;
+
+            var json = JsonSerializer.SerializeToElement(definition, ResponseJson.Default);
+            if (!json.TryGetProperty("name", out var name) || string.IsNullOrWhiteSpace(name.GetString()))
+                throw new ArgumentException("Client function tools must have a non-empty name.");
+
+            tools.Add(new AIHappey.Vercel.Models.Tool
+            {
+                Name = name.GetString()!,
+                Description = json.TryGetProperty("description", out var description) ? description.GetString() : null,
+                InputSchema = json.TryGetProperty("parameters", out var schema)
+                    ? JsonSerializer.Deserialize<AIHappey.Vercel.Models.ToolSchema>(schema, JsonSerializerOptions.Web)
+                    : null
+            });
+        }
+
+        return tools.Count == 0 ? null : tools;
     }
 
     private static IEnumerable<ChatMessage> ToChatMessages(AIInput? input)

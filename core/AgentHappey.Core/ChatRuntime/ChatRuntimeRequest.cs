@@ -9,4 +9,5 @@ public sealed record ChatRuntimeRequest(
     IReadOnlyList<string>? Models,
     IReadOnlyList<Agent>? Agents,
     string WorkflowType = "sequential",
-    WorkflowMetadata? WorkflowMetadata = null);
+    WorkflowMetadata? WorkflowMetadata = null,
+    IReadOnlyList<AIHappey.Vercel.Models.Tool>? Tools = null);

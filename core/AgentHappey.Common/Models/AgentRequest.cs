@@ -21,6 +21,8 @@ public class AgentRequest
     public List<UIMessage> Messages { get; set; } = null!;
 
     public WorkflowMetadata? WorkflowMetadata { get; set; }
+
+    public IReadOnlyList<Tool>? Tools { get; set; }
 }
 
 public class WorkflowMetadata

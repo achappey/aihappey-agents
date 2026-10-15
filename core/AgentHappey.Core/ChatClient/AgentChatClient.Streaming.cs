@@ -4,6 +4,7 @@ using System.Text.Json;
 using AIHappey.Responses;
 using AIHappey.Responses.Streaming;
 using AgentHappey.Common.Extensions;
+using AgentHappey.Core.ChatRuntime;
 using Microsoft.Extensions.AI;
 using System.Net.Mime;
 
@@ -35,7 +36,10 @@ public partial class AgentChatClient
             ct: cancellationToken).WithCancellation(cancellationToken))
         {
             foreach (var update in ToStreamingChatResponseUpdates(part, state))
+            {
+                ClientToolDeclaration.MarkCalls(update.Contents, options);
                 yield return update;
+            }
         }
     }
 
