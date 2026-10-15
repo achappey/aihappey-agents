@@ -167,6 +167,7 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
             configureAgentClient?.Invoke(agentClient, messages);
 
             var tools = await agentClient.ConnectMcp(cancellationToken);
+            ClientToolDeclaration.AddTo(tools, chatRequest.Tools);
             var instructions = agentClient.GetComposedInstructions();
 
             var chatAgent = new ChatClientAgent(
@@ -175,13 +176,16 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
                 name: agent.Name,
                 tools: tools,
                 description: agent.Description);
-            agents.Add(chatAgent.AsBuilder().Use(async (_, invocation, next, ct) =>
+            var runtimeAgent = chatAgent.AsBuilder().Use(async (_, invocation, next, ct) =>
             {
                 var result = await next(invocation, ct);
-                if (requestToolApproval || result is McpToolInputRequiredException)
+                if (requestToolApproval || result is McpToolInputRequiredException or ClientToolDeclaration.PendingResult)
                     invocation.Terminate = true;
                 return result;
-            }).Build());
+            }).Build();
+            agents.Add(chatRequest.Tools is { Count: > 0 }
+                ? ClientToolDeclaration.WrapAgent(runtimeAgent)
+                : runtimeAgent);
 
             // Constructor tools are augmented by run-option tools in the Agents SDK.
             // Register each MCP declaration only once; the middleware stays on the agent.
@@ -551,7 +555,8 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
                 .ToList(),
             chatRequest.Agents?.ToList(),
             chatRequest.WorkflowType,
-            chatRequest.WorkflowMetadata);
+            chatRequest.WorkflowMetadata,
+            chatRequest.Tools);
 
     private static async Task WriteConnectionPartsAsync(
         HttpResponse response,

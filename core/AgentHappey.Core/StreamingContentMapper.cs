@@ -1,6 +1,7 @@
 
 using System.Runtime.CompilerServices;
 using AgentHappey.Core.ChatClient;
+using AgentHappey.Core.ChatRuntime;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Agents.AI;
@@ -361,6 +362,20 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                     if (string.IsNullOrEmpty(fc.CallId)) yield break;
 
                     var call = CreateToolCallPart(fc);
+                    if (fc.AdditionalProperties?.TryGetValue(ClientToolDeclaration.OwnershipKey, out var clientOwned) == true
+                        && clientOwned is true)
+                    {
+                        yield return new ToolCallPart
+                        {
+                            ToolCallId = call.ToolCallId,
+                            ToolName = call.ToolName,
+                            Title = call.Title,
+                            Input = call.Input,
+                            ProviderExecuted = false,
+                            ProviderMetadata = ScopeToolProviderMetadata(call.ProviderMetadata, authorName)
+                        };
+                        break;
+                    }
                     if (call.ProviderExecuted == true && !string.IsNullOrWhiteSpace(authorName))
                         call = new ToolCallPart
                         {

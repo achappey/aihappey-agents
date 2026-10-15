@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using AIHappey.Responses;
 using AgentHappey.Common.Extensions;
+using AgentHappey.Core.ChatRuntime;
 using Microsoft.Extensions.AI;
 using System.Text.RegularExpressions;
 
@@ -19,7 +20,7 @@ public partial class AgentChatClient
         => new()
         {
             Model = agent.Model.Id,
-            Input = new ResponseInput(ToResponseInputItems(messages)),
+            Input = new ResponseInput(ToResponseReplayInputItems(messages, options)),
             Tools = BuildResponseToolDefinitions(options?.Tools),
             Text = agent.GetResponsesText(),
             Metadata = BuildResponsesProviderMetadata(),
@@ -29,6 +30,21 @@ public partial class AgentChatClient
             ParallelToolCalls = HasProviderOption("parallel_tool_calls") ? null : true,
             Temperature = agent.Model.Options?.Temperature ?? 1
         };
+
+    private List<ResponseInputItem> ToResponseReplayInputItems(IEnumerable<ChatMessage> messages, ChatOptions? options)
+    {
+        var items = ToResponseInputItems(messages);
+        var clientNames = options?.Tools?.Where(ClientToolDeclaration.IsClientTool)
+            .Select(tool => tool.Name).ToHashSet(StringComparer.Ordinal);
+        if (clientNames is not { Count: > 0 })
+            return items;
+
+        var resolved = items.OfType<ResponseFunctionCallOutputItem>()
+            .Select(output => output.CallId).ToHashSet(StringComparer.Ordinal);
+        return items.Where(item => item is not ResponseFunctionCallItem call
+            || !clientNames.Contains(call.Name)
+            || resolved.Contains(call.CallId)).ToList();
+    }
 
     private string GetProviderKey()
         => agent.Model.Id.Split('/')[0];
@@ -116,6 +132,12 @@ public partial class AgentChatClient
 
         foreach (var declaration in tools.OfType<AIFunctionDeclaration>())
         {
+            if (ClientToolDeclaration.IsClientTool(declaration))
+            {
+                definitions.Add(ToResponseToolDefinition(declaration));
+                continue;
+            }
+
             if (string.Equals(declaration.Name, ClientToolSearchName, StringComparison.Ordinal)
                 && !HasAgentTool(ToolSearchType))
             {

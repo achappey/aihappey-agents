@@ -29,6 +29,31 @@ curl "https://agents.aihappey.net/v1/responses" \
 
 See the [API documentation](https://docs.aihappey.com/agents) for endpoints, authentication, request schemas and examples.
 
+## Per-run client tools
+
+Supply additional function definitions in a Responses request's `tools` array
+using the standard `type: "function"`, `name`, `description`, and `parameters`
+fields. UI chat requests accept `tools` with `name`, `description`, `inputSchema`,
+and optional `outputSchema`. These definitions apply only to that request; they
+do not change the stored agent.
+
+Configured tools still execute on the backend. Client tools are declarations
+only: their function calls are returned for the caller to execute, including
+when a model requests both kinds of tool in the same turn. UI streams mark
+client calls with `providerExecuted: false` and do not request approval for them;
+the existing server-tool approval behavior is unchanged.
+
+To continue, resend the tool definitions and conversation history, including
+the returned calls, backend results, and client results. Responses uses
+`function_call_output` items correlated by `call_id`; UI chat uses its existing
+tool output parts. No server-side session or new persistent state is required.
+Unanswered client calls are omitted from inference replay until their results
+are supplied, so abandoning a call does not prevent later conversation turns.
+Client tool names must be unique (case-insensitive) and must not collide with
+configured/backend tools or reserved runtime names; collisions reject the run
+rather than replacing a tool or changing its execution owner. Client tools do
+not add MCP connections, resources, prompts, or skills.
+
 ## Background response storage
 
 Azure background responses store the request and execution context in the existing

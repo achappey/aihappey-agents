@@ -253,9 +253,8 @@ public static class VercelHelpers
                                 JsonSerializer.Serialize(tc.Input)
                             ) ?? [];
 
-                            var pairedOutput = partIndex + 1 < parts.Count && parts[partIndex + 1] is ToolOutputAvailablePart availableOutput
-                                && string.Equals(availableOutput.ToolCallId, tc.ToolCallId, StringComparison.Ordinal)
-                                ? availableOutput : null;
+                            var outputPart = parts.FirstOrDefault(candidate => IsToolOutputPart(candidate, tc.ToolCallId));
+                            var pairedOutput = outputPart as ToolOutputAvailablePart;
                             var continuationName = ResolveContinuationName(tc.ToolName, pairedOutput?.Output,
                                 tc.ProviderMetadata, pairedOutput?.ProviderMetadata);
                             if (tc.ProviderExecuted == true && continuationName is not null
@@ -273,7 +272,7 @@ public static class VercelHelpers
                                 }
                             });
 
-                            if (partIndex + 1 < parts.Count && IsToolOutputPart(parts[partIndex + 1], tc.ToolCallId))
+                            if (outputPart is not null)
                             {
                                 FlushAssistantContents();
 
@@ -281,17 +280,16 @@ public static class VercelHelpers
                                     ChatRole.Tool,
                                     [new FunctionResultContent(
                                         tc.ToolCallId,
-                                        parts[partIndex + 1] is ToolOutputAvailablePart available
+                                        outputPart is ToolOutputAvailablePart available
                                             ? new Dictionary<string, object?>(CreateToolOutputEnvelope(available))
                                             {
                                                 ["agent_name"] = owner
                                             }
-                                            : GetToolOutput(parts[partIndex + 1]) ?? new { })])
+                                            : GetToolOutput(outputPart) ?? new { })])
                                 {
                                     MessageId = tc.ToolCallId
                                 });
 
-                                partIndex++;
                             }
 
                             break;

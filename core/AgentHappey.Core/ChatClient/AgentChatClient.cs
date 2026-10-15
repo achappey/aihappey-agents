@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using AgentHappey.Common.Models;
+using AgentHappey.Core.ChatRuntime;
 
 namespace AgentHappey.Core.ChatClient;
 
@@ -39,7 +40,9 @@ public partial class AgentChatClient(
             providerHeaders: agent.Model.ProviderHeaders,
             ct: cancellationToken);
 
-        return ToChatResponse(response);
+        var result = ToChatResponse(response);
+        ClientToolDeclaration.MarkCalls(result.Messages.SelectMany(message => message.Contents), options);
+        return result;
     }
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
