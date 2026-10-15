@@ -27,6 +27,7 @@ public sealed class BlobModelSource(BlobAgentsConfig? config) : IModelSource
                 OwnedBy = "agenthappey",
                 Agent = entry.Agent,
                 Description = entry.Agent.Description,
+                Tags = entry.Agent.Tags,
                 Created = entry.Created
             });
         }

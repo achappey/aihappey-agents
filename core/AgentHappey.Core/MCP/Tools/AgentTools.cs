@@ -40,6 +40,7 @@ public class AgentTools
                             OwnedBy = model.OwnedBy,
                             Name = model.Name,
                             Description = model.Description,
+                            Tags = model.Tags,
                             Type = model.Type
                         })
                         .ToList()

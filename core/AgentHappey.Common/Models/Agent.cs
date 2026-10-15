@@ -17,6 +17,10 @@ public class Agent
     [JsonPropertyName("description")]
     public string Description { get; set; } = null!;
 
+    [JsonPropertyName("tags")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? Tags { get; set; }
+
     [JsonPropertyName("instructions")]
     public string Instructions { get; set; } = null!;
 

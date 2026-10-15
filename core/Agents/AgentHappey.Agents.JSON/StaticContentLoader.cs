@@ -37,6 +37,7 @@ public static class StaticContentLoader
                 OwnedBy = "agenthappey",
                 Agent = agentObj,
                 Description = agentObj.Description,
+                Tags = agentObj.Tags,
                 Created = File.GetLastWriteTimeUtc(file).ToUnixTimeSecondsSafe()
             };
         }
