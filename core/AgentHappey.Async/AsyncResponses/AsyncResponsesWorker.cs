@@ -1,6 +1,6 @@
-using System.Text.Json;
 using AgentHappey.Core;
 using AIHappey.Responses;
+using Azure;
 using Azure.Storage.Queues;
 using Azure.Storage.Queues.Models;
 using Microsoft.Extensions.Hosting;
@@ -9,19 +9,41 @@ using Microsoft.Extensions.Options;
 
 namespace AgentHappey.AsyncResponses;
 
-public sealed class AsyncResponsesWorker(
-    IOptions<AsyncAgentsConfig> options,
-    IAsyncResponsesProcessor processor,
-    IAsyncResponseStore store,
-    ILogger<AsyncResponsesWorker> logger) : BackgroundService
+public sealed class AsyncResponsesWorker : BackgroundService
 {
     private static readonly TimeSpan EmptyQueueDelay = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan ErrorDelay = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan VisibilityTimeout = TimeSpan.FromMinutes(10);
     private const int MaxAttempts = 5;
 
-    private readonly AsyncAgentsConfig config = options.Value;
+    private readonly AsyncAgentsConfig config;
+    private readonly IAsyncResponsesProcessor processor;
+    private readonly IAsyncResponseStore store;
+    private readonly ILogger<AsyncResponsesWorker> logger;
+    private readonly AzureAsyncResponsePayloadStore? payloads;
     private QueueClient? queue;
+
+    public AsyncResponsesWorker(IOptions<AsyncAgentsConfig> options, IAsyncResponsesProcessor processor,
+        IAsyncResponseStore store, ILogger<AsyncResponsesWorker> logger)
+    {
+        config = options.Value;
+        this.processor = processor;
+        this.store = store;
+        this.logger = logger;
+        if (!string.IsNullOrWhiteSpace(config.ConnectionString))
+            payloads = new AzureAsyncResponsePayloadStore(AzureAsyncResponseStore.CreateContainerClient(config));
+    }
+
+    internal AsyncResponsesWorker(QueueClient queue, AzureAsyncResponsePayloadStore payloads,
+        IAsyncResponsesProcessor processor, IAsyncResponseStore store, ILogger<AsyncResponsesWorker> logger)
+    {
+        config = new AsyncAgentsConfig();
+        this.queue = queue;
+        this.payloads = payloads;
+        this.processor = processor;
+        this.store = store;
+        this.logger = logger;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -60,34 +82,48 @@ public sealed class AsyncResponsesWorker(
         }
     }
 
-    private async Task ProcessMessageAsync(QueueMessage queueMessage, CancellationToken cancellationToken)
+    internal async Task ProcessMessageAsync(QueueMessage queueMessage, CancellationToken cancellationToken)
     {
         AsyncResponsesQueueMessage? message = null;
 
         try
         {
-            message = JsonSerializer.Deserialize<AsyncResponsesQueueMessage>(queueMessage.MessageText, ResponseJson.Default)
-                ?? throw new InvalidOperationException("Async response queue message was empty.");
+            message = await payloads!.ReadAsync(queueMessage.MessageText, cancellationToken);
 
-            await MarkInProgressAsync(message, cancellationToken);
-            var result = await processor.ProcessAsync(message, cancellationToken);
-            await store.SaveAsync(AsyncResponseLifecycle.NormalizeBackgroundResult(message, result), cancellationToken, message.Context.UserId);
-            await DeleteMessageAsync(queueMessage, cancellationToken);
+            var existing = await store.GetAsync(message.ResponseId, cancellationToken, message.Context.UserId);
+            if (existing?.Status is not ("completed" or "failed"))
+            {
+                await MarkInProgressAsync(message, cancellationToken);
+                var result = await processor.ProcessAsync(message, cancellationToken);
+                await store.SaveAsync(AsyncResponseLifecycle.NormalizeBackgroundResult(message, result), cancellationToken, message.Context.UserId);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
+        catch (Exception ex) when (message is null &&
+            (ex is IOException or HttpRequestException or OperationCanceledException
+                || ex is RequestFailedException { Status: not 404 }))
+        {
+            // A storage outage is not a poison message. The envelope is needed to
+            // identify the scoped response and persist a terminal result.
+            logger.LogWarning("Background response payload could not be read for queue message {MessageId}; retaining for retry.",
+                queueMessage.MessageId);
+            return;
+        }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Background agent response failed for queue message {MessageId}.", queueMessage.MessageId);
+            logger.LogError("Background agent response failed for queue message {MessageId}.", queueMessage.MessageId);
 
-            if (message is not null)
-                await TryPersistFailureAsync(message, ex, cancellationToken);
+            if (message is not null && !await TryPersistFailureAsync(message, ex, cancellationToken))
+                return;
 
-            if (queueMessage.DequeueCount >= MaxAttempts || message is not null)
-                await DeleteMessageAsync(queueMessage, cancellationToken);
+            if (queueMessage.DequeueCount < MaxAttempts && message is null)
+                return;
         }
+
+        await DeleteMessageAsync(queueMessage, cancellationToken);
     }
 
     private async Task MarkInProgressAsync(AsyncResponsesQueueMessage message, CancellationToken cancellationToken)
@@ -104,7 +140,7 @@ public sealed class AsyncResponsesWorker(
         await store.SaveAsync(response, cancellationToken, message.Context.UserId);
     }
 
-    private async Task TryPersistFailureAsync(
+    private async Task<bool> TryPersistFailureAsync(
         AsyncResponsesQueueMessage message,
         Exception exception,
         CancellationToken cancellationToken)
@@ -126,13 +162,22 @@ public sealed class AsyncResponsesWorker(
             AsyncResponseLifecycle.EnsureBackgroundProperty(response);
 
             await store.SaveAsync(response, cancellationToken, message.Context.UserId);
+            return true;
         }
-        catch (Exception persistException)
+        catch (Exception)
         {
-            logger.LogError(persistException, "Failed to persist failed background response {ResponseId}.", message.ResponseId);
+            logger.LogError("Failed to persist failed background response {ResponseId}.", message.ResponseId);
+            return false;
         }
     }
 
-    private Task DeleteMessageAsync(QueueMessage message, CancellationToken cancellationToken)
-        => queue?.DeleteMessageAsync(message.MessageId, message.PopReceipt, cancellationToken) ?? Task.CompletedTask;
+    private async Task DeleteMessageAsync(QueueMessage message, CancellationToken cancellationToken)
+    {
+        // A terminal response is durable before cleanup. Delete the payload first
+        // so a failed cleanup can be retried while the queue entry still exists.
+        // Redelivery after payload deletion follows the missing-payload retry path.
+        await payloads!.DeleteAsync(message.MessageText, cancellationToken);
+        if (queue is not null)
+            await queue.DeleteMessageAsync(message.MessageId, message.PopReceipt, cancellationToken);
+    }
 }

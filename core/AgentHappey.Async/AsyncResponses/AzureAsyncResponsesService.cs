@@ -1,7 +1,6 @@
-using System.Text;
-using System.Text.Json;
 using AgentHappey.Core;
 using AIHappey.Responses;
+using Azure;
 using Azure.Storage.Queues;
 using Microsoft.Extensions.Options;
 
@@ -9,9 +8,9 @@ namespace AgentHappey.AsyncResponses;
 
 public sealed class AzureAsyncResponsesService : IAsyncResponsesService
 {
-    private const int MaxQueueMessageUtf8Bytes = 60 * 1024;
     private readonly QueueClient queue;
     private readonly IAsyncResponseStore store;
+    private readonly AzureAsyncResponsePayloadStore payloads;
 
     public AzureAsyncResponsesService(IOptions<AsyncAgentsConfig> options, IAsyncResponseStore store)
     {
@@ -24,6 +23,14 @@ public sealed class AzureAsyncResponsesService : IAsyncResponsesService
             config.QueueName ?? "agents-async",
             new QueueClientOptions { MessageEncoding = QueueMessageEncoding.Base64 });
         this.store = store;
+        payloads = new AzureAsyncResponsePayloadStore(AzureAsyncResponseStore.CreateContainerClient(config));
+    }
+
+    internal AzureAsyncResponsesService(QueueClient queue, IAsyncResponseStore store, AzureAsyncResponsePayloadStore payloads)
+    {
+        this.queue = queue;
+        this.store = store;
+        this.payloads = payloads;
     }
 
     public bool IsEnabled => true;
@@ -45,14 +52,32 @@ public sealed class AzureAsyncResponsesService : IAsyncResponsesService
             Context = context
         };
 
-        var json = JsonSerializer.Serialize(message, ResponseJson.Default);
-        var messageSize = Encoding.UTF8.GetByteCount(json);
-        if (messageSize > MaxQueueMessageUtf8Bytes)
-            throw new InvalidOperationException($"Background response queue message is too large ({messageSize} bytes). Reduce request size or externalize large file inputs.");
-
+        var reference = AzureAsyncResponsePayloadStore.CreateReference();
         await queue.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
-        await store.SaveAsync(response, cancellationToken, context.UserId);
-        await queue.SendMessageAsync(json, cancellationToken);
+        try
+        {
+            await payloads.SaveAsync(reference, message, cancellationToken);
+            await store.SaveAsync(response, cancellationToken, context.UserId);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch
+        {
+            await payloads.DeleteAsync(reference, CancellationToken.None);
+            await store.DeleteAsync(response.Id, CancellationToken.None, context.UserId);
+            throw;
+        }
+        // A send can succeed remotely even if the client observes cancellation or a
+        // transport failure. Keep the payload in that case so delivery remains retryable.
+        try
+        {
+            await queue.SendMessageAsync(reference, cancellationToken);
+        }
+        catch (RequestFailedException ex) when (ex.Status is >= 400 and < 500 && ex.Status != 408)
+        {
+            await payloads.DeleteAsync(reference, CancellationToken.None);
+            await store.DeleteAsync(response.Id, CancellationToken.None, context.UserId);
+            throw;
+        }
 
         return response;
     }
