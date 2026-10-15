@@ -28,3 +28,19 @@ curl "https://agents.aihappey.net/v1/responses" \
 ```
 
 See the [API documentation](https://docs.aihappey.com/agents) for endpoints, authentication, request schemas and examples.
+
+## Background response storage
+
+Azure background responses store the request and execution context in the existing
+`AsyncAgents:ResponseContainerName` blob container (default `agents-async-responses`),
+under `requests/`. Queue messages contain only an opaque payload identifier, so
+large documents do not need to fit Azure Queue Storage's Base64-encoded message limit.
+Polling results remain separate under `responses/`; request payloads are not returned
+by response listing or polling.
+
+Workers accept both payload references and older inline queue messages. Deploy the
+updated workers together with the enqueueing runtime; older workers cannot resolve
+the new references. Local runtimes continue using their existing disk-backed queue.
+Payloads are removed after processing, including agent failures, and retained during
+host cancellation or retryable reads. An ambiguous enqueue transport failure retains
+the payload because the queue may have accepted the message.

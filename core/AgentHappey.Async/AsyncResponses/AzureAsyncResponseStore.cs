@@ -18,12 +18,15 @@ public sealed class AzureAsyncResponseStore : IAsyncResponseStore
         if (string.IsNullOrWhiteSpace(config.ConnectionString))
             throw new InvalidOperationException("AsyncAgents:ConnectionString is required.");
 
-        container = new BlobContainerClient(
+        container = CreateContainerClient(config);
+    }
+
+    internal static BlobContainerClient CreateContainerClient(AsyncAgentsConfig config)
+        => new(
             config.ConnectionString,
             string.IsNullOrWhiteSpace(config.ResponseContainerName)
                 ? "agents-async-responses"
                 : config.ResponseContainerName.Trim().ToLowerInvariant());
-    }
 
     public async Task SaveAsync(ResponseResult response, CancellationToken cancellationToken = default, string? userId = null)
     {
