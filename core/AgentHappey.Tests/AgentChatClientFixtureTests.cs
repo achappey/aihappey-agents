@@ -20,7 +20,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace AgentHappey.Tests;
 
-public sealed class AgentChatClientFixtureTests
+public sealed partial class AgentChatClientFixtureTests
 {
     private const string StreamingFixturePath = "Fixtures/responses/raw/basic-response-stream.jsonl";
     private const string StreamingGatewayFixturePath = "Fixtures/responses/raw/basic-response-stream-with-gateway.jsonl";

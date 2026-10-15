@@ -1,13 +1,17 @@
 using System.Text.Json;
+using System.Runtime.CompilerServices;
 using AgentHappey.Common.Extensions;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Tool = AIHappey.Vercel.Models.Tool;
 
 namespace AgentHappey.Core.ChatRuntime;
 
-internal sealed class ClientToolDeclaration : AIFunctionDeclaration
+internal sealed class ClientToolDeclaration : AIFunction
 {
     internal const string OwnershipKey = "agenthappey_client_tool";
+    private static readonly IReadOnlyDictionary<string, object?> Ownership =
+        new Dictionary<string, object?> { [OwnershipKey] = true };
 
     private readonly string name;
     private readonly string description;
@@ -30,6 +34,66 @@ internal sealed class ClientToolDeclaration : AIFunctionDeclaration
     public override string Description => description;
     public override JsonElement JsonSchema => schema;
     public override JsonElement? ReturnJsonSchema => returnSchema;
+    public override IReadOnlyDictionary<string, object?> AdditionalProperties => Ownership;
+
+    internal static bool IsClientTool(AITool tool) =>
+        tool.AdditionalProperties.TryGetValue(OwnershipKey, out var owner) && owner is true;
+
+    // Declaration-only functions stop the SDK before it executes *any* tool in a
+    // mixed batch. A private suspension marker lets its normal loop execute the
+    // server functions too, without executing client code or inventing a result.
+    protected override ValueTask<object?> InvokeCoreAsync(AIFunctionArguments arguments, CancellationToken cancellationToken)
+        => ValueTask.FromResult<object?>(new PendingResult());
+
+    internal sealed class PendingResult { }
+
+    internal static AIAgent WrapAgent(AIAgent agent) => agent.AsBuilder().Use(
+        async (messages, session, options, inner, ct) =>
+        {
+            var response = await inner.RunAsync(messages, session, options, ct);
+            foreach (var message in response.Messages)
+                message.Contents = RemovePendingResults(message.Contents);
+            return response;
+        },
+        (messages, session, options, inner, ct) =>
+            FilterUpdates(inner.RunStreamingAsync(messages, session, options, ct), ct)).Build();
+
+    private static async IAsyncEnumerable<AgentResponseUpdate> FilterUpdates(
+        IAsyncEnumerable<AgentResponseUpdate> updates,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var update in updates.WithCancellation(cancellationToken))
+        {
+            update.Contents = RemovePendingResults(update.Contents);
+            yield return update;
+        }
+    }
+
+    private static IList<AIContent> RemovePendingResults(IList<AIContent> contents)
+    {
+        var filtered = new List<AIContent>(contents.Count);
+        foreach (var content in contents)
+        {
+            if (content is FunctionResultContent { Result: PendingResult })
+                continue;
+            if (content is FunctionCallContent call
+                && call.AdditionalProperties?.TryGetValue(OwnershipKey, out var clientOwned) == true
+                && clientOwned is true)
+            {
+                // The SDK later mutates its call to InformationalOnly after
+                // invocation; keep the externally executable call independent.
+                filtered.Add(new FunctionCallContent(call.CallId, call.Name, call.Arguments)
+                {
+                    RawRepresentation = call.RawRepresentation,
+                    AdditionalProperties = call.AdditionalProperties,
+                    InformationalOnly = false
+                });
+            }
+            else
+                filtered.Add(content);
+        }
+        return filtered;
+    }
 
     internal static void AddTo(List<AITool> serverTools, IReadOnlyList<Tool>? clientTools)
     {
@@ -58,7 +122,7 @@ internal sealed class ClientToolDeclaration : AIFunctionDeclaration
 
     internal static void MarkCalls(IEnumerable<AIContent> contents, ChatOptions? options)
     {
-        var names = options?.Tools?.OfType<ClientToolDeclaration>()
+        var names = options?.Tools?.Where(IsClientTool)
             .Select(tool => tool.Name).ToHashSet(StringComparer.Ordinal);
         if (names is not { Count: > 0 })
             return;

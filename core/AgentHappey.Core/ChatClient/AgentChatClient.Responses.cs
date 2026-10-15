@@ -117,7 +117,7 @@ public partial class AgentChatClient
 
         foreach (var declaration in tools.OfType<AIFunctionDeclaration>())
         {
-            if (declaration is ClientToolDeclaration)
+            if (ClientToolDeclaration.IsClientTool(declaration))
             {
                 definitions.Add(ToResponseToolDefinition(declaration));
                 continue;

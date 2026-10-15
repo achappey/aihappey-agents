@@ -54,6 +54,9 @@ public static class ResponsesRuntimeMapper
                 Description = json.TryGetProperty("description", out var description) ? description.GetString() : null,
                 InputSchema = json.TryGetProperty("parameters", out var schema)
                     ? JsonSerializer.Deserialize<AIHappey.Vercel.Models.ToolSchema>(schema, JsonSerializerOptions.Web)
+                    : null,
+                OutputSchema = json.TryGetProperty("output_schema", out var outputSchema)
+                    ? JsonSerializer.Deserialize<AIHappey.Vercel.Models.ToolSchema>(outputSchema, JsonSerializerOptions.Web)
                     : null
             });
         }
