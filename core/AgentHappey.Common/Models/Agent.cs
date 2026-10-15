@@ -144,19 +144,31 @@ public sealed class AISkillJsonConverter : JsonConverter<AISkill>
         if (root.ValueKind != JsonValueKind.Object)
             throw new JsonException("An agent skill must be a JSON object.");
 
-        var discriminator = TryGetProperty(root, "type", out var typeElement)
-            ? typeElement.GetString()
-            : "inline";
+        var discriminator = "inline";
+        if (TryGetProperty(root, "type", out var typeElement))
+        {
+            if (typeElement.ValueKind != JsonValueKind.String)
+                throw new JsonException("Agent skill property 'type' must be a string.");
+
+            discriminator = typeElement.GetString()!;
+        }
 
         if (string.Equals(discriminator, "skill_reference", StringComparison.Ordinal))
         {
+            string? version = null;
+            if (TryGetProperty(root, "version", out var versionElement)
+                && versionElement.ValueKind != JsonValueKind.Null)
+            {
+                if (versionElement.ValueKind != JsonValueKind.String)
+                    throw new JsonException("Agent skill property 'version' must be a string or null.");
+
+                version = versionElement.GetString();
+            }
+
             var reference = new SkillReference
             {
                 SkillId = GetRequiredString(root, "skill_id"),
-                Version = TryGetProperty(root, "version", out var versionElement)
-                    && versionElement.ValueKind != JsonValueKind.Null
-                        ? versionElement.GetString()
-                        : null
+                Version = version
             };
 
             try
