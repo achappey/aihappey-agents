@@ -47,6 +47,8 @@ To continue, resend the tool definitions and conversation history, including
 the returned calls, backend results, and client results. Responses uses
 `function_call_output` items correlated by `call_id`; UI chat uses its existing
 tool output parts. No server-side session or new persistent state is required.
+Unanswered client calls are omitted from inference replay until their results
+are supplied, so abandoning a call does not prevent later conversation turns.
 Client tool names must be unique (case-insensitive) and must not collide with
 configured/backend tools or reserved runtime names; collisions reject the run
 rather than replacing a tool or changing its execution owner. Client tools do

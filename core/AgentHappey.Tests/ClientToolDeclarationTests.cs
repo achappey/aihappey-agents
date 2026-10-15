@@ -348,6 +348,146 @@ public sealed partial class AgentChatClientFixtureTests
         Assert.Same(request.Tools, mapped.Tools);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Unanswered_client_calls_are_omitted_until_resolved_on_fresh_inference_replay(bool streaming)
+    {
+        List<ChatMessage> history =
+        [
+            new(ChatRole.User, "Original user text"),
+            new(ChatRole.Assistant,
+            [
+                new TextContent("Preserved assistant text"),
+                new FunctionCallContent("unanswered-client", "browser_lookup", new Dictionary<string, object?> { ["query"] = "pending" }),
+                new FunctionCallContent("answered-client", "browser_lookup", new Dictionary<string, object?> { ["query"] = "answered" }),
+                new FunctionCallContent("answered-server", "server_lookup", new Dictionary<string, object?>()),
+                new FunctionCallContent("unanswered-server", "server_lookup", new Dictionary<string, object?>())
+            ]),
+            new(ChatRole.Tool,
+            [
+                new FunctionResultContent("answered-server", new { value = "server-result" }),
+                new FunctionResultContent("answered-client", new { value = "other-client-result" })
+            ]),
+            new(ChatRole.User, "Continue without the pending browser result")
+        ];
+
+        var first = await CaptureClientReplayInputAsync(history, streaming);
+        var firstItems = first.EnumerateArray().ToList();
+        Assert.DoesNotContain(firstItems, item => item.GetProperty("type").GetString() == "function_call"
+            && item.GetProperty("call_id").GetString() == "unanswered-client");
+        foreach (var preservedCall in new[] { "answered-client", "answered-server", "unanswered-server" })
+            Assert.Single(firstItems, item => item.GetProperty("type").GetString() == "function_call"
+                && item.GetProperty("call_id").GetString() == preservedCall);
+        Assert.Equal(2, firstItems.Count(item => item.GetProperty("type").GetString() == "function_call_output"));
+        Assert.Contains("Original user text", first.GetRawText());
+        Assert.Contains("Preserved assistant text", first.GetRawText());
+        Assert.Contains("Continue without the pending browser result", first.GetRawText());
+        Assert.Contains("server-result", first.GetRawText());
+        Assert.Single(history.SelectMany(message => message.Contents).OfType<FunctionCallContent>(),
+            call => call.CallId == "unanswered-client");
+
+        history.Add(new ChatMessage(ChatRole.Tool,
+        [
+            new FunctionResultContent("unanswered-client", new { value = "late-browser-result" })
+        ]));
+        var resolved = await CaptureClientReplayInputAsync(history, streaming);
+        var resolvedItems = resolved.EnumerateArray().ToList();
+        Assert.Single(resolvedItems, item => item.GetProperty("type").GetString() == "function_call"
+            && item.GetProperty("call_id").GetString() == "unanswered-client");
+        var output = Assert.Single(resolvedItems, item => item.GetProperty("type").GetString() == "function_call_output"
+            && item.GetProperty("call_id").GetString() == "unanswered-client");
+        using var result = JsonDocument.Parse(output.GetProperty("output").GetString()!);
+        Assert.Equal("late-browser-result", result.RootElement.GetProperty("value").GetString());
+    }
+
+    [Fact]
+    public async Task Interleaved_ui_tool_calls_pair_results_by_call_id_not_position()
+    {
+        var messages = new[]
+        {
+            new UIMessage
+            {
+                Id = "interleaved-assistant",
+                Role = Role.assistant,
+                Parts =
+                [
+                    new ToolCallPart
+                    {
+                        ToolCallId = "server-call",
+                        ToolName = "server_lookup",
+                        Input = new { },
+                        ProviderExecuted = false
+                    },
+                    new ToolCallPart
+                    {
+                        ToolCallId = "client-call",
+                        ToolName = "browser_lookup",
+                        Input = new { query = "test" },
+                        ProviderExecuted = false
+                    },
+                    new ToolOutputAvailablePart
+                    {
+                        ToolCallId = "client-call",
+                        Output = new { value = "browser-result" },
+                        ProviderExecuted = false
+                    },
+                    new ToolOutputAvailablePart
+                    {
+                        ToolCallId = "server-call",
+                        Output = new { value = "server-result" },
+                        ProviderExecuted = false
+                    }
+                ]
+            }
+        }.ToMessages(["MixedAgent"]).ToList();
+        Assert.Equal(2, messages.SelectMany(message => message.Contents).OfType<FunctionCallContent>().Count());
+        var results = messages.SelectMany(message => message.Contents).OfType<FunctionResultContent>().ToList();
+        Assert.Equal(2, results.Count);
+        foreach (var (callId, expected) in new[] { ("server-call", "server-result"), ("client-call", "browser-result") })
+        {
+            var correlated = Assert.Single(results, result => result.CallId == callId);
+            var envelope = JsonSerializer.SerializeToElement(correlated.Result, JsonSerializerOptions.Web);
+            Assert.Equal(expected, envelope.GetProperty("output").GetProperty("value").GetString());
+        }
+
+        var input = await CaptureClientReplayInputAsync(messages);
+        var items = input.EnumerateArray().ToList();
+        foreach (var (callId, expected) in new[] { ("server-call", "server-result"), ("client-call", "browser-result") })
+        {
+            Assert.Single(items, item => item.GetProperty("type").GetString() == "function_call"
+                && item.GetProperty("call_id").GetString() == callId);
+            var output = Assert.Single(items, item => item.GetProperty("type").GetString() == "function_call_output"
+                && item.GetProperty("call_id").GetString() == callId);
+            using var result = JsonDocument.Parse(output.GetProperty("output").GetString()!);
+            Assert.Equal(expected, result.RootElement.GetProperty("value").GetString());
+        }
+    }
+
+    private static async Task<JsonElement> CaptureClientReplayInputAsync(IEnumerable<ChatMessage> messages, bool streaming = false)
+    {
+        string? body = null;
+        using var http = CreateHttpClient(request =>
+        {
+            Assert.Null(body);
+            body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return streaming
+                ? CreateStreamingResponse(CreateTextResponseStream("Replay accepted."))
+                : CreateJsonResponse(LoadFixture(StructuredFixturePath));
+        });
+        using var client = CreateClient(http, CreateAgent());
+        List<AITool> tools = [AIFunctionFactory.Create(() => "unused", "server_lookup")];
+        AddClientTools(tools, [CreateBrowserTool()]);
+        var options = new ChatOptions { Tools = tools };
+        if (streaming)
+            _ = await CollectAsync(client.GetStreamingResponseAsync(messages, options));
+        else
+            _ = await client.GetResponseAsync(messages, options);
+        Assert.NotNull(body);
+        using var request = JsonDocument.Parse(body);
+        return request.RootElement.GetProperty("input").Clone();
+    }
+
     private static Tool CreateBrowserTool() => JsonSerializer.Deserialize<Tool>("""
         {
           "name": "browser_lookup",
