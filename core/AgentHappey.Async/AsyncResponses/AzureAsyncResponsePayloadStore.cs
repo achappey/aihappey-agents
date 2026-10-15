@@ -37,13 +37,19 @@ internal sealed class AzureAsyncResponsePayloadStore(BlobContainerClient contain
     internal async Task<AsyncResponsesQueueMessage> ReadAsync(string queueMessage, CancellationToken cancellationToken)
     {
         var blobName = GetBlobName(queueMessage);
+        AsyncResponsesQueueMessage? message;
         if (blobName is null)
-            return JsonSerializer.Deserialize<AsyncResponsesQueueMessage>(queueMessage, ResponseJson.Default)
-                ?? throw new InvalidOperationException("Async response queue message was empty.");
+            message = JsonSerializer.Deserialize<AsyncResponsesQueueMessage>(queueMessage, ResponseJson.Default);
+        else
+        {
+            await using var stream = await container.GetBlobClient(blobName).OpenReadAsync(new BlobOpenReadOptions(false), cancellationToken);
+            message = await JsonSerializer.DeserializeAsync<AsyncResponsesQueueMessage>(stream, ResponseJson.Default, cancellationToken);
+        }
 
-        await using var stream = await container.GetBlobClient(blobName).OpenReadAsync(new BlobOpenReadOptions(false), cancellationToken);
-        return await JsonSerializer.DeserializeAsync<AsyncResponsesQueueMessage>(stream, ResponseJson.Default, cancellationToken)
-            ?? throw new InvalidOperationException("Async response payload was empty.");
+        if (message is null || string.IsNullOrWhiteSpace(message.ResponseId)
+            || message.Request is null || message.Context is null)
+            throw new InvalidOperationException("Async response queue payload was invalid.");
+        return message;
     }
 
     internal async Task DeleteAsync(string queueMessage, CancellationToken cancellationToken)

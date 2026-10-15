@@ -230,6 +230,7 @@ public sealed class AsyncResponsesPayloadTests
     [Theory]
     [InlineData("not-json")]
     [InlineData("{\"payload_id\":\"../private\"}")]
+    [InlineData("{\"response_id\":\"resp_missing_request\"}")]
     public async Task Invalid_messages_are_acknowledged_after_existing_retry_limit(string message)
     {
         var fixture = new Fixture();
@@ -435,9 +436,9 @@ public sealed class AsyncResponsesPayloadTests
         internal Exception? SendFailure;
         internal Exception? DeleteFailure;
 
-        public override Task<Response<QueueInfo>> CreateIfNotExistsAsync(
+        public override Task<Response> CreateIfNotExistsAsync(
             IDictionary<string, string>? metadata = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<Response<QueueInfo>>(null!);
+            => Task.FromResult<Response>(null!);
 
         public override Task<Response<SendReceipt>> SendMessageAsync(string messageText, CancellationToken cancellationToken = default)
         {
