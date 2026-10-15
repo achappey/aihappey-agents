@@ -9,6 +9,7 @@ using AgentHappey.Core.Responses;
 using AIHappey.Responses;
 using AIHappey.Vercel.Models;
 using Microsoft.Agents.AI;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.AI;
 using Tool = AIHappey.Vercel.Models.Tool;
 
@@ -287,6 +288,157 @@ public sealed partial class AgentChatClientFixtureTests
         Assert.True(Assert.Single(remaining.OfType<ToolCallPart>()).ProviderExecuted);
         Assert.Equal("server-call", Assert.Single(remaining.OfType<ToolOutputAvailablePart>()).ToolCallId);
         Assert.DoesNotContain(remaining.OfType<ToolCallPart>(), part => part.ToolCallId == "client-call");
+    }
+
+    [Theory]
+    [InlineData("output-available", false, false)]
+    [InlineData("output-available", true, false)]
+    [InlineData("output-error", false, false)]
+    [InlineData("output-available", false, true)]
+    public async Task Completed_client_result_requests_approval_before_inference(string state, bool nullOutput, bool separateParts)
+    {
+        var request = new AgentRequest
+        {
+            Tools = [CreateBrowserTool()],
+            Messages =
+            [
+                new UIMessage
+                {
+                    Id = "client-result",
+                    Role = Role.assistant,
+                    Parts =
+                    [
+                        new ToolInvocationPart
+                        {
+                            ToolCallId = "client-call",
+                            Type = "tool-browser_lookup",
+                            Input = new { query = "test" },
+                            Output = nullOutput ? null : new { value = "browser-result" },
+                            State = state,
+                            ProviderExecuted = false
+                        }
+                    ]
+                }
+            ]
+        };
+        if (separateParts)
+            request.Messages[0].Parts =
+            [
+                new ToolCallPart
+                {
+                    ToolCallId = "client-call",
+                    ToolName = "browser_lookup",
+                    Input = new { query = "test" },
+                    ProviderExecuted = false
+                },
+                new ToolOutputAvailablePart
+                {
+                    ToolCallId = "client-call",
+                    Output = new { value = "browser-result" },
+                    ProviderExecuted = false
+                }
+            ];
+        var messages = request.Messages.ToMessages(["MixedAgent"]).ToList();
+        var context = new ChatRuntimeContext(messages, [], null, [CreateAgent()])
+        {
+            RequestToolApproval = true
+        };
+        var response = new DefaultHttpContext().Response;
+        response.Body = new MemoryStream();
+        var orchestrator = new ChatRuntimeOrchestrator(new StreamingContentMapper(), null!);
+
+        // No runtime agent is supplied: requesting approval must not start inference.
+        await orchestrator.ExecuteAsync(response, request, context);
+
+        response.Body.Position = 0;
+        var stream = await new StreamReader(response.Body).ReadToEndAsync();
+        var parts = stream.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => JsonDocument.Parse(line["data: ".Length..]).RootElement.Clone()).ToList();
+        var call = Assert.Single(parts, part => part.GetProperty("type").GetString() == "tool-input-available");
+        Assert.True(call.GetProperty("providerExecuted").GetBoolean());
+        var output = Assert.Single(parts, part => part.GetProperty("type").GetString() == "tool-output-available");
+        Assert.False(output.GetProperty("providerExecuted").GetBoolean());
+        Assert.Equal("client-call", output.GetProperty("toolCallId").GetString());
+        var approval = Assert.Single(parts, part => part.GetProperty("type").GetString() == "tool-approval-request");
+        Assert.Equal("client-call", approval.GetProperty("approvalId").GetString());
+        Assert.True(parts.IndexOf(output) < parts.IndexOf(approval));
+        if (!nullOutput)
+            Assert.Contains("browser-result", output.GetRawText());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Answered_client_approval_continues_with_existing_result_replay(bool approved)
+    {
+        var tool = new ToolInvocationPart
+        {
+            ToolCallId = "client-call",
+            Type = "tool-browser_lookup",
+            Input = new { query = "test" },
+            Output = new { value = "browser-result" },
+            ProviderExecuted = false,
+            State = "approval-responded",
+            Approval = new ToolApproval { Id = "client-call", Approved = approved }
+        };
+        var request = new AgentRequest
+        {
+            Tools = [CreateBrowserTool()],
+            Messages = [new UIMessage { Id = "approved-result", Role = Role.assistant, Parts = [tool] }]
+        };
+        var messages = request.Messages.ToMessages(["MixedAgent"]).ToList();
+        string? inferenceBody = null;
+        using var http = CreateHttpClient(message =>
+        {
+            Assert.Null(inferenceBody);
+            inferenceBody = message.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return CreateStreamingResponse(CreateTextResponseStream("Continued."));
+        });
+        using var client = CreateClient(http, CreateAgent());
+        List<AITool> tools = [];
+        AddClientTools(tools, request.Tools);
+        var context = new ChatRuntimeContext(messages, [CreateClientToolAgent(client, tools)],
+            new ChatClientAgentRunOptions(new ChatOptions()), [CreateAgent()])
+        {
+            RequestToolApproval = true
+        };
+        var response = new DefaultHttpContext().Response;
+        response.Body = new MemoryStream();
+
+        await new ChatRuntimeOrchestrator(new StreamingContentMapper(), null!)
+            .ExecuteAsync(response, request, context);
+
+        Assert.NotNull(inferenceBody);
+        using var body = JsonDocument.Parse(inferenceBody);
+        var output = Assert.Single(body.RootElement.GetProperty("input").EnumerateArray(),
+            item => item.GetProperty("type").GetString() == "function_call_output");
+        Assert.Equal("client-call", output.GetProperty("call_id").GetString());
+        Assert.Equal(approved, output.GetProperty("output").GetString()!.Contains("browser-result"));
+        if (!approved)
+            Assert.Contains("false", output.GetProperty("output").GetString());
+    }
+
+    [Fact]
+    public async Task Streamed_client_result_uses_existing_result_then_approval_order()
+    {
+        var call = new FunctionCallContent("client-call", "browser_lookup", new Dictionary<string, object?>())
+        {
+            AdditionalProperties = new() { ["agenthappey_client_tool"] = true }
+        };
+        var updates = new[]
+        {
+            new AgentResponseUpdate(ChatRole.Assistant, [call]),
+            new AgentResponseUpdate(ChatRole.Tool, [new FunctionResultContent("client-call", "browser-result")])
+        };
+        var parts = new List<UIMessagePart>();
+        await foreach (var part in new StreamingContentMapper()
+            .MapAsync(updates.ToAsyncEnumerable(), requestToolApproval: true))
+            parts.Add(part);
+
+        Assert.False(Assert.IsType<ToolCallPart>(parts[0]).ProviderExecuted);
+        Assert.True(Assert.IsType<ToolCallPart>(parts[1]).ProviderExecuted);
+        Assert.Equal("browser-result", Assert.IsType<ToolOutputAvailablePart>(parts[2]).Output);
+        Assert.Equal("client-call", Assert.IsType<ToolApprovalRequestUIPart>(parts[3]).ApprovalId);
     }
 
     [Fact]

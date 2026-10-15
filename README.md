@@ -40,8 +40,11 @@ do not change the stored agent.
 Configured tools still execute on the backend. Client tools are declarations
 only: their function calls are returned for the caller to execute, including
 when a model requests both kinds of tool in the same turn. UI streams mark
-client calls with `providerExecuted: false` and do not request approval for them;
-the existing server-tool approval behavior is unchanged.
+client calls with `providerExecuted: false` so the caller can execute them.
+On `/api/chat`, submitting their completed results streams the same result-then-
+approval handshake as server tools, before the agent continues. Resend the
+conversation with the approvals answered to continue; rejected results follow
+the existing server-tool denial behavior. Responses and workflows are unchanged.
 
 To continue, resend the tool definitions and conversation history, including
 the returned calls, backend results, and client results. Responses uses

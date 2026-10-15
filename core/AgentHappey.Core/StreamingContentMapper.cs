@@ -365,6 +365,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                     if (fc.AdditionalProperties?.TryGetValue(ClientToolDeclaration.OwnershipKey, out var clientOwned) == true
                         && clientOwned is true)
                     {
+                        pendingCalls[fc.CallId] = call;
                         yield return new ToolCallPart
                         {
                             ToolCallId = call.ToolCallId,

@@ -261,11 +261,54 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         AgentRequest chatRequest,
         ChatRuntimeContext context,
         CancellationToken cancellationToken = default)
-        => await ExecuteAsync(
+    {
+        if (context.RequestToolApproval && chatRequest.Tools is { Count: > 0 })
+        {
+            var clientNames = chatRequest.Tools.Select(tool => tool.Name).ToHashSet(StringComparer.Ordinal);
+            var completedCalls = chatRequest.Messages.Where(message => message.Role == Role.assistant)
+                .SelectMany(message => message.Parts)
+                .OfType<ToolInvocationPart>()
+                .Where(tool => tool.ProviderExecuted != true && tool.Approval is null
+                    && tool.State is "output-available" or "output-error"
+                    && clientNames.Contains(tool.Type?.StartsWith("tool-", StringComparison.OrdinalIgnoreCase) == true
+                        ? tool.Type["tool-".Length..] : tool.Type))
+                .Select(tool => tool.ToolCallId)
+                .ToHashSet(StringComparer.Ordinal);
+            completedCalls.UnionWith(chatRequest.Messages.Where(message => message.Role == Role.assistant)
+                .SelectMany(message => message.Parts.OfType<ToolCallPart>()
+                    .Where(call => call.ProviderExecuted != true && clientNames.Contains(call.ToolName)
+                        && message.Parts.Any(part => part is ToolOutputAvailablePart output
+                            && output.ToolCallId == call.ToolCallId
+                            || part is ToolOutputErrorPart error && error.ToolCallId == call.ToolCallId))
+                    .Select(call => call.ToolCallId)));
+
+            if (completedCalls.Count > 0)
+            {
+                // Client execution has finished. Use the same result stream as backend
+                // tools, and do not send these results to inference before approval.
+                var updates = context.Messages.Select(message => new AgentResponseUpdate(message.Role,
+                    message.Contents.Where(content => content switch
+                    {
+                        FunctionCallContent call => completedCalls.Contains(call.CallId),
+                        FunctionResultContent result => completedCalls.Contains(result.CallId),
+                        _ => false
+                    }).ToList())
+                {
+                    MessageId = message.MessageId,
+                    AuthorName = context.PrimaryResolvedAgent.Name
+                }).ToAsyncEnumerable();
+                await response.WritePartsAsync(
+                    mapper.MapAsync(updates, cancellationToken, requestToolApproval: true), cancellationToken);
+                return;
+            }
+        }
+
+        await ExecuteAsync(
             response,
             CreateRuntimeRequest(chatRequest, context.Messages),
             context,
             cancellationToken);
+    }
 
     public async Task ExecuteAsync(
         HttpResponse response,
