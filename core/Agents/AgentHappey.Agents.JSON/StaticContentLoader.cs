@@ -6,12 +6,17 @@ namespace AgentHappey.Agents.JSON;
 
 public static class StaticContentLoader
 {
-    public static IEnumerable<Agent> GetAgents(this string basePath, string? mcpBaseUrl)
+    public static IEnumerable<Agent> GetAgents(
+        this string basePath,
+        string? mcpBaseUrl,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var agents = new List<Agent>();
 
-        foreach (var file in EnumerateAgentFiles(basePath))
+        foreach (var file in EnumerateAgentFiles(basePath, cancellationToken))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var agentObj = LoadAgent(file, mcpBaseUrl);
             if (agentObj == null)
                 continue;
@@ -22,10 +27,14 @@ public static class StaticContentLoader
         return agents;
     }
 
-    public static IEnumerable<Model> GetModels(this string basePath)
+    public static IEnumerable<Model> GetModels(
+        this string basePath,
+        CancellationToken cancellationToken = default)
     {
-        foreach (var file in EnumerateAgentFiles(basePath))
+        cancellationToken.ThrowIfCancellationRequested();
+        foreach (var file in EnumerateAgentFiles(basePath, cancellationToken))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var jsonContent = File.ReadAllText(file);
             var agentObj = JsonSerializer.Deserialize<Agent>(jsonContent, JsonSerializerOptions.Web);
             if (agentObj == null || string.IsNullOrWhiteSpace(agentObj.Name))
@@ -43,14 +52,19 @@ public static class StaticContentLoader
         }
     }
 
-    private static IEnumerable<string> EnumerateAgentFiles(string basePath)
+    private static IEnumerable<string> EnumerateAgentFiles(string basePath, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(basePath))
             return [];
 
-        return Directory
-            .EnumerateFiles(basePath, "*Agent.json", SearchOption.AllDirectories)
-            .OrderBy(file => file, StringComparer.OrdinalIgnoreCase);
+        var files = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(basePath, "*Agent.json", SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            files.Add(file);
+        }
+
+        return files.OrderBy(file => file, StringComparer.OrdinalIgnoreCase);
     }
 
     private static Agent? LoadAgent(string file, string? mcpBaseUrl)

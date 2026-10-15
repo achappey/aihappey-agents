@@ -6,8 +6,9 @@ public sealed class JsonModelSource(string basePath, string? mcpBaseUrl) : IMode
 {
     public Task<IReadOnlyList<Model>> GetModelsAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         IReadOnlyList<Model> models = basePath
-            .GetModels()
+            .GetModels(cancellationToken)
             .ToList()
             .AsReadOnly();
 
@@ -16,8 +17,9 @@ public sealed class JsonModelSource(string basePath, string? mcpBaseUrl) : IMode
 
     public Task<IReadOnlyList<Agent>> GetAgentsAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         IReadOnlyList<Agent> agents = basePath
-            .GetAgents(mcpBaseUrl)
+            .GetAgents(mcpBaseUrl, cancellationToken)
             .ToList()
             .AsReadOnly();
 
