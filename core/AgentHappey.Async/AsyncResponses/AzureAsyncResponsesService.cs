@@ -54,9 +54,9 @@ public sealed class AzureAsyncResponsesService : IAsyncResponsesService
 
         var reference = AzureAsyncResponsePayloadStore.CreateReference();
         await queue.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
-        await payloads.SaveAsync(reference, message, cancellationToken);
         try
         {
+            await payloads.SaveAsync(reference, message, cancellationToken);
             await store.SaveAsync(response, cancellationToken, context.UserId);
             cancellationToken.ThrowIfCancellationRequested();
         }

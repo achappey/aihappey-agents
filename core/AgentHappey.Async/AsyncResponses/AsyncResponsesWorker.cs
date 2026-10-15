@@ -1,5 +1,6 @@
 using AgentHappey.Core;
 using AIHappey.Responses;
+using Azure;
 using Azure.Storage.Queues;
 using Azure.Storage.Queues.Models;
 using Microsoft.Extensions.Hosting;
@@ -100,6 +101,16 @@ public sealed class AsyncResponsesWorker : BackgroundService
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (Exception ex) when (message is null &&
+            (ex is IOException or HttpRequestException or OperationCanceledException
+                || ex is RequestFailedException { Status: not 404 }))
+        {
+            // A storage outage is not a poison message. The envelope is needed to
+            // identify the scoped response and persist a terminal result.
+            logger.LogWarning("Background response payload could not be read for queue message {MessageId}; retaining for retry.",
+                queueMessage.MessageId);
+            return;
         }
         catch (Exception ex)
         {

@@ -7,6 +7,7 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Queues;
 using Azure.Storage.Queues.Models;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -95,6 +96,23 @@ public sealed class AsyncResponsesPayloadTests
     }
 
     [Fact]
+    public async Task Worker_logs_do_not_include_request_context_or_exception_contents()
+    {
+        var fixture = new Fixture();
+        await fixture.Service.EnqueueAsync(CreateRequest(165884), Context());
+        fixture.Processor.Failure = new InvalidOperationException("private request content must not be logged");
+
+        await fixture.Worker.ProcessMessageAsync(Delivery(fixture.Queue.Messages.Single()), default);
+
+        Assert.NotEmpty(fixture.Logger.Entries);
+        Assert.All(fixture.Logger.Entries, entry =>
+        {
+            Assert.DoesNotContain("private", entry.Message);
+            Assert.Null(entry.Exception);
+        });
+    }
+
+    [Fact]
     public async Task Host_cancellation_keeps_payload_for_redelivery()
     {
         var fixture = new Fixture();
@@ -138,16 +156,23 @@ public sealed class AsyncResponsesPayloadTests
     }
 
     [Fact]
-    public async Task Exhausted_payload_read_failure_removes_queue_entry_and_payload()
+    public async Task Storage_outage_beyond_poison_retry_limit_keeps_payload_until_recovery()
     {
         var fixture = new Fixture();
-        await fixture.Service.EnqueueAsync(CreateRequest(165884), Context());
+        var response = await fixture.Service.EnqueueAsync(CreateRequest(165884), Context());
         fixture.Container.ReadFailure = new IOException("Storage unavailable.");
+        var reference = fixture.Queue.Messages.Single();
 
-        await fixture.Worker.ProcessMessageAsync(Delivery(fixture.Queue.Messages.Single(), 5), default);
+        await fixture.Worker.ProcessMessageAsync(Delivery(reference, 5), default);
 
+        Assert.Single(fixture.Container.Blobs);
+        Assert.Equal(0, fixture.Queue.Deleted);
+        Assert.Equal("queued", (await fixture.Service.GetAsync(response.Id, userId: "private-user"))!.Status);
+        fixture.Container.ReadFailure = null;
+        await fixture.Worker.ProcessMessageAsync(Delivery(reference, 6), default);
         Assert.Empty(fixture.Container.Blobs);
         Assert.Equal(1, fixture.Queue.Deleted);
+        Assert.Equal("completed", (await fixture.Service.GetAsync(response.Id, userId: "private-user"))!.Status);
     }
 
     [Fact]
@@ -214,6 +239,19 @@ public sealed class AsyncResponsesPayloadTests
         await fixture.Worker.ProcessMessageAsync(Delivery(message, 5), default);
         Assert.Equal(1, fixture.Queue.Deleted);
         Assert.Empty(fixture.Container.Blobs);
+    }
+
+    [Fact]
+    public async Task Failed_upload_before_publish_cleans_any_committed_blob()
+    {
+        var fixture = new Fixture();
+        fixture.Container.UploadFailure = new IOException("Upload acknowledgement lost.");
+
+        await Assert.ThrowsAsync<IOException>(() => fixture.Service.EnqueueAsync(CreateRequest(165884), Context()));
+
+        Assert.Empty(fixture.Container.Blobs);
+        Assert.Empty(fixture.Queue.Messages);
+        Assert.Empty(await fixture.Service.ListAsync(userId: "private-user"));
     }
 
     [Fact]
@@ -326,6 +364,7 @@ public sealed class AsyncResponsesPayloadTests
         internal readonly MemoryQueue Queue = new();
         internal readonly MemoryStore Store = new();
         internal readonly RecordingProcessor Processor = new();
+        internal readonly RecordingLogger Logger = new();
         internal readonly AzureAsyncResponsePayloadStore Payloads;
         internal readonly AzureAsyncResponsesService Service;
         internal readonly AsyncResponsesWorker Worker;
@@ -334,8 +373,19 @@ public sealed class AsyncResponsesPayloadTests
         {
             Payloads = new AzureAsyncResponsePayloadStore(Container);
             Service = new AzureAsyncResponsesService(Queue, Store, Payloads);
-            Worker = new AsyncResponsesWorker(Queue, Payloads, Processor, Store, NullLogger<AsyncResponsesWorker>.Instance);
+            Worker = new AsyncResponsesWorker(Queue, Payloads, Processor, Store, Logger);
         }
+    }
+
+    private sealed class RecordingLogger : ILogger<AsyncResponsesWorker>
+    {
+        internal readonly List<(string Message, Exception? Exception)> Entries = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Entries.Add((formatter(state, exception), exception));
     }
 
     private sealed class RecordingProcessor : IAsyncResponsesProcessor
@@ -412,10 +462,12 @@ public sealed class AsyncResponsesPayloadTests
         internal readonly Dictionary<string, byte[]> Blobs = [];
         internal Exception? ReadFailure;
         internal Exception? DeleteFailure;
+        internal Exception? UploadFailure;
 
         public override Task<Response<BlobContainerInfo>> CreateIfNotExistsAsync(
             PublicAccessType publicAccessType = PublicAccessType.None,
-            IDictionary<string, string>? metadata = null, CancellationToken cancellationToken = default)
+            IDictionary<string, string>? metadata = null,
+            BlobContainerEncryptionScopeOptions? encryptionScopeOptions = null, CancellationToken cancellationToken = default)
             => Task.FromResult<Response<BlobContainerInfo>>(null!);
 
         public override BlobClient GetBlobClient(string blobName) => new MemoryBlob(this, blobName);
@@ -429,6 +481,8 @@ public sealed class AsyncResponsesPayloadTests
             using var stream = new MemoryStream();
             await content.CopyToAsync(stream, cancellationToken);
             container.Blobs[name] = stream.ToArray();
+            if (container.UploadFailure is not null)
+                throw container.UploadFailure;
             return null!;
         }
 
