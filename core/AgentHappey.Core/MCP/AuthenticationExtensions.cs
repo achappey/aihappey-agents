@@ -117,7 +117,7 @@ public static class AuthenticationExtensions
       var mcpTokenForMcp = await cca.AcquireTokenOnBehalfOf(
               [mcpConfig.Scopes],      // aud = MCP
               new UserAssertion(userAccessToken))        // token-A
-          .ExecuteAsync();
+          .ExecuteAsync(ct);
 
 
       /* --- 4.  RFC 8693 token-exchange ---------------------------- */
