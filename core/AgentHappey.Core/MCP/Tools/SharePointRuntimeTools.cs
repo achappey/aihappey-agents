@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.Extensions;
@@ -8,6 +9,7 @@ using Microsoft.Agents.AI.Workflows;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Identity.Web;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -239,13 +241,38 @@ public class SharePointRuntimeTools
         }
         catch (Exception e)
         {
+            services.GetService<ILogger<SharePointRuntimeTools>>()
+                ?.LogError(e, "SharePoint workflow execution failed.");
+
             return new()
             {
                 IsError = true,
                 Content = [new TextContentBlock() {
-                    Text = e.Message + e.StackTrace
+                    Text = GetClientErrorMessage(e)
                 }]
             };
         }
+    }
+
+    private static string GetClientErrorMessage(Exception exception)
+    {
+        var message = exception.Message;
+        var stackTraceStart = message.IndexOf("\n   at ", StringComparison.Ordinal);
+        if (stackTraceStart >= 0)
+            message = message[..stackTraceStart];
+
+        message = message.ReplaceLineEndings(" ").Trim();
+        message = Regex.Replace(message, @"(?i)\bBearer\s+[^\s,;]+", "******");
+        message = Regex.Replace(
+            message,
+            @"(?i)([""']?\b(?:authorization|password|passwd|secret|client[_-]?secret|api[_-]?key|access[_-]?token|refresh[_-]?token|account[_-]?key|shared[_-]?access[_-]?signature|sig|token|code)[""']?\s*[:=]\s*)(?:""[^""]*""|'[^']*'|[^,\s;&]+)",
+            "$1[redacted]");
+
+        if (message.Length > 500)
+            message = message[..500] + "…";
+
+        return string.IsNullOrWhiteSpace(message)
+            ? $"Workflow failed ({exception.GetType().Name})."
+            : message;
     }
 }
