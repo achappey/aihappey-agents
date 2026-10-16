@@ -25,6 +25,20 @@ public sealed class McpAuthenticationExtensionsTests
         Assert.Equal(expected, InvokeIsSameOrigin(new Uri(serverUrl), new Uri(runtimeUrl)));
     }
 
+    [Theory]
+    [InlineData("https://runtime.test/mcp", "https://runtime.test/", true)]
+    [InlineData("https://mcp.runtime.test/mcp", "https://runtime.test/", true)]
+    [InlineData("https://myruntime.test/mcp", "https://runtime.test/", false)]
+    [InlineData("https://runtime.test.attacker.example/mcp", "https://runtime.test/", false)]
+    [InlineData("https://mcp.127.0.0.1/mcp", "https://127.0.0.1/", false)]
+    public void Configured_mcp_host_requires_a_host_or_dns_label_boundary(
+        string serverUrl,
+        string mcpBaseUrl,
+        bool expected)
+    {
+        Assert.Equal(expected, InvokeIsMcpServerHostAllowed(new Uri(serverUrl), new Uri(mcpBaseUrl)));
+    }
+
     [Fact]
     public async Task Own_runtime_mcp_server_reuses_current_request_token_without_oauth_discovery()
     {
@@ -156,6 +170,16 @@ public sealed class McpAuthenticationExtensionsTests
             ?? throw new InvalidOperationException("IsSameOrigin was not found.");
 
         return (bool)method.Invoke(null, [left, right])!;
+    }
+
+    private static bool InvokeIsMcpServerHostAllowed(Uri serverUri, Uri mcpBaseUri)
+    {
+        var method = typeof(AuthenticationExtensions).GetMethod(
+            "IsMcpServerHostAllowed",
+            BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("IsMcpServerHostAllowed was not found.");
+
+        return (bool)method.Invoke(null, [serverUri, mcpBaseUri])!;
     }
 
     private static bool InvokeIsConversationMcpServer(string serverUrl, ConversationsConfig? conversationsConfig)

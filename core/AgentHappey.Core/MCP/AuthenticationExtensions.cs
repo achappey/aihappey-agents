@@ -75,8 +75,8 @@ public static class AuthenticationExtensions
 
       HttpClient client = httpClientFactory.CreateClient();
 
-      if (!new Uri(serverUrl).Host.Contains(new Uri(mcpConfig.McpBaseUrl).Host,
-         StringComparison.OrdinalIgnoreCase))
+      var serverUri = new Uri(serverUrl);
+      if (!IsMcpServerHostAllowed(serverUri, new Uri(mcpConfig.McpBaseUrl)))
          return null;
 
       if (string.IsNullOrEmpty(userAccessToken))
@@ -85,7 +85,7 @@ public static class AuthenticationExtensions
       var cca = CreateConfidentialClient(azureAd);
 
       /* --- 1.  Discover protected-resource metadata --------------- */
-      var baseUri = new Uri(serverUrl);
+      var baseUri = serverUri;
       var prmUrl = $"{baseUri.Scheme}://{baseUri.Host}:{baseUri.Port}/" +
                     $".well-known/oauth-protected-resource{baseUri.AbsolutePath}";
 
@@ -168,9 +168,20 @@ public static class AuthenticationExtensions
          && Uri.TryCreate(conversationsConfig.McpBaseUrl, UriKind.Absolute, out var conversationsUri)
          && IsSameOrigin(serverUri, conversationsUri);
 
+   private static bool IsMcpServerHostAllowed(Uri serverUri, Uri mcpBaseUri)
+   {
+      var serverHost = serverUri.IdnHost.TrimEnd('.');
+      var baseHost = mcpBaseUri.IdnHost.TrimEnd('.');
+
+      return !string.IsNullOrWhiteSpace(baseHost)
+        && (string.Equals(serverHost, baseHost, StringComparison.OrdinalIgnoreCase)
+           || Uri.CheckHostName(baseHost) == UriHostNameType.Dns
+              && serverHost.EndsWith($".{baseHost}", StringComparison.OrdinalIgnoreCase));
+   }
+
    private static bool IsSameOrigin(Uri left, Uri right)
       => string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
-         && string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
          && left.Port == right.Port;
 
    private static bool TryGetRequestOrigin(HttpRequest request, out Uri origin)
