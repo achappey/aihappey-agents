@@ -8,6 +8,7 @@ using Microsoft.Agents.AI.Workflows;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Identity.Web;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -239,11 +240,14 @@ public class SharePointRuntimeTools
         }
         catch (Exception e)
         {
+            services.GetService<ILogger<SharePointRuntimeTools>>()
+                ?.LogError(e, "SharePoint workflow execution failed.");
+
             return new()
             {
                 IsError = true,
                 Content = [new TextContentBlock() {
-                    Text = e.Message + e.StackTrace
+                    Text = "SharePoint workflow execution failed."
                 }]
             };
         }
