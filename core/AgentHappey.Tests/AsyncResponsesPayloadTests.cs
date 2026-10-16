@@ -322,6 +322,30 @@ public sealed class AsyncResponsesPayloadTests
         }
     }
 
+    [Fact]
+    public async Task Local_enqueue_cancellation_removes_saved_response()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        try
+        {
+            var options = Options.Create(new LocalResponseStorageOptions { RootPath = root });
+            using var queue = new LocalAsyncResponsesQueue(options);
+            var innerStore = new LocalAsyncResponseStore(options);
+            using var cancellation = new CancellationTokenSource();
+            var store = new CancellationAfterSaveStore(innerStore, cancellation);
+            var service = new LocalAsyncResponsesService(queue, store);
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => service.EnqueueAsync(CreateRequest(1024), Context(), cancellation.Token));
+
+            Assert.Empty(await innerStore.ListAsync(userId: "private-user"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static ResponseRequest CreateRequest(int size, bool file = false)
     {
         if (!file)
@@ -355,6 +379,26 @@ public sealed class AsyncResponsesPayloadTests
 
     private static AsyncResponsesRequestContext Context()
         => new() { UserId = "private-user", CorrelationId = "private-context" };
+
+    private sealed class CancellationAfterSaveStore(
+        IAsyncResponseStore innerStore,
+        CancellationTokenSource cancellation) : IAsyncResponseStore
+    {
+        public async Task SaveAsync(ResponseResult response, CancellationToken cancellationToken = default, string? userId = null)
+        {
+            await innerStore.SaveAsync(response, cancellationToken, userId);
+            cancellation.Cancel();
+        }
+
+        public Task<ResponseResult?> GetAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
+            => innerStore.GetAsync(responseId, cancellationToken, userId);
+
+        public Task<IReadOnlyList<ResponseResult>> ListAsync(CancellationToken cancellationToken = default, string? userId = null)
+            => innerStore.ListAsync(cancellationToken, userId);
+
+        public Task<bool> DeleteAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
+            => innerStore.DeleteAsync(responseId, cancellationToken, userId);
+    }
 
     private static QueueMessage Delivery(string text, long attempts = 1)
         => QueuesModelFactory.QueueMessage("message-id", "receipt", text, attempts);
