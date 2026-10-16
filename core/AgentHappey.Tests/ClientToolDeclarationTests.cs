@@ -478,6 +478,32 @@ public sealed partial class AgentChatClientFixtureTests
     }
 
     [Fact]
+    public void Responses_mapper_preserves_function_call_arguments_for_replay()
+    {
+        var request = JsonSerializer.Deserialize<ResponseRequest>("""
+            {
+              "model": "openai/gpt-fixture",
+              "input": [
+                {
+                  "type": "function_call",
+                  "call_id": "call-1",
+                  "name": "browser_lookup",
+                  "arguments": "{\"query\":\"latest news\",\"options\":{\"limit\":3}}",
+                  "status": "completed"
+                }
+              ]
+            }
+            """, ResponseJson.Default)!;
+
+        var mapped = request.ToChatRuntimeRequest();
+        var call = Assert.Single(Assert.Single(mapped.Messages).Contents.OfType<FunctionCallContent>());
+        var arguments = JsonSerializer.SerializeToElement(call.Arguments, JsonSerializerOptions.Web);
+
+        Assert.Equal("latest news", arguments.GetProperty("query").GetString());
+        Assert.Equal(3, arguments.GetProperty("options").GetProperty("limit").GetInt32());
+    }
+
+    [Fact]
     public void Requests_without_tools_remain_backwards_compatible()
     {
         var request = JsonSerializer.Deserialize<ResponseRequest>(

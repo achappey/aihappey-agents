@@ -96,7 +96,7 @@ public static class ResponsesRuntimeMapper
                         new FunctionCallContent(
                             toolCall.ToolCallId,
                             toolCall.ToolName ?? toolCall.Title ?? "tool",
-                            NormalizeObject(toolCall.Input) as IDictionary<string, object?> ?? new Dictionary<string, object?>())
+                            NormalizeArguments(toolCall.Input))
                     ])
                     {
                         MessageId = item.Id ?? toolCall.ToolCallId
@@ -187,7 +187,7 @@ public static class ResponsesRuntimeMapper
                     yield return new FunctionCallContent(
                         toolCall.ToolCallId,
                         toolCall.ToolName ?? toolCall.Title ?? "tool",
-                        NormalizeObject(toolCall.Input) as IDictionary<string, object?> ?? new Dictionary<string, object?>());
+                        NormalizeArguments(toolCall.Input));
                     break;
             }
         }
@@ -253,5 +253,20 @@ public static class ResponsesRuntimeMapper
             return JsonSerializer.Deserialize<object>(jsonElement.GetRawText(), JsonSerializerOptions.Web);
 
         return JsonSerializer.Deserialize<object>(JsonSerializer.Serialize(value, JsonSerializerOptions.Web), JsonSerializerOptions.Web);
+    }
+
+    private static IDictionary<string, object?> NormalizeArguments(object? value)
+    {
+        if (value is IDictionary<string, object?> arguments)
+            return arguments;
+
+        var element = value is JsonElement jsonElement
+            ? jsonElement
+            : JsonSerializer.SerializeToElement(value, JsonSerializerOptions.Web);
+
+        return element.ValueKind == JsonValueKind.Object
+            ? JsonSerializer.Deserialize<Dictionary<string, object?>>(element.GetRawText(), JsonSerializerOptions.Web)
+                ?? new Dictionary<string, object?>()
+            : new Dictionary<string, object?>();
     }
 }
