@@ -44,6 +44,7 @@ public sealed class LocalAsyncResponsesQueue : IDisposable
         catch
         {
             File.Delete(stagedPath);
+            await store.DeleteAsync(message.ResponseId, CancellationToken.None, message.Context.UserId);
             throw;
         }
         finally
