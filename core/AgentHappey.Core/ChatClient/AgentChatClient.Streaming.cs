@@ -137,6 +137,7 @@ public partial class AgentChatClient
                 if (state.MultiAgentActive)
                     yield break;
 
+                state.MarkTextDelta(textDone.ItemId, textDone.ContentIndex);
                 yield return CreateStreamingUpdate(
                     ChatRole.Assistant,
                     [new TextContent(textDone.Text)],
@@ -165,7 +166,7 @@ public partial class AgentChatClient
                 yield return CreateStreamingUpdate(
                     ChatRole.Assistant,
                     [new TextReasoningContent(reasoningSummaryDelta.Delta)],
-                    reasoningSummaryDeltaId);
+                    reasoningSummaryDelta.ItemId);
                 yield break;
 
             case ResponseReasoningSummaryTextDone reasoningSummaryDone when !string.IsNullOrEmpty(reasoningSummaryDone.Text):
@@ -177,7 +178,7 @@ public partial class AgentChatClient
                 yield return CreateStreamingUpdate(
                     ChatRole.Assistant,
                     [new TextReasoningContent(reasoningSummaryDone.Text)],
-                    reasoningSummaryDoneId);
+                    reasoningSummaryDone.ItemId);
                 yield break;
 
             case ResponseOutputItemAdded added:

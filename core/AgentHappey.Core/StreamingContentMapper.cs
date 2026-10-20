@@ -267,6 +267,28 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
     {
         switch (content)
         {
+            // A complete native item is metadata, not another text delta. Keep it
+            // separate so SDK text coalescing cannot discard its original fields.
+            case AIContent native when native.GetType() == typeof(AIContent)
+                && !string.IsNullOrEmpty(messageId)
+                && ToAgentScopedProviderMetadata(null, authorName, native.RawRepresentation) is { } metadata:
+                var itemType = metadata.Values.First().GetValueOrDefault("type")?.ToString();
+                if (itemType == "reasoning")
+                {
+                    foreach (var part in EnsureReasoningStream(messageId, reasoning))
+                        yield return part;
+                    foreach (var part in CloseReasoningStream(messageId, reasoning, null, authorName, native.RawRepresentation))
+                        yield return part;
+                }
+                else if (itemType == "message")
+                {
+                    foreach (var part in EnsureTextStream(messageId, text))
+                        yield return part;
+                    text.OpenSet.Remove(messageId);
+                    text.OpenOrder.Remove(messageId);
+                    yield return new TextEndUIMessageStreamPart { Id = messageId, ProviderMetadata = metadata.ToDictionary(pair => pair.Key, pair => (object)pair.Value) };
+                }
+                yield break;
             case UriContent uriContent:
                 yield return new SourceUIPart
                 {
@@ -304,6 +326,16 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                             Url = url,
                             Title = ann.Title
                         };
+                    }
+
+                    if (!string.IsNullOrEmpty(messageId)
+                        && ToAgentScopedProviderMetadata(null, authorName, t.RawRepresentation) is { } nativeMetadata)
+                    {
+                        foreach (var part in EnsureTextStream(messageId, text))
+                            yield return part;
+                        text.OpenSet.Remove(messageId);
+                        text.OpenOrder.Remove(messageId);
+                        yield return new TextEndUIMessageStreamPart { Id = messageId, ProviderMetadata = nativeMetadata.ToDictionary(pair => pair.Key, pair => (object)pair.Value) };
                     }
 
                     break;
@@ -353,9 +385,10 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                         yield return new ReasoningDeltaUIPart { Id = messageId!, Delta = textReasoningContent.Text };
                     }
 
-                    if (string.IsNullOrEmpty(textReasoningContent.Text))
+                    if (string.IsNullOrEmpty(textReasoningContent.Text)
+                        || ToAgentScopedProviderMetadata(null, authorName, textReasoningContent.RawRepresentation) is not null)
                     {
-                        foreach (var part in CloseReasoningStream(messageId!, reasoning, textReasoningContent.ProtectedData, authorName))
+                        foreach (var part in CloseReasoningStream(messageId!, reasoning, textReasoningContent.ProtectedData, authorName, textReasoningContent.RawRepresentation))
                             yield return part;
                     }
 
@@ -612,13 +645,14 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         string messageId,
         ReasoningStreamState text,
         string? protectedData,
-        string? authorName)
+        string? authorName,
+        object? rawRepresentation = null)
     {
         if (!text.OpenSet.Remove(messageId))
             yield break;
 
         text.OpenOrder.Remove(messageId);
-        var agentScopedProviderMetadata = ToAgentScopedProviderMetadata(protectedData, authorName);
+        var agentScopedProviderMetadata = ToAgentScopedProviderMetadata(protectedData, authorName, rawRepresentation);
 
         yield return new ReasoningEndUIPart
         {
@@ -629,9 +663,26 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
 
     private static Dictionary<string, Dictionary<string, object>>? ToAgentScopedProviderMetadata(
         string? protectedData,
-        string? authorName)
+        string? authorName,
+        object? rawRepresentation = null)
     {
-        if (string.IsNullOrWhiteSpace(protectedData) || string.IsNullOrWhiteSpace(authorName))
+        if (string.IsNullOrWhiteSpace(authorName))
+            return null;
+
+        // Keep the original item under the existing agent key, without rebuilding
+        // reasoning summaries or assistant-message fields from display text.
+        if (rawRepresentation is not null)
+        {
+            var raw = JsonSerializer.SerializeToElement(rawRepresentation, JsonWeb);
+            if (raw.ValueKind == JsonValueKind.Object && raw.TryGetProperty("responses_item", out var item)
+                && item.ValueKind == JsonValueKind.Object)
+                return new(StringComparer.Ordinal)
+                {
+                    [authorName] = item.EnumerateObject().ToDictionary(property => property.Name,
+                        property => property.Value.ValueKind == JsonValueKind.String ? (object)property.Value.GetString()! : property.Value.Clone(), StringComparer.Ordinal)
+                };
+        }
+        if (string.IsNullOrWhiteSpace(protectedData))
             return null;
 
         return new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal)

@@ -238,17 +238,39 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
         {
             var parts = new List<ResponseStreamPart>();
 
-            foreach (var message in messages.Values.Where(state => !state.IsClosed).OrderBy(state => state.OutputIndex))
-                parts.AddRange(FinishMessage(message.ItemId));
-
-            foreach (var reasoning in reasoningItems.Values.Where(state => !state.IsClosed).OrderBy(state => state.OutputIndex))
-                parts.AddRange(FinishReasoning(reasoning.ItemId));
+            foreach (var output in outputs.OrderBy(state => state.OutputIndex))
+            {
+                if (output is MessageOutputState { IsClosed: false } message)
+                    parts.AddRange(FinishMessage(message.ItemId));
+                else if (output is ReasoningOutputState { IsClosed: false } reasoning)
+                    parts.AddRange(FinishReasoning(reasoning.ItemId));
+            }
 
             return parts;
         }
 
         private IEnumerable<ResponseStreamPart> ProcessAssistantContent(string itemId, AIContent content)
-            => content switch
+        {
+            if (content.RawRepresentation is not null)
+            {
+                var raw = JsonSerializer.SerializeToElement(content.RawRepresentation, ResponseJson.Default);
+                if (raw.ValueKind == JsonValueKind.Object && raw.TryGetProperty("responses_item", out var native)
+                    && native.ValueKind == JsonValueKind.Object && native.TryGetProperty("type", out var type))
+                {
+                    var nativeId = native.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String ? id.GetString() : null;
+                    itemId = nativeId ?? itemId;
+                    ResponseOutputState? state = type.GetString() switch
+                    {
+                        "message" => GetOrCreateMessage(itemId),
+                        "reasoning" => GetOrCreateReasoning(itemId, preserveItemId: true),
+                        _ => null
+                    };
+                    if (state is not null)
+                        state.NativeItem = native.Clone();
+                }
+            }
+
+            return content switch
             {
                 UsageContent usageContent => SetUsageAndReturn(usageContent.Details),
                 ErrorContent errorContent => SetErrorAndReturn(errorContent.Message),
@@ -260,6 +282,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                 DataContent dataContent => AddMessageData(itemId, dataContent),
                 _ => []
             };
+        }
 
         private IEnumerable<ResponseStreamPart> ProcessToolContent(AIContent content)
             => content switch
@@ -562,7 +585,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             {
                 SequenceNumber = NextSequence(),
                 OutputIndex = state.OutputIndex,
-                Item = new ResponseStreamItem
+                Item = state.NativeItem?.Deserialize<ResponseStreamItem>(ResponseJson.Default) ?? new ResponseStreamItem
                 {
                     Id = state.ItemId,
                     Type = "message",
@@ -617,7 +640,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                 {
                     SequenceNumber = NextSequence(),
                     OutputIndex = state.OutputIndex,
-                    Item = new ResponseStreamItem
+                    Item = state.NativeItem?.Deserialize<ResponseStreamItem>(ResponseJson.Default) ?? new ResponseStreamItem
                     {
                         Id = state.ItemId,
                         Type = "reasoning",
@@ -645,9 +668,13 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             return state;
         }
 
-        private ReasoningOutputState GetOrCreateReasoning(string messageItemId)
+        private ReasoningOutputState GetOrCreateReasoning(string messageItemId, bool preserveItemId = false)
         {
-            var itemId = $"{messageItemId}:reasoning";
+            if (reasoningItems.TryGetValue(messageItemId, out var completed))
+                return completed;
+            var itemId = preserveItemId || messageItemId.StartsWith("rs_", StringComparison.Ordinal)
+                ? messageItemId
+                : $"{messageItemId}:reasoning";
             if (reasoningItems.TryGetValue(itemId, out var existing))
                 return existing;
 
@@ -1055,7 +1082,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
         private static object? CloneMetadataValue(object? value)
             => value is JsonElement json ? json.Clone() : value;
 
-        private static object ToOutputObject(ResponseOutputState output) => output switch
+        private static object ToOutputObject(ResponseOutputState output) => output.NativeItem is { } native ? native : output switch
         {
             MessageOutputState message => new
             {
@@ -1227,7 +1254,10 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             return $"data:{content.MediaType};base64,{base64Data}";
         }
 
-        private abstract record ResponseOutputState(int OutputIndex, string ItemId);
+        private abstract record ResponseOutputState(int OutputIndex, string ItemId)
+        {
+            public JsonElement? NativeItem { get; set; }
+        }
 
         private sealed record MessageOutputState(int OutputIndex, string ItemId) : ResponseOutputState(OutputIndex, ItemId)
         {

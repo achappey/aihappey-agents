@@ -139,6 +139,24 @@ public static class VercelHelpers
             .Select(value => value!.TryGetValue("type", out var type) ? type?.ToString() : null)
             .FirstOrDefault(type => !string.IsNullOrWhiteSpace(type));
 
+    private static object? ReadResponseItemRawRepresentation(object? value, string owner, string expectedType, string? fallbackText = null)
+    {
+        var item = JsonSerializer.SerializeToElement(value, JsonSerializerOptions.Web);
+        if (item.ValueKind == JsonValueKind.Object && expectedType == "reasoning"
+            && !item.TryGetProperty("type", out _) && item.TryGetProperty("encrypted_content", out _))
+        {
+            var fields = item.EnumerateObject().ToDictionary(property => property.Name, property => (object)property.Value.Clone());
+            fields["type"] = expectedType;
+            if (!item.TryGetProperty("summary", out _) && !string.IsNullOrWhiteSpace(fallbackText))
+                fields["summary"] = new[] { new { type = "summary_text", text = fallbackText } };
+            item = JsonSerializer.SerializeToElement(fields, JsonSerializerOptions.Web);
+        }
+        return item.ValueKind == JsonValueKind.Object
+            && item.TryGetProperty("type", out var type) && type.GetString() == expectedType
+                ? new Dictionary<string, object?> { ["responses_item"] = item.Clone(), ["agent_name"] = owner }
+                : null;
+    }
+
     public static AIContent? ToUserMessagePart(this UIMessagePart message)
     {
         return message switch
@@ -212,7 +230,10 @@ public static class VercelHelpers
                 {
                     // normal assistant text
                     case TextUIPart t:
-                        assistantContents.Add(new TextContent(t.Text ?? ""));
+                        var textRaw = t.ProviderMetadata?.Where(pair => activeAgentNameSet.Contains(pair.Key))
+                            .Select(pair => ReadResponseItemRawRepresentation(pair.Value, pair.Key, "message"))
+                            .FirstOrDefault(raw => raw is not null);
+                        assistantContents.Add(new TextContent(t.Text ?? "") { RawRepresentation = textRaw });
                         break;
 
                     case ReasoningUIPart reasoningEnd:
@@ -224,7 +245,16 @@ public static class VercelHelpers
                                 if (!activeAgentNameSet.Contains(key))
                                     continue;
 
-                                if (kvp.Value is JsonElement json &&
+                                if (ReadResponseItemRawRepresentation(kvp.Value, key, "reasoning", reasoningEnd.Text) is { } native)
+                                {
+                                    assistantContents.Add(new TextReasoningContent(reasoningEnd.Text)
+                                    {
+                                        ProtectedData = JsonSerializer.SerializeToElement(kvp.Value, JsonSerializerOptions.Web)
+                                            .TryGetProperty("encrypted_content", out var encrypted) && encrypted.ValueKind == JsonValueKind.String ? encrypted.GetString() : null,
+                                        RawRepresentation = native
+                                    });
+                                }
+                                else if (kvp.Value is JsonElement json &&
                                     json.TryGetProperty("encrypted_content", out var encryptedProp))
                                 {
                                     var encryptedContent = encryptedProp.GetString();

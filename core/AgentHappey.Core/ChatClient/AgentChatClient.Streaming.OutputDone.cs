@@ -16,21 +16,31 @@ public partial class AgentChatClient
     {
         switch (done.Item.Type)
         {
+            case "message" when !state.MultiAgentActive:
+                {
+                    if (!string.Equals(done.Item.Role, "assistant", StringComparison.OrdinalIgnoreCase))
+                        yield break;
+                    var text = done.Item.Content is { ValueKind: JsonValueKind.Array } content
+                        ? string.Concat(content.EnumerateArray().Select((part, index) =>
+                            !state.HasTextDelta(done.Item.Id, index) && part.TryGetProperty("text", out var value) ? value.GetString() : null))
+                        : string.Empty;
+                    yield return CreateStreamingUpdate(ChatRole.Assistant,
+                        [new TextContent(text), new AIContent
+                        {
+                            RawRepresentation = CreateResponseItemRawRepresentation(JsonSerializer.SerializeToElement(done.Item, ResponseJson.Default))
+                        }], done.Item.Id);
+                    yield break;
+                }
             case "reasoning":
                 {
                     if (done.Item is null)
                         yield break;
 
-                    var protectedData = done.Item.AdditionalProperties != null &&
-                                        done.Item.AdditionalProperties.TryGetValue("encrypted_content", out var value)
-                                            ? value.ToString()
-                                            : null;
-
                     yield return CreateStreamingUpdate(
                         ChatRole.Assistant,
-                        [new TextReasoningContent(string.Empty)
+                        [new AIContent
                         {
-                            ProtectedData = protectedData
+                            RawRepresentation = CreateResponseItemRawRepresentation(JsonSerializer.SerializeToElement(done.Item, ResponseJson.Default))
                         }],
                         done.Item.Id);
 

@@ -424,9 +424,43 @@ public partial class AgentChatClient
     private IEnumerable<ResponseInputItem> ToResponseInputItems(ChatMessage message)
     {
         var contentParts = new List<ResponseContentPart>();
+        var nativeMessage = message.Role == ChatRole.Assistant && message.Contents.Any(content =>
+            TryReadResponseItem<ResponseInputMessage>(content.RawRepresentation, out _)
+            && IsOwnedContinuation(content.RawRepresentation));
+        var emittedMessageIds = new HashSet<string>(StringComparer.Ordinal);
+        var emittedReasoningIds = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var content in message.Contents)
         {
+            if (message.Role == ChatRole.Assistant)
+            {
+                if (!IsOwnedContinuation(content.RawRepresentation))
+                {
+                    if (content is TextReasoningContent)
+                        continue;
+                }
+                else if (TryReadResponseItem<ResponseReasoningItem>(content.RawRepresentation, out var originalReasoning))
+                {
+                    foreach (var item in FlushResponseInputMessage(message, contentParts))
+                        yield return item;
+                    if (emittedReasoningIds.Add(originalReasoning.Id ?? JsonSerializer.Serialize(originalReasoning, ResponseJson.Default)))
+                        yield return originalReasoning;
+                    continue;
+                }
+                else if (TryReadResponseItem<ResponseInputMessage>(content.RawRepresentation, out var originalMessage))
+                {
+                    foreach (var item in FlushResponseInputMessage(message, contentParts))
+                        yield return item;
+                    if (emittedMessageIds.Add(originalMessage.Id ?? JsonSerializer.Serialize(originalMessage, ResponseJson.Default)))
+                        yield return originalMessage;
+                    continue;
+                }
+            }
+            // Text deltas are presentation only once the authoritative completed
+            // message has been retained alongside them by the SDK.
+            if (nativeMessage && content is TextContent && content.RawRepresentation is null)
+                continue;
+
             switch (content)
             {
                 case TextReasoningContent reasoning when !string.IsNullOrWhiteSpace(reasoning.ProtectedData):
@@ -436,13 +470,9 @@ public partial class AgentChatClient
                     yield return new ResponseReasoningItem
                     {
                         EncryptedContent = reasoning.ProtectedData,
-                        Summary =
-                        [
-                            new ResponseReasoningSummaryTextPart
-                            {
-                                Text = reasoning.Text
-                            }
-                        ]
+                        Summary = string.IsNullOrWhiteSpace(reasoning.Text)
+                            ? []
+                            : [new ResponseReasoningSummaryTextPart { Text = reasoning.Text }]
                     };
                     break;
 
@@ -1214,7 +1244,7 @@ public partial class AgentChatClient
         }
     }
 
-    private static void AppendResponseMessageContent(List<AIContent> parts, JsonElement message)
+    private void AppendResponseMessageContent(List<AIContent> parts, JsonElement message)
     {
         if (!message.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
             return;
@@ -1232,7 +1262,10 @@ public partial class AgentChatClient
                         ? textProperty.GetString()
                         : null;
                     if (!string.IsNullOrWhiteSpace(text))
-                        parts.Add(new TextContent(text));
+                        parts.Add(new TextContent(text)
+                        {
+                            RawRepresentation = CreateResponseItemRawRepresentation(message)
+                        });
                     break;
 
                 case "input_image":
@@ -1307,21 +1340,24 @@ public partial class AgentChatClient
         }
     }
 
-    private static void AppendReasoningContent(List<AIContent> parts, JsonElement reasoning)
+    private void AppendReasoningContent(List<AIContent> parts, JsonElement reasoning)
     {
-        if (!reasoning.TryGetProperty("encrypted_content", out var encryptedContent)
-            || encryptedContent.ValueKind != JsonValueKind.String)
-            return;
-
-        var protectedData = encryptedContent.GetString();
-        if (string.IsNullOrWhiteSpace(protectedData))
-            return;
-
-        parts.Add(new TextReasoningContent(string.Empty)
+        var summaryText = reasoning.TryGetProperty("summary", out var summary) && summary.ValueKind == JsonValueKind.Array
+            ? string.Join("\n\n", summary.EnumerateArray().Select(part => part.TryGetProperty("text", out var text) ? text.GetString() : null))
+            : string.Empty;
+        parts.Add(new TextReasoningContent(summaryText)
         {
-            ProtectedData = protectedData
+            ProtectedData = reasoning.TryGetProperty("encrypted_content", out var encrypted) && encrypted.ValueKind == JsonValueKind.String ? encrypted.GetString() : null,
+            RawRepresentation = CreateResponseItemRawRepresentation(reasoning)
         });
     }
+
+    private Dictionary<string, object?> CreateResponseItemRawRepresentation(JsonElement item)
+        => new(StringComparer.Ordinal)
+        {
+            ["responses_item"] = item.Clone(),
+            ["agent_name"] = agent.Name
+        };
 
     private void AppendFunctionCall(List<AIContent> parts, JsonElement functionCall)
     {

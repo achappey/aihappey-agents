@@ -286,6 +286,7 @@ public sealed partial class AgentChatClientFixtureTests
         Assert.InRange(assistantMessageIndex, 0, input.Count - 1);
         Assert.True(reasoningIndex < assistantMessageIndex);
         Assert.Equal("encrypted-payload", input[reasoningIndex].GetProperty("encrypted_content").GetString());
+        Assert.Equal("Visible reasoning summary", input[reasoningIndex].GetProperty("summary")[0].GetProperty("text").GetString());
         Assert.Contains("Final assistant response", input[assistantMessageIndex].GetRawText());
     }
 
@@ -1240,7 +1241,10 @@ public sealed partial class AgentChatClientFixtureTests
         Assert.Null(reasoningStartPart.ProviderMetadata);
 
         var reasoningEndPart = Assert.IsType<ReasoningEndUIPart>(uiParts.Single(part => part.Type == "reasoning-end"));
-        Assert.Null(reasoningEndPart.ProviderMetadata);
+        var metadata = Assert.Contains("StructuredAgent", reasoningEndPart.ProviderMetadata ?? []);
+        Assert.Equal("interactions-content-0", metadata["id"]);
+        Assert.False(metadata.ContainsKey("encrypted_content"));
+        Assert.Contains("google", JsonSerializer.Serialize(metadata["provider_metadata"]));
     }
 
     [Fact]
@@ -1256,7 +1260,9 @@ public sealed partial class AgentChatClientFixtureTests
         var providerMetadata = Assert.Contains("StructuredAgent", reasoningEndPart.ProviderMetadata ?? []);
 
         Assert.True(providerMetadata.ContainsKey("encrypted_content"));
-        Assert.Single(providerMetadata);
+        Assert.False(string.IsNullOrWhiteSpace(Assert.IsType<string>(providerMetadata["id"])));
+        Assert.Equal("reasoning", providerMetadata["type"]);
+        Assert.Contains("summary", providerMetadata);
         Assert.False(string.IsNullOrWhiteSpace(Assert.IsType<string>(providerMetadata["encrypted_content"])));
     }
 
