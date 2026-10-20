@@ -108,7 +108,9 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         Action<AgentChatClient, IReadOnlyList<ChatMessage>>? configureAgentClient = null,
         CancellationToken cancellationToken = default)
     {
-        var runtimeRequest = CreateRuntimeRequest(chatRequest);
+        // UI replay metadata is owned by canonical agent names, which are not
+        // known yet when the request selects catalog agents through model IDs.
+        var runtimeRequest = CreateRuntimeRequest(chatRequest, messages: []);
         ConfigureStreamingResponse(response);
 
         var context = await PrepareCoreAsync(
@@ -117,7 +119,8 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
             agentClientFactory,
             configureAgentClient,
             emitConnectionParts: true,
-            cancellationToken);
+            cancellationToken,
+            uiMessages: chatRequest.Messages);
 
         if (context.RequestToolApproval && chatRequest.Messages
             .SelectMany(message => message.Parts)
@@ -151,12 +154,15 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         Func<Agent, AgentChatClient> agentClientFactory,
         Action<AgentChatClient, IReadOnlyList<ChatMessage>>? configureAgentClient,
         bool emitConnectionParts,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<UIMessage>? uiMessages = null)
     {
         var agents = new List<AIAgent>();
         ChatClientAgentRunOptions? runOptions = null;
-        var messages = chatRequest.Messages.ToList();
         var resolvedAgents = await ResolveAgentsAsync(chatRequest, cancellationToken);
+        var messages = uiMessages is null
+            ? chatRequest.Messages.ToList()
+            : uiMessages.ToMessages(resolvedAgents.Select(agent => agent.Name)).ToList();
         // Only the single-agent UI chat endpoint participates in this handshake.
         // Responses, background runs, and workflows retain their automatic tool loop.
         var requestToolApproval = emitConnectionParts && resolvedAgents.Count == 1;
