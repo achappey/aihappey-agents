@@ -16,7 +16,7 @@ public sealed partial class AgentChatClientFixtureTests
         {
             Assert.DoesNotContain(request.Headers.SelectMany(header => header.Value), value => value.Contains("unrelated-SECRET"));
             Assert.Equal("azure-token", request.Headers.Authorization?.Parameter);
-            var values = request.Headers.TryGetValues("X-OpenAI-Key", out var found) ? found.ToArray() : [];
+            var values = request.Headers.TryGetValues("X-OpenAI-Key", out var found) ? found.Where(value => !string.IsNullOrEmpty(value)).ToArray() : [];
             Assert.Equal(expectsOpenAi ? ["configured-openai-key"] : Array.Empty<string>(), values);
             return CreateJsonResponse(LoadFixture(StructuredFixturePath));
         });

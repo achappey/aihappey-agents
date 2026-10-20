@@ -92,9 +92,10 @@ public static class HttpExtensions
             if (ProviderCredentialHeaders.IsProviderKey(header.Key)
                 && !ProviderCredentialHeaders.IsRequired(header.Key, modelId)
                 && !request.Headers.Contains(header.Key))
-                // An empty request-level entry suppresses default copying without
-                // modifying the shared client or putting a secret on the wire.
-                request.Headers.TryAddWithoutValidation(header.Key, Array.Empty<string>());
+                // A concrete empty value suppresses default copying. An empty
+                // collection is ignored by HttpHeaders and would leak the default.
+                // No credential is transmitted and the shared client is unchanged.
+                request.Headers.TryAddWithoutValidation(header.Key, string.Empty);
     }
 
     private static void ApplyRuntimeHeaders(HttpRequestMessage request, IReadOnlyDictionary<string, string>? headers)
