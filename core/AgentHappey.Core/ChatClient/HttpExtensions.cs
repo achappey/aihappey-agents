@@ -86,7 +86,7 @@ public static class HttpExtensions
             yield return evt;
     }
 
-    private static void SuppressUnrelatedDefaults(HttpRequestMessage request, HttpClient client, string? modelId)
+    internal static void SuppressUnrelatedDefaults(HttpRequestMessage request, HttpClient client, string? modelId)
     {
         foreach (var header in client.DefaultRequestHeaders)
             if (ProviderCredentialHeaders.IsProviderKey(header.Key)

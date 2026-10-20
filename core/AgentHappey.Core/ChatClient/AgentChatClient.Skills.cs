@@ -103,6 +103,7 @@ public partial class AgentChatClient
         using var request = new HttpRequestMessage(HttpMethod.Get, relativeUrl);
         foreach (var header in GetInferenceHeaders(null))
             request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        HttpExtensions.SuppressUnrelatedDefaults(request, http, null);
         request.Headers.Accept.ParseAdd("application/zip");
 
         using var response = await http.SendAsync(

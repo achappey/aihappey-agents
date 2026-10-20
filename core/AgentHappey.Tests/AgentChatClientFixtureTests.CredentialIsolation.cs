@@ -8,6 +8,27 @@ namespace AgentHappey.Tests;
 public sealed partial class AgentChatClientFixtureTests
 {
     [Theory]
+    [InlineData("openai/model", true)]
+    [InlineData("opaque-model", false)]
+    public async Task Credential_isolation_suppresses_unrelated_shared_defaults_and_unknown_model_keys(string modelId, bool expectsOpenAi)
+    {
+        using var http = CreateHttpClient(request =>
+        {
+            Assert.DoesNotContain(request.Headers.SelectMany(header => header.Value), value => value.Contains("unrelated-SECRET"));
+            Assert.Equal("azure-token", request.Headers.Authorization?.Parameter);
+            var values = request.Headers.TryGetValues("X-OpenAI-Key", out var found) ? found.ToArray() : [];
+            Assert.Equal(expectsOpenAi ? ["configured-openai-key"] : Array.Empty<string>(), values);
+            return CreateJsonResponse(LoadFixture(StructuredFixturePath));
+        });
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "azure-token");
+        http.DefaultRequestHeaders.Add("X-OpenAI-Key", "configured-openai-key");
+        http.DefaultRequestHeaders.Add("X-Anthropic-Key", "unrelated-SECRET");
+        using var client = CreateClient(http, CreateAgent(modelId: modelId));
+        await client.GetResponseAsync(CreateUserMessages("hello"));
+        Assert.Equal("unrelated-SECRET", Assert.Single(http.DefaultRequestHeaders.GetValues("X-Anthropic-Key")));
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task Credential_isolation_scopes_each_agent_without_mutating_shared_defaults(bool streaming)
