@@ -33,6 +33,7 @@ public static class HttpExtensions
         req.Content = new StringContent(payload.GetRawText(), Encoding.UTF8, "application/json");
         ApplyProviderHeaders(req, providerHeaders);
         ApplyRuntimeHeaders(req, options.Headers);
+        SuppressUnrelatedDefaults(req, client, options.Model);
 
         using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         await ThrowIfNotSuccess(resp, ct);
@@ -73,6 +74,7 @@ public static class HttpExtensions
         req.Content = new StringContent(payload.GetRawText(), Encoding.UTF8, "application/json");
         ApplyProviderHeaders(req, providerHeaders);
         ApplyRuntimeHeaders(req, options.Headers);
+        SuppressUnrelatedDefaults(req, client, options.Model);
 
         using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         await ThrowIfNotSuccess(resp, ct);
@@ -82,6 +84,17 @@ public static class HttpExtensions
 
         await foreach (var evt in ReadResponseSseEventsAsync(reader, ct))
             yield return evt;
+    }
+
+    private static void SuppressUnrelatedDefaults(HttpRequestMessage request, HttpClient client, string? modelId)
+    {
+        foreach (var header in client.DefaultRequestHeaders)
+            if (ProviderCredentialHeaders.IsProviderKey(header.Key)
+                && !ProviderCredentialHeaders.IsRequired(header.Key, modelId)
+                && !request.Headers.Contains(header.Key))
+                // An empty request-level entry suppresses default copying without
+                // modifying the shared client or putting a secret on the wire.
+                request.Headers.TryAddWithoutValidation(header.Key, Array.Empty<string>());
     }
 
     private static void ApplyRuntimeHeaders(HttpRequestMessage request, IReadOnlyDictionary<string, string>? headers)
