@@ -65,6 +65,7 @@ public partial class AgentChatClient
             };
 
             EnsureHeaders();
+            request.Headers = GetInferenceHeaders(request.Model);
             var response = await http.GetResponses(
                 request,
                 providerHeaders: agent.Model.ProviderHeaders,

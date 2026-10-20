@@ -32,6 +32,7 @@ public static class HttpExtensions
         var payload = BuildPayload(options, extraRootProperties);
         req.Content = new StringContent(payload.GetRawText(), Encoding.UTF8, "application/json");
         ApplyProviderHeaders(req, providerHeaders);
+        ApplyRuntimeHeaders(req, options.Headers);
 
         using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         await ThrowIfNotSuccess(resp, ct);
@@ -71,6 +72,7 @@ public static class HttpExtensions
 
         req.Content = new StringContent(payload.GetRawText(), Encoding.UTF8, "application/json");
         ApplyProviderHeaders(req, providerHeaders);
+        ApplyRuntimeHeaders(req, options.Headers);
 
         using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         await ThrowIfNotSuccess(resp, ct);
@@ -80,6 +82,12 @@ public static class HttpExtensions
 
         await foreach (var evt in ReadResponseSseEventsAsync(reader, ct))
             yield return evt;
+    }
+
+    private static void ApplyRuntimeHeaders(HttpRequestMessage request, IReadOnlyDictionary<string, string>? headers)
+    {
+        foreach (var (name, value) in headers ?? new Dictionary<string, string>())
+            if (!request.Headers.Contains(name)) request.Headers.TryAddWithoutValidation(name, value);
     }
 
     private static void ApplyProviderHeaders(

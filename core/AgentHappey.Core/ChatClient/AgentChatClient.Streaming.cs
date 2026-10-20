@@ -23,6 +23,7 @@ public partial class AgentChatClient
         SetHistory(replay);
 
         var request = BuildResponseRequest(replay, options);
+        request.Headers = GetInferenceHeaders(request.Model);
         request.Stream = true;
 
         var state = new StreamingResponseState(

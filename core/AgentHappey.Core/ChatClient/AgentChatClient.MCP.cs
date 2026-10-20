@@ -120,7 +120,7 @@ public partial class AgentChatClient
                 var httpClient = httpClientFactory.CreateClient();
                 ApplyConfiguredMcpHeaders(httpClient, servers.Value);
                 ApplyInferenceAuthorizationForSameEndpoint(http, httpClient, url);
-                ApplyForwardedHeaders(httpClient);
+                ApplyForwardedHeaders(httpClient, servers.Value);
 
                 var transport = new HttpClientTransport(new()
                 {
@@ -335,12 +335,16 @@ public partial class AgentChatClient
         AgentHappey.Common.Models.McpServer Configuration,
         Implementation ServerInfo);
 
-    private void ApplyForwardedHeaders(HttpClient client)
+    private void ApplyForwardedHeaders(HttpClient client, AgentHappey.Common.Models.McpServer server)
     {
         if (headers == null)
             return;
 
-        foreach (var header in headers.Where(header => !client.DefaultRequestHeaders.Contains(header.Key)))
+        // An MCP connection is not an inference request. Only its explicitly
+        // configured header names may opt into inherited values.
+        foreach (var header in headers.Where(header =>
+            server.Headers?.Keys.Any(name => name.Equals(header.Key, StringComparison.OrdinalIgnoreCase)) == true
+            && !client.DefaultRequestHeaders.Contains(header.Key)))
             client.DefaultRequestHeaders.Add(header.Key, header.Value);
     }
 

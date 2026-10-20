@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.ChatRuntime;
+using AIHappey.Responses;
 
 namespace AgentHappey.Core.ChatClient;
 
@@ -16,15 +17,15 @@ public partial class AgentChatClient(
 
     public void EnsureHeaders()
     {
-        if (headers != null)
-            foreach (var header in headers.Where(z => !http.DefaultRequestHeaders.Contains(z.Key)))
-                http.DefaultRequestHeaders.Add(header.Key, header.Value);
+        // Retained for source compatibility. Never mutate a shared HttpClient:
+        // credentials and agent identity are applied to individual requests.
+    }
 
-        if (string.IsNullOrWhiteSpace(agent.Name))
-            return;
-
-        http.DefaultRequestHeaders.Remove(AgentNameHeader);
-        http.DefaultRequestHeaders.Add(AgentNameHeader, agent.Name);
+    private Dictionary<string, string> GetInferenceHeaders(string? modelId)
+    {
+        var scoped = ProviderCredentialHeaders.ForModel(headers, modelId);
+        if (!string.IsNullOrWhiteSpace(agent.Name)) scoped[AgentNameHeader] = agent.Name;
+        return scoped;
     }
 
     public async Task<ChatResponse> GetResponseAsync(
@@ -35,6 +36,7 @@ public partial class AgentChatClient(
         EnsureHeaders();
         var replay = await RestoreInputRequiredAsync(messages, cancellationToken);
         var request = BuildResponseRequest(replay, options);
+        request.Headers = GetInferenceHeaders(request.Model);
         var response = await http.GetResponses(
             request,
             providerHeaders: agent.Model.ProviderHeaders,

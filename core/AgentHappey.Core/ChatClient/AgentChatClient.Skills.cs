@@ -101,6 +101,8 @@ public partial class AgentChatClient
             : $"v1/skills/{encodedSkillId}/versions/{Uri.EscapeDataString(reference.Version)}/content";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, relativeUrl);
+        foreach (var header in GetInferenceHeaders(null))
+            request.Headers.TryAddWithoutValidation(header.Key, header.Value);
         request.Headers.Accept.ParseAdd("application/zip");
 
         using var response = await http.SendAsync(
