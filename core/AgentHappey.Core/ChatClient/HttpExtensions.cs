@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Net.Http.Headers;
 using AIHappey.Responses.Streaming;
 using AIHappey.Responses;
+using AIHappey.Responses.Diagnostics;
 
 namespace AgentHappey.Core.ChatClient;
 
@@ -35,10 +36,18 @@ public static class HttpExtensions
         ApplyRuntimeHeaders(req, options.Headers);
         SuppressUnrelatedDefaults(req, client, options.Model);
 
+        var observer = ResponsesTransportScope.Current;
+        var operation = CreateOperation(observer, options.Model, relativeUrl);
+        if (observer is not null)
+            await observer.OnBodyAsync(operation!, "request", payload.GetRawText(), "application/json", ct);
+
         using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
-        await ThrowIfNotSuccess(resp, ct);
+        await ThrowIfNotSuccess(resp, ct, observer, operation);
 
         var body = await resp.Content.ReadAsStringAsync(ct);
+        if (observer is not null)
+            await observer.OnBodyAsync(operation!, "response", body,
+                resp.Content.Headers.ContentType?.MediaType ?? "application/json", ct);
 
         var result = JsonSerializer.Deserialize<ResponseResult>(body, ResponseJson.Default);
 
@@ -76,11 +85,18 @@ public static class HttpExtensions
         ApplyRuntimeHeaders(req, options.Headers);
         SuppressUnrelatedDefaults(req, client, options.Model);
 
+        var observer = ResponsesTransportScope.Current;
+        var operation = CreateOperation(observer, options.Model, relativeUrl);
+        if (observer is not null)
+            await observer.OnBodyAsync(operation!, "request", payload.GetRawText(), "application/json", ct);
+
         using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
-        await ThrowIfNotSuccess(resp, ct);
+        await ThrowIfNotSuccess(resp, ct, observer, operation);
 
         await using var stream = await resp.Content.ReadAsStreamAsync(ct);
-        using var reader = new StreamReader(stream);
+        using var observed = observer?.ObserveStream(stream, operation!,
+            resp.Content.Headers.ContentType?.MediaType ?? "text/event-stream");
+        using var reader = new StreamReader(observed ?? stream);
 
         await foreach (var evt in ReadResponseSseEventsAsync(reader, ct))
             yield return evt;
@@ -206,11 +222,19 @@ public static class HttpExtensions
     }
 
 
-    private static async Task ThrowIfNotSuccess(HttpResponseMessage resp, CancellationToken ct)
+    private static ResponsesTransportOperation? CreateOperation(
+        IResponsesTransportObserver? observer, string? model, string relativeUrl)
+        => observer is null ? null : new(model?.Split('/', 2)[0], relativeUrl, Guid.NewGuid().ToString("n"));
+
+    private static async Task ThrowIfNotSuccess(HttpResponseMessage resp, CancellationToken ct,
+        IResponsesTransportObserver? observer, ResponsesTransportOperation? operation)
     {
         if (resp.IsSuccessStatusCode) return;
 
         var body = resp.Content is null ? "" : await resp.Content.ReadAsStringAsync(ct);
+        if (observer is not null)
+            await observer.OnBodyAsync(operation!, "response", body,
+                resp.Content?.Headers.ContentType?.MediaType ?? "application/json", ct);
         throw new HttpRequestException($"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}: {body}");
     }
 

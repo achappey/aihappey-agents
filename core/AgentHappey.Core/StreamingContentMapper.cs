@@ -13,6 +13,7 @@ using ModelContextProtocol.Protocol;
 using System.Net.Mime;
 using AgentHappey.Common.Extensions;
 using AIHappey.Vercel.Models;
+using AgentHappey.Core.Diagnostics;
 
 namespace AgentHappey.Core;
 
@@ -37,9 +38,7 @@ public static class StreamWriterExtensions
     {
         await foreach (var p in parts.WithCancellation(ct))
         {
-            string json = JsonSerializer.Serialize(p, JsonSerializerOptions.Web);
-            await response.WriteAsync($"data: {json}\n\n", ct);
-            await response.Body.FlushAsync(ct);
+            await response.WritePartAsync(p, ct);
         }
     }
 
@@ -66,6 +65,12 @@ public static class StreamWriterExtensions
         UIMessagePart part,
         CancellationToken ct = default)
     {
+        if (ChatSseWriter.Current(response.HttpContext) is { } writer)
+        {
+            await writer.WriteAsync(part, ct);
+            return;
+        }
+
         string json = JsonSerializer.Serialize(part, JsonSerializerOptions.Web);
         await response.WriteAsync($"data: {json}\n\n", ct);
         await response.Body.FlushAsync(ct);

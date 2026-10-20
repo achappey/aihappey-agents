@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core;
+using AgentHappey.Core.Diagnostics;
 
 namespace AgentHappey.HeaderAuth.Controllers;
 
@@ -19,6 +20,8 @@ public class ChatController(IHttpClientFactory httpClientFactory,
     [HttpPost]
     public async Task<IActionResult> Post([FromBody] AgentRequest chatRequest, CancellationToken cancellationToken)
     {
+        using var writer = new ChatSseWriter(HttpContext);
+        using var debugScope = ResponsesTransportDebugObserver.Begin(HttpContext);
         try
         {
             var client = httpClientFactory.CreateClient();

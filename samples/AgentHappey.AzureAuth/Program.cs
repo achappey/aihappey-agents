@@ -6,6 +6,7 @@ using AgentHappey.AsyncResponses;
 using AgentHappey.Common.Models;
 using AgentHappey.Core;
 using AgentHappey.Core.ChatRuntime;
+using AgentHappey.Core.Diagnostics;
 using AgentHappey.Core.MCP;
 using AgentHappey.Core.Responses;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -49,6 +50,7 @@ builder.Services
 .AddMcpServers();
 
 builder.Services.AddControllers();
+builder.Services.AddProviderDebugEvents();
 builder.Services.AddAsyncAgentResponses<AzureAuthAsyncResponsesProcessor>(builder.Configuration);
 
 builder.Services.AddSingleton(appConfig?.AiConfig!);

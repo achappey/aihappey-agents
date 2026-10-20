@@ -2,6 +2,7 @@ using AgentHappey.Agents.JSON;
 using AgentHappey.Common.Models;
 using AgentHappey.Core;
 using AgentHappey.Core.ChatRuntime;
+using AgentHappey.Core.Diagnostics;
 using AgentHappey.Core.MCP;
 using AgentHappey.Core.Responses;
 using AgentHappey.HeaderAuth.Controllers;
@@ -28,6 +29,7 @@ public static class HeaderAuthGatewayExtensions
             .WithExposedHeaders("WWW-Authenticate")
             .WithExposedHeaders("Mcp-Session-Id")));
         services.AddHttpContextAccessor();
+        services.AddProviderDebugEvents();
         services.AddControllers().AddApplicationPart(typeof(ModelsController).Assembly);
         services.AddSingleton<IResponsesNativeMapper, ResponsesNativeMapper>();
         services.AddSingleton<IStreamingContentMapper, StreamingContentMapper>();

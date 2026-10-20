@@ -11,6 +11,7 @@ using AgentHappey.Core.MCP;
 using System.Text;
 using AIHappey.Vercel.Models;
 using AgentHappey.Core;
+using AgentHappey.Core.Diagnostics;
 
 namespace AgentHappey.AzureAuth.Controllers;
 
@@ -30,6 +31,8 @@ public class ChatController(IHttpClientFactory httpClientFactory,
     [Authorize]
     public async Task<IActionResult> Post([FromBody] AgentRequest chatRequest, CancellationToken cancellationToken)
     {
+        using var writer = new ChatSseWriter(HttpContext);
+        using var debugScope = ResponsesTransportDebugObserver.Begin(HttpContext);
         try
         {
             var client = httpClientFactory.CreateClient();
@@ -48,7 +51,9 @@ public class ChatController(IHttpClientFactory httpClientFactory,
                     client,
                     httpClientFactory,
                     agent,
-                    new Dictionary<string, string?>(),
+                    RequestDebugEvents.IsEnabled(Request.Headers)
+                        ? new Dictionary<string, string?> { [RequestDebugEvents.HeaderName] = "true" }
+                        : new Dictionary<string, string?>(),
                     serviceProvider.GetMcpTokenAsync,
                     options.Value.AgentPluginExtensionNamespace),
                 (agentClient, messages) => agentClient.SetHistory(messages),
