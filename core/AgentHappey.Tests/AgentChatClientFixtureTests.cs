@@ -37,6 +37,8 @@ public sealed partial class AgentChatClientFixtureTests
     [InlineData("http://localhost:5000/v1/", "http://localhost:5000/mcp", true)]
     [InlineData("http://localhost:5000/v1/", "http://localhost:5001/mcp", false)]
     [InlineData("https://backend.test/v1/", "https://other.test/mcp", false)]
+    [InlineData("https://backend.test:443/v1/", "http://backend.test:443/mcp", false)]
+    [InlineData("http://backend.test:80/v1/", "https://backend.test:80/mcp", false)]
     public void Mcp_server_is_same_inference_endpoint_when_host_and_port_match(string inferenceEndpoint, string mcpServerUrl, bool expected)
     {
         var result = InvokePrivateStatic<bool>(

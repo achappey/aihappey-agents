@@ -112,4 +112,20 @@ public sealed partial class AgentChatClientFixtureTests
         InvokePrivateStatic("ApplyInferenceAuthorizationForSameEndpoint", inference, remote, "https://tools.test/mcp");
         Assert.Null(remote.DefaultRequestHeaders.Authorization);
     }
+
+    [Fact]
+    public void Inference_authorization_is_not_forwarded_to_same_host_and_port_with_a_different_scheme()
+    {
+        using var inference = new HttpClient { BaseAddress = new Uri("https://backend.test/") };
+        inference.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "azure-downstream-token");
+        using var mcp = new HttpClient();
+
+        InvokePrivateStatic(
+            "ApplyInferenceAuthorizationForSameEndpoint",
+            inference,
+            mcp,
+            "http://backend.test:443/mcp");
+
+        Assert.Null(mcp.DefaultRequestHeaders.Authorization);
+    }
 }
