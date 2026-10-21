@@ -9,7 +9,13 @@ namespace AgentHappey.Common.Models;
 public class Agent
 {
     [JsonPropertyName("model")]
-    public AIModel Model { get; set; } = null!;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AIModel? Model { get; set; }
+
+    // Ordered, full configurations: a decision model is a router, not an answer candidate.
+    [JsonPropertyName("models")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<AIModel>? Models { get; set; }
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = null!;
@@ -279,6 +285,11 @@ public class AIModel
 {
     [JsonPropertyName("id")]
     public string Id { get; set; } = null!;
+
+    // Optional catalog hint for offline fallback only; routing classification uses the live catalog.
+    [JsonPropertyName("type")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Type { get; set; }
 
     [JsonPropertyName("options")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

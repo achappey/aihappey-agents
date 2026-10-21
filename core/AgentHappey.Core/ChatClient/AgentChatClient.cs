@@ -35,11 +35,12 @@ public partial class AgentChatClient(
     {
         EnsureHeaders();
         var replay = await RestoreInputRequiredAsync(messages, cancellationToken);
+        await InitializeModelAsync(replay, cancellationToken);
         var request = BuildResponseRequest(replay, options);
         request.Headers = GetInferenceHeaders(request.Model);
         var response = await http.GetResponses(
             request,
-            providerHeaders: agent.Model.ProviderHeaders,
+            providerHeaders: EffectiveModel.ProviderHeaders,
             ct: cancellationToken);
 
         var result = ToChatResponse(response);

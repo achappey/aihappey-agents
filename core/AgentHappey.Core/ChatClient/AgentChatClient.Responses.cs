@@ -19,7 +19,7 @@ public partial class AgentChatClient
     private ResponseRequest BuildResponseRequest(IEnumerable<ChatMessage> messages, ChatOptions? options)
         => new()
         {
-            Model = agent.Model.Id,
+            Model = EffectiveModel.Id,
             Input = new ResponseInput(ToResponseReplayInputItems(messages, options)),
             Tools = BuildResponseToolDefinitions(options?.Tools),
             Text = agent.GetResponsesText(),
@@ -28,7 +28,7 @@ public partial class AgentChatClient
             Stream = false,
             ToolChoice = "auto",
             ParallelToolCalls = HasProviderOption("parallel_tool_calls") ? null : true,
-            Temperature = agent.Model.Options?.Temperature ?? 1
+            Temperature = EffectiveModel.Options?.Temperature ?? 1
         };
 
     private List<ResponseInputItem> ToResponseReplayInputItems(IEnumerable<ChatMessage> messages, ChatOptions? options)
@@ -47,14 +47,14 @@ public partial class AgentChatClient
     }
 
     private string GetProviderKey()
-        => agent.Model.Id.Split('/')[0];
+        => EffectiveModel.Id.Split('/')[0];
 
     private bool HasProviderOption(string optionName)
-        => agent.Model.ProviderMetadata?.ContainsKey(optionName) == true;
+        => EffectiveModel.ProviderMetadata?.ContainsKey(optionName) == true;
 
     private Dictionary<string, object?>? BuildResponsesProviderMetadata()
     {
-        if (agent.Model.ProviderMetadata is not { Count: > 0 } providerMetadata)
+        if (EffectiveModel.ProviderMetadata is not { Count: > 0 } providerMetadata)
             return null;
 
         return new Dictionary<string, object?>
@@ -94,7 +94,7 @@ public partial class AgentChatClient
     /// </summary>
     private Dictionary<string, object?>? BuildSideInferenceProviderMetadata()
     {
-        if (agent.Model.ProviderMetadata is not { Count: > 0 } providerMetadata)
+        if (EffectiveModel.ProviderMetadata is not { Count: > 0 } providerMetadata)
             return null;
 
         var source = JsonSerializer.SerializeToElement(providerMetadata, JsonSerializerOptions.Web);

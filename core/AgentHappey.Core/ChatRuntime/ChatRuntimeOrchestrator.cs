@@ -171,6 +171,7 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         {
             var agentClient = agentClientFactory(agent);
             configureAgentClient?.Invoke(agentClient, messages);
+            await agentClient.InitializeModelAsync(messages, cancellationToken);
 
             var tools = await agentClient.ConnectMcp(cancellationToken);
             ClientToolDeclaration.AddTo(tools, chatRequest.Tools);

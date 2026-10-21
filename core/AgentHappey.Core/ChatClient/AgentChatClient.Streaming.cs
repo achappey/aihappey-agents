@@ -20,6 +20,7 @@ public partial class AgentChatClient
     {
         EnsureHeaders();
         var replay = await RestoreInputRequiredAsync(messages, cancellationToken);
+        await InitializeModelAsync(replay, cancellationToken);
         SetHistory(replay);
 
         var request = BuildResponseRequest(replay, options);
@@ -33,7 +34,7 @@ public partial class AgentChatClient
 
         await foreach (var part in http.GetResponsesUpdates(
             request,
-            providerHeaders: agent.Model.ProviderHeaders,
+            providerHeaders: EffectiveModel.ProviderHeaders,
             ct: cancellationToken).WithCancellation(cancellationToken))
         {
             foreach (var update in ToStreamingChatResponseUpdates(part, state))
@@ -629,10 +630,10 @@ public partial class AgentChatClient
 
     private string GetStreamingModelId()
     {
-        var segments = agent.Model.Id.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var segments = EffectiveModel.Id.Split('/', StringSplitOptions.RemoveEmptyEntries);
         return segments.Length > 1
             ? string.Join('/', segments.Skip(1))
-            : agent.Model.Id;
+            : EffectiveModel.Id;
     }
 
     private string? GetStructuredOutputText(ResponseResult response)

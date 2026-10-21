@@ -42,7 +42,7 @@ public partial class AgentChatClient
 
             var request = new ResponseRequest
             {
-                Model = agent.Model.Id,
+                Model = EffectiveModel.Id,
                 Instructions = GetComposedInstructions(),
                 Input = new ResponseInput(
                 [
@@ -60,7 +60,7 @@ public partial class AgentChatClient
                 ToolChoice = "none",
                 ParallelToolCalls = false,
                 Stream = false,
-                Temperature = agent.Model.Options?.Temperature ?? 1,
+                Temperature = EffectiveModel.Options?.Temperature ?? 1,
                 Metadata = BuildSideInferenceProviderMetadata()
             };
 
@@ -68,7 +68,7 @@ public partial class AgentChatClient
             request.Headers = GetInferenceHeaders(request.Model);
             var response = await http.GetResponses(
                 request,
-                providerHeaders: agent.Model.ProviderHeaders,
+                providerHeaders: EffectiveModel.ProviderHeaders,
                 ct: cancellationToken);
 
             var selected = ParseToolSearchSelection(ExtractResponseText(response), catalog);
