@@ -917,7 +917,7 @@ public partial class AgentChatClient
         contentParts.Clear();
     }
 
-    private static IEnumerable<ResponseContentPart> ToResponseContentParts(ChatMessage message)
+    private IEnumerable<ResponseContentPart> ToResponseContentParts(ChatMessage message)
     {
         foreach (var content in message.Contents)
         {
@@ -927,7 +927,7 @@ public partial class AgentChatClient
         }
     }
 
-    private static ResponseContentPart? ToResponseContentPart(ChatMessage message, AIContent content)
+    private ResponseContentPart? ToResponseContentPart(ChatMessage message, AIContent content)
     {
         switch (content)
         {
@@ -938,6 +938,9 @@ public partial class AgentChatClient
 
             case UriContent remote when message.Role == ChatRole.User
                 && (remote.Uri.Scheme == Uri.UriSchemeHttp || remote.Uri.Scheme == Uri.UriSchemeHttps):
+                if (!string.Equals(GetProviderKey(), "openai", StringComparison.OrdinalIgnoreCase))
+                    throw new NotSupportedException($"Provider '{GetProviderKey()}' does not support remote attachment URLs.");
+
                 return remote.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
                     ? new InputImagePart { ImageUrl = remote.Uri.OriginalString }
                     : new InputFilePart

@@ -75,6 +75,53 @@ public sealed partial class AgentChatClientFixtureTests
         await AssertAttachmentRequestAsync(mapped.Messages, url, mediaType, image ? null : filename, streaming);
     }
 
+    [Theory]
+    [InlineData("https://example.com/image.png", "image/png", false)]
+    [InlineData("https://example.com/report.pdf", "application/pdf", false)]
+    [InlineData("https://example.com/image.png", "image/png", true)]
+    [InlineData("https://example.com/report.pdf", "application/pdf", true)]
+    public async Task Remote_attachments_are_rejected_for_providers_without_native_url_support(
+        string url, string mediaType, bool streaming)
+    {
+        var messages = new[]
+        {
+            new UIMessage
+            {
+                Id = "user-attachment",
+                Role = Role.user,
+                Parts = [new FileUIPart { Url = url, MediaType = mediaType }]
+            }
+        }.ToMessages().ToList();
+
+        var requestSent = false;
+        using var httpClient = CreateHttpClient(_ =>
+        {
+            requestSent = true;
+            return CreateJsonResponse(LoadFixture(StructuredFixturePath));
+        });
+        using var client = CreateClient(httpClient, CreateAgent(modelId: "anthropic/model"));
+
+        if (streaming)
+        {
+            await Assert.ThrowsAsync<NotSupportedException>(async () =>
+                await CollectAsync(client.GetStreamingResponseAsync(messages)));
+        }
+        else
+        {
+            await Assert.ThrowsAsync<NotSupportedException>(async () =>
+                await client.GetResponseAsync(messages));
+        }
+
+        Assert.False(requestSent);
+    }
+
+    [Theory]
+    [InlineData("file:///etc/passwd")]
+    [InlineData("ftp://example.com/report.pdf")]
+    [InlineData("javascript:alert(1)")]
+    public void Unsupported_attachment_url_schemes_are_rejected(string url)
+        => Assert.Throws<NotSupportedException>(() => url.ToFileContent("application/octet-stream"));
+
     private static void AssertAttachmentContent(AIContent content, string url, string mediaType, string? filename)
     {
         if (url.StartsWith("data:"))
