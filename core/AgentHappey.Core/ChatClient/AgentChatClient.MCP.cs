@@ -392,7 +392,8 @@ public partial class AgentChatClient
         if (!Uri.TryCreate(mcpServerUrl, UriKind.Absolute, out var mcpEndpoint))
             return false;
 
-        return string.Equals(inferenceEndpoint.Host, mcpEndpoint.Host, StringComparison.OrdinalIgnoreCase)
+        return string.Equals(inferenceEndpoint.Scheme, mcpEndpoint.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(inferenceEndpoint.Host, mcpEndpoint.Host, StringComparison.OrdinalIgnoreCase)
             && inferenceEndpoint.Port == mcpEndpoint.Port;
     }
 
