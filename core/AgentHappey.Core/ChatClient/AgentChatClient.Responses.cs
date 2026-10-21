@@ -936,6 +936,16 @@ public partial class AgentChatClient
                     ? new OutputTextPart(text.Text)
                     : new InputTextPart(text.Text);
 
+            case UriContent remote when message.Role == ChatRole.User
+                && (remote.Uri.Scheme == Uri.UriSchemeHttp || remote.Uri.Scheme == Uri.UriSchemeHttps):
+                return remote.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+                    ? new InputImagePart { ImageUrl = remote.Uri.OriginalString }
+                    : new InputFilePart
+                    {
+                        FileUrl = remote.Uri.OriginalString,
+                        Filename = remote.AdditionalProperties?.GetValueOrDefault("filename")?.ToString()
+                    };
+
             case DataContent data when data.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase):
                 if (message.Role == ChatRole.User)
                     return new InputImagePart

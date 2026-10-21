@@ -162,10 +162,7 @@ public static class VercelHelpers
         return message switch
         {
             TextUIPart textUIPart => new TextContent(textUIPart.Text ?? ""),
-            FileUIPart fileUIPart => new DataContent(fileUIPart.Url, fileUIPart.MediaType)
-            {
-                Name = fileUIPart.Filename
-            },
+            FileUIPart fileUIPart => fileUIPart.Url.ToFileContent(fileUIPart.MediaType, fileUIPart.Filename),
             _ => null,
         };
     }

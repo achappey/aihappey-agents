@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AgentHappey.Common.Extensions;
 using AgentHappey.Common.Models;
 using AgentHappey.Core.ChatRuntime;
 using AIHappey.Responses;
@@ -175,11 +176,11 @@ public static class ResponsesRuntimeMapper
                         if (string.IsNullOrWhiteSpace(data))
                             break;
 
-                        var mediaType = file.MediaType ?? "application/octet-stream";
-                        yield return new DataContent(data, mediaType)
-                        {
-                            Name = file.Filename
-                        };
+                        var mediaType = file.MediaType
+                            ?? (file.Metadata?.GetValueOrDefault("responses.type")?.ToString() == "input_image"
+                                ? "image/*"
+                                : "application/octet-stream");
+                        yield return data.ToFileContent(mediaType, file.Filename);
                         break;
                     }
 

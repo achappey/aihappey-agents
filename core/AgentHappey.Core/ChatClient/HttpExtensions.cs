@@ -208,7 +208,26 @@ public static class HttpExtensions
         ResponseStreamPart? evt;
         try
         {
-            evt = JsonSerializer.Deserialize<ResponseStreamPart>(data);
+            using var document = JsonDocument.Parse(data);
+            var root = document.RootElement;
+            // A gateway failure may use the OpenAI error envelope instead of a
+            // typed Responses event. It is a downstream error, not invalid JSON.
+            if (!root.TryGetProperty("type", out _)
+                && root.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.Object)
+            {
+                return new ResponseError
+                {
+                    Message = error.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String
+                        ? message.GetString()! : "Responses stream failed.",
+                    Code = error.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.String
+                        ? code.GetString()! : null!,
+                    Param = error.TryGetProperty("param", out var param) && param.ValueKind == JsonValueKind.String
+                        ? param.GetString()! : null!
+                };
+            }
+
+            evt = root.Deserialize<ResponseStreamPart>();
         }
         catch (Exception ex)
         {
