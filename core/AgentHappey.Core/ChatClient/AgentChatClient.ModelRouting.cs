@@ -134,7 +134,7 @@ public partial class AgentChatClient
     }
 
     private void ApplyRoutingHeaders(HttpRequestMessage request, IReadOnlyList<string> modelIds,
-        IReadOnlyDictionary<string, string>? providerHeaders = null)
+        IReadOnlyDictionary<string, string>? providerHeaders = null, bool includeAgentName = true)
     {
         foreach (var (name, value) in providerHeaders ?? new Dictionary<string, string>())
             if (!ProviderCredentialHeaders.IsProviderKey(name) || modelIds.Any(id => ProviderCredentialHeaders.IsRequired(name, id)))
@@ -147,10 +147,14 @@ public partial class AgentChatClient
             if (ProviderCredentialHeaders.IsProviderKey(header.Key) && !modelIds.Any(id => ProviderCredentialHeaders.IsRequired(header.Key, id))
                 && !request.Headers.Contains(header.Key))
                 request.Headers.TryAddWithoutValidation(header.Key, string.Empty);
-        if (!string.IsNullOrWhiteSpace(agent.Name))
+        if (includeAgentName && !string.IsNullOrWhiteSpace(agent.Name))
         {
             request.Headers.Remove(AgentNameHeader);
             request.Headers.TryAddWithoutValidation(AgentNameHeader, agent.Name);
+        }
+        else if (!includeAgentName)
+        {
+            request.Headers.Remove(AgentNameHeader);
         }
     }
 }

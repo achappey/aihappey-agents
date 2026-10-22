@@ -27,12 +27,19 @@ public class AgentRequest
 
 public class WorkflowMetadata
 {
+    public Decisions? Decisions { get; set; }
+
     public Groupchat? Groupchat { get; set; }
 
     public Handoff? Handoff { get; set; }
 
     public Magentic? Magentic { get; set; }
 
+}
+
+public class Decisions
+{
+    public string? Model { get; set; }
 }
 
 public class Groupchat

@@ -160,6 +160,21 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         var agents = new List<AIAgent>();
         ChatClientAgentRunOptions? runOptions = null;
         var resolvedAgents = await ResolveAgentsAsync(chatRequest, cancellationToken);
+        if (chatRequest.WorkflowType == "decisions")
+        {
+            if (resolvedAgents.Count == 0)
+                throw new InvalidOperationException("Decisions workflow requires at least one available agent.");
+
+            // The factory supplies this caller's gateway transport and credentials only.
+            // Do not initialize models, connect tools, or construct runtime agents until selection succeeds.
+            using var router = agentClientFactory(resolvedAgents[0]);
+            var routingMessages = uiMessages is null
+                ? chatRequest.Messages
+                : uiMessages.ToMessages(resolvedAgents.Select(agent => agent.Name)).ToList();
+            var selected = await router.SelectWorkflowAgentAsync(
+                chatRequest.WorkflowMetadata?.Decisions, resolvedAgents, routingMessages, cancellationToken);
+            resolvedAgents = [selected];
+        }
         var messages = uiMessages is null
             ? chatRequest.Messages.ToList()
             : uiMessages.ToMessages(resolvedAgents.Select(agent => agent.Name)).ToList();
