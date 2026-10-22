@@ -24,7 +24,7 @@ public sealed class BlobModelSource(BlobAgentsConfig? config) : IModelSource
             models.Add(new Model
             {
                 Id = entry.Agent.Name,
-                OwnedBy = "agenthappey",
+                OwnedBy = entry.Agent.OwnedBy?.Trim() ?? "",
                 Agent = entry.Agent,
                 Description = entry.Agent.Description,
                 Tags = entry.Agent.Tags,

@@ -27,6 +27,10 @@ public class Agent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[]? Tags { get; set; }
 
+    [JsonPropertyName("owned_by")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? OwnedBy { get; set; }
+
     [JsonPropertyName("instructions")]
     public string Instructions { get; set; } = null!;
 

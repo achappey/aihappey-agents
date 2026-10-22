@@ -43,7 +43,7 @@ public static class StaticContentLoader
             yield return new Model
             {
                 Id = agentObj.Name,
-                OwnedBy = "agenthappey",
+                OwnedBy = agentObj.OwnedBy?.Trim() ?? "",
                 Agent = agentObj,
                 Description = agentObj.Description,
                 Tags = agentObj.Tags,
