@@ -2,7 +2,6 @@ using System.Text.Json;
 using AgentHappey.Common.Models;
 using AgentHappey.Core;
 using AgentHappey.Core.ChatRuntime;
-using AIHappey.Vercel.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.AI;
 

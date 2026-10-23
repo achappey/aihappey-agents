@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
-using AgentHappey.Common.Models;
 using AgentHappey.Core.ChatClient;
 using Microsoft.Extensions.AI;
 using ConfiguredModel = AgentHappey.Common.Models.AIModel;

@@ -1,7 +1,6 @@
 using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
-using AgentHappey.Common.Models;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using LocalEvaluatorConfig = AgentHappey.Common.Models.LocalEvaluator;
