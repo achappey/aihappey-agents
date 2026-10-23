@@ -11,6 +11,7 @@ The runtime supports the standard [Microsoft Agent Framework](https://github.com
 - **Handoff** - control moves between specialized agents
 - **Group Chat** - agents collaborate in a shared conversation
 - **Magentic** - a manager agent dynamically coordinates the team
+- **Decisions** - one agent is selected and executed based on the input
 
 **Documentation:** https://docs.aihappey.com/agents  
 **API:** https://agents.aihappey.net
