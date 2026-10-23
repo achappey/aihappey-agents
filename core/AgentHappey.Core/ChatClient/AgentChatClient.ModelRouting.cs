@@ -34,6 +34,12 @@ public partial class AgentChatClient
             return; // Legacy agents do not acquire a new catalog dependency.
         }
 
+        if (configured.Count == 1)
+        {
+            resolvedModel = configured[0];
+            return; // Discovery is only needed to classify multiple distinct models before routing.
+        }
+
         // No process-wide cache: catalogs can depend on the caller's credentials and endpoint.
         Dictionary<string, JsonElement> catalog;
         try
