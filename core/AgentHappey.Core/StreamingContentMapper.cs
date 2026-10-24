@@ -89,6 +89,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         var text = new TextStreamState();
         var reasoning = new ReasoningStreamState();
         var pendingCalls = new Dictionary<string, ToolCallPart>(StringComparer.Ordinal);
+        var emittedCalls = new HashSet<string>(StringComparer.Ordinal);
         string? authorName = null;
 
         List<UsageContent> usageContents = [];
@@ -106,7 +107,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                 else if (TryReadFinishMetadata(content, out var metadata))
                     MergeFinishMetadata(finishMetadata, metadata);
                 else
-                    foreach (var part in MapContent(content, update.MessageId, update.AuthorName, pendingCalls, text, reasoning, includeFileParts: true, requestToolApproval))
+                    foreach (var part in MapContent(content, update.MessageId, update.AuthorName, pendingCalls, emittedCalls, text, reasoning, includeFileParts: true, requestToolApproval))
                         yield return part;
             }
         }
@@ -122,6 +123,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         var text = new TextStreamState();
         var reasoning = new ReasoningStreamState();
         var pendingCalls = new Dictionary<string, ToolCallPart>(StringComparer.Ordinal);
+        var emittedCalls = new HashSet<string>(StringComparer.Ordinal);
         HashSet<string> authorNames = [];
         List<UsageContent> usageContents = [];
         var finishMetadata = new Dictionary<string, object?>(StringComparer.Ordinal);
@@ -199,7 +201,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                         continue;
                     }
 
-                    foreach (var part in MapContent(content, u.MessageId, u.AuthorName, pendingCalls, text, reasoning, includeFileParts: false))
+                    foreach (var part in MapContent(content, u.MessageId, u.AuthorName, pendingCalls, emittedCalls, text, reasoning, includeFileParts: false))
                         yield return part;
                 }
             }
@@ -260,6 +262,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         string? messageId,
         string? authorName,
         Dictionary<string, ToolCallPart> pendingCalls,
+        HashSet<string> emittedCalls,
         TextStreamState text,
         ReasoningStreamState reasoning,
         bool includeFileParts,
@@ -426,6 +429,14 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                             ProviderMetadata = ScopeToolProviderMetadata(call.ProviderMetadata, authorName)
                         };
                     pendingCalls[fc.CallId!] = call;
+                    // A native program describes provider-managed orchestration;
+                    // it need not have a program_output. Emit its latest descriptor
+                    // without inventing a result or waiting for one to arrive.
+                    if (call.ProviderExecuted == true && fc.Name == "program")
+                    {
+                        emittedCalls.Add(fc.CallId);
+                        yield return call;
+                    }
                     // Defer calls until their result: an MCP call may instead suspend,
                     // in which case only ai_input_required may cross the UI boundary.
                     break;
@@ -435,10 +446,10 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                 {
                     if (string.IsNullOrEmpty(fr.CallId)) yield break;
                     if (!pendingCalls.TryGetValue(fr.CallId!, out ToolCallPart? toolCallPart)) yield break;
-                    pendingCalls.Remove(fr.CallId!);
 
                     if (fr.Result is McpToolInputRequiredException required)
                     {
+                        pendingCalls.Remove(fr.CallId);
                         var input = required.Result.InputRequests?
                             .FirstOrDefault(entry => entry.Value.Method == "elicitation/create");
                         // State-only requests remain visible without triggering a form.
@@ -468,15 +479,16 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                     // The input event must suppress the browser's onToolCall callback:
                     // this function has already executed here. The output event below
                     // restores the client-continuable marker for the approval round trip.
-                    yield return requiresApproval ? new ToolCallPart
-                    {
-                        ToolCallId = toolCallPart.ToolCallId,
-                        ToolName = toolCallPart.ToolName,
-                        Title = toolCallPart.Title,
-                        Input = toolCallPart.Input,
-                        ProviderExecuted = true,
-                        ProviderMetadata = toolCallPart.ProviderMetadata
-                    } : toolCallPart;
+                    if (emittedCalls.Add(fr.CallId))
+                        yield return requiresApproval ? new ToolCallPart
+                        {
+                            ToolCallId = toolCallPart.ToolCallId,
+                            ToolName = toolCallPart.ToolName,
+                            Title = toolCallPart.Title,
+                            Input = toolCallPart.Input,
+                            ProviderExecuted = true,
+                            ProviderMetadata = toolCallPart.ProviderMetadata
+                        } : toolCallPart;
 
                     var output = fr.Result is AIContent aiContent
                         && aiContent.RawRepresentation is ContentBlock contentBlock
@@ -548,6 +560,11 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                         providerMetadata = envelopeProviderMetadata ?? providerMetadata;
                     }
 
+                    // Preliminary output is an update, not completion. Retain the
+                    // call so later chunks and the final result remain correlated.
+                    if (preliminary != true)
+                        pendingCalls.Remove(fr.CallId);
+
                     yield return new ToolOutputAvailablePart
                     {
                         ToolCallId = fr.CallId,
@@ -561,7 +578,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
 
                     // Output must precede approval: the UI stream consumer otherwise
                     // replaces approval-requested with output-available.
-                    if (requiresApproval)
+                    if (requiresApproval && preliminary != true)
                         yield return new ToolApprovalRequestUIPart
                         {
                             ToolCallId = fr.CallId,

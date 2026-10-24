@@ -47,6 +47,22 @@ internal sealed class ClientToolDeclaration : AIFunction
 
     internal sealed class PendingResult { }
 
+    internal static bool ShouldSuspendAfterBatch(FunctionInvocationContext invocation)
+    {
+        // Terminate also skips subsequent calls in the current SDK batch. Wait
+        // until its last invocation so pending client calls cannot suppress server
+        // execution. The SDK marks processed calls informational after the batch.
+        // Only inspect its current call count: older unresolved client history may
+        // intentionally be omitted from replay and must not suspend a new batch.
+        return invocation.FunctionCallIndex == invocation.FunctionCount - 1
+            && invocation.Messages.SelectMany(message => message.Contents)
+                .OfType<FunctionCallContent>()
+                .Where(call => !call.InformationalOnly)
+                .TakeLast(invocation.FunctionCount)
+                .Any(call => call.AdditionalProperties?.TryGetValue(OwnershipKey, out var owner) == true
+                    && owner is true);
+    }
+
     internal static AIAgent WrapAgent(AIAgent agent) => agent.AsBuilder().Use(
         async (messages, session, options, inner, ct) =>
         {

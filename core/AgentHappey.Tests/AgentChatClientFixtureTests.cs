@@ -553,7 +553,7 @@ public sealed partial class AgentChatClientFixtureTests
                     functionCallId))
                 : CreateStreamingResponse(CreateTextResponseStream("Poland uses PLN."));
         });
-        using var firstClient = CreateClient(firstHttpClient, CreateAgent());
+        using var firstClient = CreateClient(firstHttpClient, CreateAgent(name: "ProgrammaticAgent"));
         var tool = AIFunctionFactory.Create(
             ([System.ComponentModel.Description("Country code")] string cca) => new { cca, currency = "PLN" },
             "github_rest_countries_get_detail");
@@ -591,7 +591,8 @@ public sealed partial class AgentChatClientFixtureTests
                 Role = AIHappey.Vercel.Models.Role.assistant,
                 Parts = [programPart, functionPart, functionOutput]
             }],
-            activeAgentNames: ["ProgrammaticAgent"]);
+            activeAgentNames: ["ProgrammaticAgent"],
+            agentName: "ProgrammaticAgent");
 
         using var document = JsonDocument.Parse(requestBody);
         var input = document.RootElement.GetProperty("input").EnumerateArray().ToList();
@@ -1366,10 +1367,11 @@ public sealed partial class AgentChatClientFixtureTests
         Dictionary<string, object>? providerMetadata = null,
         AIHappey.Vercel.Models.ResponseFormat? responseFormat = null,
         string modelId = "openai/gpt-fixture",
-        Dictionary<string, string>? providerHeaders = null)
+        Dictionary<string, string>? providerHeaders = null,
+        string name = "StructuredAgent")
         => new()
         {
-            Name = "StructuredAgent",
+            Name = name,
             Description = "Fixture test agent",
             Instructions = "Return concise answers.",
             ResponseFormat = responseFormat,
@@ -1646,7 +1648,8 @@ public sealed partial class AgentChatClientFixtureTests
 
     private static async Task<string> CaptureRequestBodyAsync(
         IEnumerable<UIMessage> uiMessages,
-        IEnumerable<string> activeAgentNames)
+        IEnumerable<string> activeAgentNames,
+        string agentName = "StructuredAgent")
     {
         var fixture = LoadFixture(StructuredFixturePath);
         string requestBody = string.Empty;
@@ -1657,7 +1660,7 @@ public sealed partial class AgentChatClientFixtureTests
             return CreateJsonResponse(fixture);
         });
 
-        using var client = CreateClient(httpClient, CreateAgent(modelId: "openai/gpt-fixture"));
+        using var client = CreateClient(httpClient, CreateAgent(modelId: "openai/gpt-fixture", name: agentName));
 
         var messages = uiMessages.ToMessages(activeAgentNames).ToList();
         await client.GetResponseAsync(messages);

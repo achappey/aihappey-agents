@@ -201,7 +201,8 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
             var runtimeAgent = chatAgent.AsBuilder().Use(async (_, invocation, next, ct) =>
             {
                 var result = await next(invocation, ct);
-                if (requestToolApproval || result is McpToolInputRequiredException or ClientToolDeclaration.PendingResult)
+                if (requestToolApproval || result is McpToolInputRequiredException
+                    || ClientToolDeclaration.ShouldSuspendAfterBatch(invocation))
                     invocation.Terminate = true;
                 return result;
             }).Build();

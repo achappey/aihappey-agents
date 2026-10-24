@@ -41,7 +41,7 @@ public sealed partial class AgentChatClientFixtureTests
                 ? CreateStreamingResponse(CreateMixedToolStream(clientFirst))
                 : CreateJsonResponse(CreateMixedToolResponse(clientFirst));
         });
-        using var client = CreateClient(http, CreateAgent());
+        using var client = CreateClient(http, CreateAgent(name: "MixedAgent"));
         var agent = CreateClientToolAgent(client, tools);
         var options = new ChatClientAgentRunOptions(new ChatOptions());
 
@@ -115,7 +115,7 @@ public sealed partial class AgentChatClientFixtureTests
                 ? CreateStreamingResponse(CreateTextResponseStream("Both results received."))
                 : CreateJsonResponse(LoadFixture(StructuredFixturePath));
         });
-        using var freshClient = CreateClient(continuationHttp, CreateAgent());
+        using var freshClient = CreateClient(continuationHttp, CreateAgent(name: "MixedAgent"));
         List<AITool> continuationTools = [server];
         AddClientTools(continuationTools, [CreateBrowserTool()]);
         var freshAgent = CreateClientToolAgent(freshClient, continuationTools);
@@ -618,7 +618,7 @@ public sealed partial class AgentChatClientFixtureTests
                     }
                 ]
             }
-        }.ToMessages(["MixedAgent"]).ToList();
+        }.ToMessages(["StructuredAgent"]).ToList();
         Assert.Equal(2, messages.SelectMany(message => message.Contents).OfType<FunctionCallContent>().Count());
         var results = messages.SelectMany(message => message.Contents).OfType<FunctionResultContent>().ToList();
         Assert.Equal(2, results.Count);
@@ -684,13 +684,11 @@ public sealed partial class AgentChatClientFixtureTests
 
     private static AIAgent CreateClientToolAgent(AgentChatClient client, List<AITool> tools)
     {
-        var pendingResult = typeof(AgentChatClient).Assembly.GetType(
-            "AgentHappey.Core.ChatRuntime.ClientToolDeclaration+PendingResult", throwOnError: true)!;
         var runtimeAgent = new ChatClientAgent(client, name: "MixedAgent", tools: tools)
             .AsBuilder().Use(async (_, invocation, next, ct) =>
             {
                 var result = await next(invocation, ct);
-                if (pendingResult.IsInstanceOfType(result))
+                if (Assert.IsType<bool>(InvokeClientToolHelper("ShouldSuspendAfterBatch", invocation)))
                     invocation.Terminate = true;
                 return result;
             }).Build();
@@ -721,8 +719,11 @@ public sealed partial class AgentChatClientFixtureTests
     }
 
     private static string CreateMixedToolStream(bool clientFirst)
+        => CreateToolBatchStream(CreateMixedToolResponse(clientFirst));
+
+    private static string CreateToolBatchStream(string responseJson)
     {
-        using var document = JsonDocument.Parse(CreateMixedToolResponse(clientFirst));
+        using var document = JsonDocument.Parse(responseJson);
         var response = document.RootElement;
         var events = new List<string>
         {
