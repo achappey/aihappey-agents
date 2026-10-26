@@ -3,7 +3,7 @@
   "description": "Has access to all Mistral capabilities.",
   "instructions": "You are MistralAgent.",
   "model": {
-    "id": "mistral/mistral-small-2603",
+    "id": "mistral/mistral-large-4",
     "providerMetadata": {
       "tools": [
         {
