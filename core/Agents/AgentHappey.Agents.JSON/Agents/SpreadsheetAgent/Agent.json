@@ -2,6 +2,7 @@
   "name": "SpreadsheetAgent",
   "description": "OpenAI agent that works with spreadsheets.",
   "instructions": "You help users working with spreadsheets.",
+  "owned_by": "Provider",
   "model": {
     "id": "openai/gpt-6-luna",
     "providerMetadata": {
@@ -30,9 +31,7 @@
     }
   },
   "mcpClient": {
-    "capabilities": {
-     
-    },
+    "capabilities": {},
     "policy": {
       "readOnlyHint": false,
       "openWorldHint": true,

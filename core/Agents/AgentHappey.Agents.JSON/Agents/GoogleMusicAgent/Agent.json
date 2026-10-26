@@ -2,6 +2,7 @@
     "name": "GoogleMusicAgent",
     "description": "Helps with full-length songs with verses, choruses & bridges.",
     "instructions": "You are GoogleMusicAgent.",
+    "owned_by": "Provider",
     "model": {
         "id": "google/lyria-3-pro-preview",
         "providerMetadata": {
@@ -10,9 +11,7 @@
         }
     },
     "mcpClient": {
-        "capabilities": {
-            
-        },
+        "capabilities": {},
         "policy": {
             "readOnlyHint": false,
             "openWorldHint": true,

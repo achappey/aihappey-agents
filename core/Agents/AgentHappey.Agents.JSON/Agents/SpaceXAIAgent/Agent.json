@@ -2,6 +2,7 @@
     "name": "SpaceXAIAgent",
     "description": "Has access to all default SpaceXAI capabilities.",
     "instructions": "You are SpaceXAIAgent.",
+    "owned_by": "Provider",
     "model": {
         "id": "spacexai/grok-4.7",
         "providerMetadata": {

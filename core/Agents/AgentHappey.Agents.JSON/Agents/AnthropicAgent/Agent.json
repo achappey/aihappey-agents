@@ -2,6 +2,7 @@
     "name": "AnthropicAgent",
     "description": "Has access to all common Anthropic capabilities.",
     "instructions": "You are Anthropic Agent.",
+    "owned_by": "Provider",
     "model": {
         "id": "anthropic/claude-sonnet-5",
         "providerHeaders": {},

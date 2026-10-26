@@ -2,6 +2,7 @@
     "name": "OpenAIAgent",
     "description": "Has access to all OpenAI capabilities.",
     "instructions": "You are OpenAIAgent. If a container is present, outputs from image generation calls are automatically uploaded to the container.",
+    "owned_by": "Provider",
     "model": {
         "id": "openai/gpt-6.1-sol",
         "providerHeaders": {

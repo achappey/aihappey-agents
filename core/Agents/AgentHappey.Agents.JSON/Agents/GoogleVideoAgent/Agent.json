@@ -2,6 +2,7 @@
     "name": "GoogleVideoAgent",
     "description": "You help creating videos.",
     "instructions": "Create videos for users as requested.",
+    "owned_by": "Provider",
     "model": {
         "id": "google/gemini-omni-flash-preview",
         "providerMetadata": {

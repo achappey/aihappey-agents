@@ -2,6 +2,7 @@
     "name": "GoogleAntigravityAgent",
     "description": "A general-purpose managed agent on the Google Gemini API.",
     "instructions": "You reason, execute code, manage files, and browse the web inside your own secure Linux sandbox.",
+    "owned_by": "Provider",
     "model": {
         "id": "google/antigravity-preview-09-2026",
         "providerMetadata": {

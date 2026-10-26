@@ -2,6 +2,7 @@
   "name": "GoogleSearchAgent",
   "description": "Use Google Search for grounding.",
   "instructions": "You are GoogleSearchAgent.",
+  "owned_by": "Provider",
   "model": {
     "id": "google/gemini-flash-latest",
     "providerMetadata": {
@@ -26,9 +27,7 @@
     }
   },
   "mcpClient": {
-    "capabilities": {
-     
-    },
+    "capabilities": {},
     "policy": {
       "readOnlyHint": true,
       "openWorldHint": true,

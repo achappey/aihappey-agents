@@ -2,6 +2,7 @@
   "name": "MistralAgent",
   "description": "Has access to all Mistral capabilities.",
   "instructions": "You are MistralAgent.",
+  "owned_by": "Provider",
   "model": {
     "id": "mistral/mistral-large-4",
     "providerMetadata": {
@@ -22,9 +23,7 @@
     }
   },
   "mcpClient": {
-    "capabilities": {
-      
-    },
+    "capabilities": {},
     "policy": {
       "readOnlyHint": false,
       "openWorldHint": true,
