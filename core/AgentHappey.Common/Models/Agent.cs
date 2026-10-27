@@ -69,6 +69,14 @@ public class Agent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Evaluations? Evaluations { get; set; }
 
+    [JsonPropertyName("transcriptionModel")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AIModel? TranscriptionModel { get; set; }
+
+    [JsonPropertyName("speechModel")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AIModel? SpeechModel { get; set; }
+
 }
 
 public class AIPluginFile
