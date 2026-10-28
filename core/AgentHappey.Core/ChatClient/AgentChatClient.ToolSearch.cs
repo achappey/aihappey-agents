@@ -115,7 +115,7 @@ public partial class AgentChatClient
         IReadOnlyList<CanonicalToolDefinition> catalog)
     {
         if (string.IsNullOrWhiteSpace(text))
-            return [];
+            throw new InvalidOperationException("Tool search selection inference returned no JSON.");
 
         try
         {
@@ -126,7 +126,7 @@ public partial class AgentChatClient
                 || !root.TryGetProperty("selectedToolNames", out var names)
                 || names.ValueKind != JsonValueKind.Array)
             {
-                return [];
+                throw new InvalidOperationException("Tool search selection inference returned an invalid selectedToolNames object.");
             }
 
             var byName = catalog.ToDictionary(tool => tool.Name, StringComparer.Ordinal);
@@ -136,11 +136,12 @@ public partial class AgentChatClient
             foreach (var value in names.EnumerateArray())
             {
                 if (value.ValueKind != JsonValueKind.String)
-                    continue;
+                    throw new InvalidOperationException("Tool search selection contains a non-string tool name.");
 
                 var name = value.GetString();
-                if (name is null || !seen.Add(name) || !byName.TryGetValue(name, out var tool))
-                    continue;
+                if (name is null || !byName.TryGetValue(name, out var tool))
+                    throw new InvalidOperationException("Tool search selection contains a name outside the authorized catalog.");
+                if (!seen.Add(name)) continue;
 
                 selected.Add(tool);
                 if (selected.Count == MaximumToolSearchResults)
@@ -149,9 +150,9 @@ public partial class AgentChatClient
 
             return selected;
         }
-        catch (JsonException)
+        catch (JsonException exception)
         {
-            return [];
+            throw new InvalidOperationException("Tool search selection inference returned malformed JSON.", exception);
         }
     }
 

@@ -29,8 +29,7 @@ public partial class AgentChatClient
 
         var state = new StreamingResponseState(
             GetStreamingModelId(),
-            agent.Name,
-            (callId, itemId) => responseToolSearchCalls[callId] = itemId);
+            agent.Name);
 
         await foreach (var part in http.GetResponsesUpdates(
             request,
@@ -830,8 +829,7 @@ public partial class AgentChatClient
 
     private sealed class StreamingResponseState(
         string modelId,
-        string authorName,
-        Action<string, string> registerToolSearchCall)
+        string authorName)
     {
         private readonly Dictionary<string, StreamingToolCallState> toolCalls = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> toolSearchIdsByItemId = new(StringComparer.Ordinal);
@@ -1261,7 +1259,13 @@ public partial class AgentChatClient
             var providerMetadata = CreateToolSearchProviderMetadata(item, outputIndex, nativeItem);
 
             if (!providerExecuted)
-                registerToolSearchCall(callId, itemId);
+            {
+                var nativeCall = nativeItem.Deserialize<ResponseToolSearchCallItem>(ResponseJson.Default)
+                    ?? throw new InvalidOperationException("Invalid native client tool search call.");
+                ValidateSearchCall(callId, nativeCall);
+                if (nativeCall.Status is not (null or "completed"))
+                    throw new InvalidOperationException("Cannot execute an unfinished native client tool search.");
+            }
 
             update = new ChatResponseUpdate(
                 ChatRole.Assistant,

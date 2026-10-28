@@ -122,7 +122,7 @@ public partial class AgentChatClient
             ? element
             : JsonSerializer.SerializeToElement(value, JsonSerializerOptions.Web);
 
-    private List<ResponseToolDefinition>? BuildResponseToolDefinitions(IList<AITool>? tools)
+    private List<ResponseToolDefinition>? BuildResponseToolDefinitions(IList<AITool>? tools, bool loadedSearchResults = false)
     {
         if (tools is null)
             return null;
@@ -139,13 +139,13 @@ public partial class AgentChatClient
             }
 
             if (string.Equals(declaration.Name, ClientToolSearchName, StringComparison.Ordinal)
-                && !HasAgentTool(ToolSearchType))
+                && !HasAgentTool(ToolSearchType) && !loadedSearchResults)
             {
                 continue;
             }
 
             if (string.Equals(declaration.Name, ResourceSearchName, StringComparison.Ordinal)
-                && !HasAgentTool(ResourceSearchType))
+                && !HasAgentTool(ResourceSearchType) && !loadedSearchResults)
             {
                 continue;
             }
@@ -181,7 +181,7 @@ public partial class AgentChatClient
         }
 
         var used = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var group in namespaceGroups.Values)
+        foreach (var group in namespaceGroups.OrderBy(entry => entry.Key, StringComparer.Ordinal).Select(entry => entry.Value))
         {
             var baseName = SanitizeNamespaceName(group.ProposedName);
             var name = baseName;
@@ -221,6 +221,9 @@ public partial class AgentChatClient
     private List<ResponseInputItem> ToResponseInputItems(IEnumerable<ChatMessage> messages)
     {
         var items = new List<ResponseInputItem>();
+        // Correlation is rebuilt in chronological order on every request, including
+        // fresh clients replaying UI-approved results. Never depend on live SSE state.
+        var searchReplay = new ToolSearchReplayState();
 
         // A UI request may contain turns from several agents. Only the agent that
         // produced a provider-managed continuation is allowed to replay its state.
@@ -228,17 +231,25 @@ public partial class AgentChatClient
 
         foreach (var message in messages)
         {
+            foreach (var call in message.Contents.OfType<FunctionCallContent>())
+            {
+                if (HasToolSearchMetadata(call.RawRepresentation)
+                    && (!IsOwnedContinuation(call.RawRepresentation) || !IsCurrentToolSearchProvider(call.RawRepresentation)))
+                    searchReplay.IgnoredCalls.Add(call.CallId);
+            }
             if (message.Role == ChatRole.Tool)
             {
                 foreach (var result in message.Contents.OfType<FunctionResultContent>())
                 {
+                    if (searchReplay.IgnoredCalls.Contains(result.CallId))
+                        continue;
                     if (ownedCalls.TryGetValue(result.CallId, out var owned) && !owned)
                         continue;
                     if (!IsOwnedContinuation(result.RawRepresentation ?? result.Result))
                         continue;
-                    if (TryCreateToolSearchOutputItem(result, out var toolSearchOutput))
+                    if (TryCreateToolSearchOutputItem(result, searchReplay, out var toolSearchOutput))
                     {
-                        items.Add(toolSearchOutput);
+                        if (toolSearchOutput is not null) items.Add(toolSearchOutput);
                         continue;
                     }
 
@@ -270,7 +281,7 @@ public partial class AgentChatClient
                         || ownedCalls[call.CallId]).ToList()) { MessageId = message.MessageId };
             }
 
-            foreach (var item in ToResponseInputItems(replayMessage))
+            foreach (var item in ToResponseInputItems(replayMessage, searchReplay))
                 items.Add(item);
         }
 
@@ -421,7 +432,7 @@ public partial class AgentChatClient
             yield return program.CallId;
     }
 
-    private IEnumerable<ResponseInputItem> ToResponseInputItems(ChatMessage message)
+    private IEnumerable<ResponseInputItem> ToResponseInputItems(ChatMessage message, ToolSearchReplayState searchReplay)
     {
         var contentParts = new List<ResponseContentPart>();
         var nativeMessage = message.Role == ChatRole.Assistant && message.Contents.Any(content =>
@@ -480,12 +491,20 @@ public partial class AgentChatClient
                     foreach (var item in FlushResponseInputMessage(message, contentParts))
                         yield return item;
 
+                    if (searchReplay.IgnoredCalls.Contains(call.CallId))
+                        break;
+
                     if (IsToolSearchCall(call))
                     {
-                        yield return ToResponseToolSearchCallItem(call);
+                        var searchCall = ToResponseToolSearchCallItem(call);
+                        if (searchReplay.AddCall(call.CallId, searchCall))
+                            yield return searchCall;
                         break;
                     }
 
+                    if (searchReplay.Calls.ContainsKey(call.CallId))
+                        throw new InvalidOperationException("Function call ID conflicts with a native tool search call.");
+                    searchReplay.OrdinaryCalls.Add(call.CallId);
                     if (IsWebSearchCall(call))
                     {
                         if (TryReadResponseItem<ResponseWebSearchCallItem>(call.RawRepresentation, out var webSearchCall))
@@ -535,9 +554,9 @@ public partial class AgentChatClient
                     foreach (var item in FlushResponseInputMessage(message, contentParts))
                         yield return item;
 
-                    if (TryCreateToolSearchOutputItem(result, out var toolSearchOutput))
+                    if (TryCreateToolSearchOutputItem(result, searchReplay, out var toolSearchOutput))
                     {
-                        yield return toolSearchOutput;
+                        if (toolSearchOutput is not null) yield return toolSearchOutput;
                         break;
                     }
 
@@ -588,15 +607,16 @@ public partial class AgentChatClient
                 : value;
     }
 
-    private static bool IsToolSearchCall(FunctionCallContent call)
-        => string.Equals(
-            ReadResponseMetadataString(call.RawRepresentation, "responses_type"),
-            "tool_search_call",
-            StringComparison.Ordinal)
-           || string.Equals(
-               ReadNestedResponseItemType(call.RawRepresentation),
-               "tool_search_call",
-               StringComparison.Ordinal);
+    private bool IsToolSearchCall(FunctionCallContent call)
+    {
+        if (TryReadSearchItem<ResponseToolSearchCallItem>(call.RawRepresentation, out _)) return true;
+        if (ReadResponseMetadataString(call.RawRepresentation, "responses_type") == "tool_search_call"
+            && ReadNestedResponseItemType(call.RawRepresentation) is null)
+            return true; // Legacy top-level metadata is validated by the call mapper.
+        if (HasToolSearchMetadata(call.RawRepresentation))
+            throw new InvalidOperationException("Malformed native tool search call metadata.");
+        return false;
+    }
 
     private static bool IsWebSearchCall(FunctionCallContent call)
         => string.Equals(
@@ -608,17 +628,21 @@ public partial class AgentChatClient
                "web_search_call",
                StringComparison.Ordinal);
 
-    private static ResponseToolSearchCallItem ToResponseToolSearchCallItem(FunctionCallContent call)
+    private ResponseToolSearchCallItem ToResponseToolSearchCallItem(FunctionCallContent call)
     {
-        if (TryReadResponseItem<ResponseToolSearchCallItem>(call.RawRepresentation, out var nativeItem))
+        if (TryReadSearchItem<ResponseToolSearchCallItem>(call.RawRepresentation, out var nativeItem))
+        {
+            ValidateSearchCall(call.CallId, nativeItem);
             return nativeItem;
+        }
 
         var execution = ReadResponseMetadataString(call.RawRepresentation, "execution") ?? "client";
-        return new ResponseToolSearchCallItem
+        var item = new ResponseToolSearchCallItem
         {
             Id = ReadResponseMetadataString(call.RawRepresentation, "item_id"),
             CallId = string.Equals(execution, "client", StringComparison.OrdinalIgnoreCase)
-                ? call.CallId
+                ? ReadResponseMetadataString(call.RawRepresentation, "native_call_id")
+                    ?? ReadResponseMetadataString(call.RawRepresentation, "call_id")
                 : ReadResponseMetadataString(call.RawRepresentation, "native_call_id"),
             Execution = execution,
             Status = ReadResponseMetadataString(call.RawRepresentation, "status") ?? "completed",
@@ -626,32 +650,8 @@ public partial class AgentChatClient
                 call.Arguments ?? new Dictionary<string, object?>(),
                 JsonSerializerOptions.Web)
         };
-    }
-
-    private bool TryCreateToolSearchOutputItem(
-        FunctionResultContent result,
-        out ResponseToolSearchOutputItem output)
-    {
-        output = null!;
-        if (TryReadResponseItem<ResponseToolSearchOutputItem>(result.Result, out var nativeItem))
-        {
-            output = nativeItem;
-            return true;
-        }
-
-        if (string.IsNullOrWhiteSpace(result.CallId)
-            || !responseToolSearchCalls.ContainsKey(result.CallId))
-            return false;
-
-        var tools = ExtractSelectedToolDefinitions(result.Result);
-        output = new ResponseToolSearchOutputItem
-        {
-            CallId = result.CallId,
-            Execution = "client",
-            Status = "completed",
-            Tools = tools
-        };
-        return true;
+        ValidateSearchCall(call.CallId, item);
+        return item;
     }
 
     private static string? ReadNestedResponseItemType(object? value)
@@ -703,7 +703,7 @@ public partial class AgentChatClient
 
     private static List<ResponseToolDefinition> ExtractSelectedToolDefinitions(object? result)
     {
-        var json = ToJsonElement(result ?? new { });
+        var json = ReadSuccessfulToolSearchPayload(result);
         JsonElement selectedTools;
         if (json.ValueKind == JsonValueKind.Object
             && json.TryGetProperty("structuredContent", out var structured)
@@ -712,9 +712,8 @@ public partial class AgentChatClient
             && selectedTools.ValueKind == JsonValueKind.Array)
         {
             return selectedTools.EnumerateArray()
-                .Select(ToSelectedResponseToolDefinition)
-                .Where(tool => tool is not null)
-                .Cast<ResponseToolDefinition>()
+                .Select(tool => ToSelectedResponseToolDefinition(tool)
+                    ?? throw new InvalidOperationException("Tool search result contains an invalid selected tool."))
                 .ToList();
         }
 
@@ -723,13 +722,12 @@ public partial class AgentChatClient
             && selectedTools.ValueKind == JsonValueKind.Array)
         {
             return selectedTools.EnumerateArray()
-                .Select(ToSelectedResponseToolDefinition)
-                .Where(tool => tool is not null)
-                .Cast<ResponseToolDefinition>()
+                .Select(tool => ToSelectedResponseToolDefinition(tool)
+                    ?? throw new InvalidOperationException("Tool search result contains an invalid selected tool."))
                 .ToList();
         }
 
-        return [];
+        throw new InvalidOperationException("Tool search result is missing a valid selectedTools array.");
     }
 
     private static ResponseToolDefinition? ToSelectedResponseToolDefinition(JsonElement tool)
@@ -1398,6 +1396,8 @@ public partial class AgentChatClient
             ? itemIdProperty.GetString()
             : null;
         RegisterResponseCaller(itemId, callId, caller);
+        var nativeCall = functionCall.Deserialize<ResponseFunctionCallItem>(ResponseJson.Default);
+        if (nativeCall is not null) RegisterResponseFunctionCall(nativeCall);
 
         parts.Add(new FunctionCallContent(
             callId,
@@ -1406,6 +1406,7 @@ public partial class AgentChatClient
         {
             RawRepresentation = new Dictionary<string, object?>
             {
+                ["responses_item"] = functionCall.Clone(),
                 ["item_id"] = itemId,
                 ["namespace"] = functionCall.TryGetProperty("namespace", out var namespaceProperty)
                     ? namespaceProperty.GetString()
@@ -1474,7 +1475,15 @@ public partial class AgentChatClient
             return;
 
         var lifecycleId = item.CallId ?? item.Id ?? Guid.NewGuid().ToString("N");
-        parts.Add(new FunctionCallContent(lifecycleId, "tool_search", DeserializeArguments(item.Arguments.GetRawText()))
+        if (string.Equals(item.Execution, "client", StringComparison.Ordinal))
+        {
+            ValidateSearchCall(lifecycleId, item);
+            if (item.Status is not (null or "completed"))
+                throw new InvalidOperationException("Cannot execute an unfinished native client tool search.");
+        }
+        parts.Add(new FunctionCallContent(lifecycleId,
+            string.Equals(item.Execution, "client", StringComparison.Ordinal) ? ClientToolSearchName : ToolSearchType,
+            DeserializeArguments(item.Arguments.GetRawText()))
         {
             InformationalOnly = !string.Equals(item.Execution, "client", StringComparison.OrdinalIgnoreCase),
             RawRepresentation = new Dictionary<string, object?>

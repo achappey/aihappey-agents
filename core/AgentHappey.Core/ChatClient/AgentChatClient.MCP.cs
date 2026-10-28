@@ -51,8 +51,6 @@ public partial class AgentChatClient
 
     private readonly ConcurrentDictionary<string, InputRequiredMcpTool> inputRequiredTools = new(StringComparer.Ordinal);
 
-    private readonly ConcurrentDictionary<string, string> responseToolSearchCalls = new(StringComparer.Ordinal);
-
     //  private readonly ConcurrentBag<ChatMessage> Messages = [];
 
     private ChatMessage[] _history = [];

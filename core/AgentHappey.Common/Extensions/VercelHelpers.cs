@@ -374,6 +374,8 @@ public static class VercelHelpers
                                     RawRepresentation = new Dictionary<string, object?>
                                     {
                                         ["provider_metadata"] = ScopeMetadata(ti.CallProviderMetadata, owner),
+                                        ["responses_type"] = ReadResponsesType(ti.CallProviderMetadata),
+                                        ["responses_item"] = ReadResponsesItem(ti.CallProviderMetadata),
                                         ["title"] = ti.Title,
                                         ["agent_name"] = owner
                                     }
@@ -392,7 +394,16 @@ public static class VercelHelpers
                                                 ["provider_metadata"] = ScopeMetadata(ti.ResultProviderMetadata, owner),
                                                 ["agent_name"] = owner
                                             }
-                                            : output ?? new { })])
+                                            : output ?? new { })
+                                    {
+                                        RawRepresentation = ReadResponsesType(ti.CallProviderMetadata) is "tool_search_call" or "tool_search_output"
+                                            ? new Dictionary<string, object?>
+                                            {
+                                                ["provider_metadata"] = ScopeMetadata(ti.ResultProviderMetadata, owner),
+                                                ["agent_name"] = owner
+                                            }
+                                            : null
+                                    }])
                                 {
                                     MessageId = ti.ToolCallId
                                 });
