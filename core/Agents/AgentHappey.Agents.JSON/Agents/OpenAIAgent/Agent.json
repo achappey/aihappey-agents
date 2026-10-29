@@ -59,7 +59,7 @@
         "id": "openai/gpt-transcribe"
     },
     "speechModel": {
-        "id": "openai/tts-1-1106"
+        "id": "openai/gpt-realtime-2.1-mini"
     },
     "mcpClient": {
         "capabilities": {},
