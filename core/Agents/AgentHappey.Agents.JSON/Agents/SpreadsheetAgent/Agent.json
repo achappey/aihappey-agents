@@ -30,6 +30,12 @@
       "parallel_tool_calls": true
     }
   },
+  "transcriptionModel": {
+    "id": "openai/gpt-transcribe"
+  },
+  "speechModel": {
+    "id": "openai/tts-1-1106"
+  },
   "mcpClient": {
     "capabilities": {},
     "policy": {
