@@ -1131,6 +1131,7 @@ public partial class AgentChatClient
     private ChatResponse ToChatResponse(ResponseResult response)
     {
         var parts = new List<AIContent>();
+        var metadata = IncludeDecisionCost(response.Metadata);
 
         foreach (var item in response.Output ?? [])
             AppendResponseOutput(parts, item);
@@ -1154,10 +1155,10 @@ public partial class AgentChatClient
             }
         }
 
-        if (response.Metadata is not null)
+        if (metadata is not null)
         {
             parts.Add(new DataContent(
-                Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response.Metadata, JsonSerializerOptions.Web)),
+                Encoding.UTF8.GetBytes(JsonSerializer.Serialize(metadata, JsonSerializerOptions.Web)),
                 MediaTypeNames.Application.Json)
             {
                 Name = "finish_metadata"
@@ -1192,9 +1193,9 @@ public partial class AgentChatClient
             Usage = ToUsageDetails(response.Usage),
             ResponseId = response.Id,
             Messages = [new ChatMessage(ChatRole.Assistant, parts)],
-            AdditionalProperties = response.Metadata is null
+            AdditionalProperties = metadata is null
                 ? null
-                : new AdditionalPropertiesDictionary(response.Metadata)
+                : new AdditionalPropertiesDictionary(metadata)
         };
     }
 

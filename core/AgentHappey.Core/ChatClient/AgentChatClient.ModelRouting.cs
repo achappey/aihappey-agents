@@ -116,6 +116,7 @@ public partial class AgentChatClient
             using var response = await http.SendAsync(request, ct);
             response.EnsureSuccessStatusCode();
             var result = await response.Content.ReadFromJsonAsync<DecisionResponse>(ct);
+            CaptureDecisionCost(result);
             if (result?.Answers is { Count: 1 } answers && answers.TryGetValue("model", out var answer)
                 && answer is DecisionChoiceAnswer choice
                 && candidates.FirstOrDefault(model => model.Id == choice.Choice) is { } selected)

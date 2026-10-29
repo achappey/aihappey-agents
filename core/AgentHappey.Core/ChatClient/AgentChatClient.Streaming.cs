@@ -480,7 +480,7 @@ public partial class AgentChatClient
             });
         }
 
-        var responseMetadata = CreateResponseCompletionMetadata(response);
+        var responseMetadata = IncludeDecisionCost(CreateResponseCompletionMetadata(response))!;
         if (responseMetadata.Count > 0)
         {
             parts.Add(new DataContent(

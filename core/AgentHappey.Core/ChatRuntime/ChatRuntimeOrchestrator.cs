@@ -160,6 +160,7 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         var agents = new List<AIAgent>();
         ChatClientAgentRunOptions? runOptions = null;
         var resolvedAgents = await ResolveAgentsAsync(chatRequest, cancellationToken);
+        decimal? workflowDecisionCost = null;
         if (chatRequest.WorkflowType == "decisions")
         {
             if (resolvedAgents.Count == 0)
@@ -173,6 +174,7 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
                 : uiMessages.ToMessages(resolvedAgents.Select(agent => agent.Name)).ToList();
             var selected = await router.SelectWorkflowAgentAsync(
                 chatRequest.WorkflowMetadata?.Decisions, resolvedAgents, routingMessages, cancellationToken);
+            workflowDecisionCost = router.TakeDecisionCost();
             resolvedAgents = [selected];
         }
         var messages = uiMessages is null
@@ -185,6 +187,7 @@ public sealed class ChatRuntimeOrchestrator(IStreamingContentMapper mapper, IMod
         foreach (var agent in resolvedAgents)
         {
             var agentClient = agentClientFactory(agent);
+            agentClient.AddDecisionCost(workflowDecisionCost);
             configureAgentClient?.Invoke(agentClient, messages);
             await agentClient.InitializeModelAsync(messages, cancellationToken);
 

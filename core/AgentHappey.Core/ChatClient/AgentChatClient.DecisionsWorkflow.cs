@@ -72,6 +72,7 @@ public partial class AgentChatClient
             using var response = await http.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
             var result = await response.Content.ReadFromJsonAsync<DecisionResponse>(cancellationToken);
+            CaptureDecisionCost(result);
             cancellationToken.ThrowIfCancellationRequested();
             if (result?.Answers is { Count: 1 } answers && answers.TryGetValue("agent", out var answer)
                 && answer is DecisionChoiceAnswer choice && choice.Choice is not null
