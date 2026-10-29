@@ -69,15 +69,47 @@ public class Agent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Evaluations? Evaluations { get; set; }
 
-    [JsonPropertyName("transcriptionModel")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public AIModel? TranscriptionModel { get; set; }
+    /*  [JsonPropertyName("transcriptionModel")]
+      [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+      public AIModel? TranscriptionModel { get; set; }
 
-    [JsonPropertyName("speechModel")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public AIModel? SpeechModel { get; set; }
+      [JsonPropertyName("speechModel")]
+      [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+      public AIModel? SpeechModel { get; set; }*/
 
+    [JsonPropertyName("transcription")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AIModel? Transcription { get; set; }
+
+    [JsonPropertyName("speech")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AISpeech? Speech { get; set; }
 }
+
+
+public class AISpeech
+{
+    [JsonPropertyName("model")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AIModel? Model { get; set; }
+
+    [JsonPropertyName("voice")]
+    public string? Voice { get; set; }
+
+    [JsonPropertyName("outputFormat")]
+    public AudioFormat? OutputFormat { get; set; }
+
+    [JsonPropertyName("instructions")]
+    public string? Instructions { get; set; }
+
+    [JsonPropertyName("speed")]
+    public double? Speed { get; set; }
+
+    [JsonPropertyName("language")]
+    public string? Language { get; set; }
+}
+
+
 
 public class AIPluginFile
 {

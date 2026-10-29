@@ -30,11 +30,13 @@
       "parallel_tool_calls": true
     }
   },
-  "transcriptionModel": {
+  "transcription": {
     "id": "openai/gpt-transcribe"
   },
-  "speechModel": {
-    "id": "openai/gpt-realtime-2.1-mini"
+  "speech": {
+    "model": {
+      "id": "openai/gpt-realtime-2.1-mini"
+    }
   },
   "mcpClient": {
     "capabilities": {},

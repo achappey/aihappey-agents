@@ -9,11 +9,13 @@
             "environment": "remote"
         }
     },
-    "transcriptionModel": {
+    "transcription": {
         "id": "google/gemini-3.5-transcribe-live"
     },
-    "speechModel": {
-        "id": "google/gemini-3.8-flash-lite-tts"
+    "speech": {
+        "model": {
+            "id": "google/gemini-3.8-flash-lite-tts"
+        }
     },
     "mcpClient": {
         "capabilities": {},
