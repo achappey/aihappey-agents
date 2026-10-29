@@ -22,6 +22,14 @@
       }
     }
   },
+  "transcription": {
+    "id": "mistral/voxtral-mini-transcribe-realtime-3"
+  },
+  "speech": {
+    "model": {
+      "id": "mistral/voxtral-mini-tts-3-0"
+    }
+  },
   "mcpClient": {
     "capabilities": {},
     "policy": {
