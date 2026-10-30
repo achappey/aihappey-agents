@@ -45,6 +45,27 @@ public partial class AgentChatClient
 
         try
         {
+            if (SearchDecisionModel is { } decisionModel)
+            {
+                var ranked = await RankSearchChoicesAsync(decisionModel, new
+                {
+                    query = query.Trim(), serverUrl,
+                    mcpServerInstructions = McpServerInstructions.TryGetValue(normalizedServerUrl, out var serverInstructions)
+                        ? serverInstructions?.Trim() : null
+                },
+                [
+                    CreateResourceDecisionGroup("resources", "uri", catalog.Resources),
+                    CreateResourceDecisionGroup("resourceTemplates", "uriTemplate", catalog.ResourceTemplates)
+                ], cancellationToken);
+                var selection = JsonSerializer.Serialize(new
+                {
+                    selectedResourceUris = ranked.GetValueOrDefault("resources") ?? [],
+                    selectedResourceTemplateUriTemplates = ranked.GetValueOrDefault("resourceTemplates") ?? []
+                });
+                var selectedResources = ParseResourceSearchSelection(selection, catalog);
+                return CreateResourceSearchResult(selectedResources.Resources, selectedResources.ResourceTemplates);
+            }
+
             var input = JsonSerializer.Serialize(new
             {
                 query = query.Trim(),
@@ -116,6 +137,12 @@ public partial class AgentChatClient
             ToAssistantVisibleJsonObjects(resources),
             ToAssistantVisibleJsonObjects(resourceTemplates));
     }
+
+    private static SearchDecisionGroup CreateResourceDecisionGroup(string id, string key, IReadOnlyList<JsonElement> catalog)
+        => new(id, "Select the MCP resources or resource templates relevant to the supplied query, using the MCP server instructions as additional context.",
+            catalog.Where(entry => entry.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String)
+                .Select(entry => new SearchDecisionCandidate(entry.GetProperty(key).GetString()!, entry)).ToList(),
+            MaximumResourceSearchResults);
 
     private static List<JsonElement> ToAssistantVisibleJsonObjects(IEnumerable<object>? values)
         => (values ?? [])

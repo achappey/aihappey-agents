@@ -11,6 +11,11 @@ public partial class AgentChatClient
     private readonly object modelResolutionLock = new();
     private Task? modelResolution;
     private ConfiguredModel? resolvedModel;
+    private ConfiguredModel? searchDecisionModel;
+    private ConfiguredModel? SavedSearchDecisionModel => (agent.Models is { Count: > 0 } models
+        ? models : agent.Model is { } legacy ? [legacy] : new List<ConfiguredModel>())
+        .FirstOrDefault(model => !string.IsNullOrWhiteSpace(model?.Id) && model.Type == "decision");
+    private ConfiguredModel? SearchDecisionModel => modelResolution is null ? SavedSearchDecisionModel : searchDecisionModel;
     private ConfiguredModel EffectiveModel => resolvedModel ?? (agent.Models is not { Count: > 0 } ? agent.Model : null)
         ?? throw new InvalidOperationException("Choose an answer model for this agent.");
 
@@ -26,6 +31,7 @@ public partial class AgentChatClient
         ct.ThrowIfCancellationRequested();
         var configured = (agent.Models ?? []).Where(model => !string.IsNullOrWhiteSpace(model?.Id))
             .DistinctBy(model => model.Id, StringComparer.Ordinal).ToList();
+        searchDecisionModel = SavedSearchDecisionModel;
         if (configured.Count == 0)
         {
             resolvedModel = agent.Model;
@@ -68,6 +74,7 @@ public partial class AgentChatClient
             && info.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String ? type.GetString() : null;
         var candidates = configured.Where(model => TypeOf(model) == "language").ToList();
         var router = configured.FirstOrDefault(model => TypeOf(model) == "decision");
+        searchDecisionModel = router; // Search can use the router even when there is only one answer model.
         resolvedModel = candidates.FirstOrDefault()
             ?? configured.FirstOrDefault(model => TypeOf(model) is null && model.Type != "decision")
             ?? (agent.Model is { } legacy && TypeOf(legacy) != "decision" ? legacy : null);

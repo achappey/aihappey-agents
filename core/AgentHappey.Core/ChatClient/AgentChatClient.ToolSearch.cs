@@ -34,6 +34,18 @@ public partial class AgentChatClient
 
         try
         {
+            if (SearchDecisionModel is { } decisionModel)
+            {
+                var ranked = await RankSearchChoicesAsync(decisionModel, new { goal = goal.Trim() },
+                [new SearchDecisionGroup("tools",
+                    "Select the tools that best satisfy the supplied search goal from the supplied tool catalog.",
+                    catalog.Select(tool => new SearchDecisionCandidate(tool.Name,
+                        JsonSerializer.SerializeToElement(tool, JsonSerializerOptions.Web))).ToList(),
+                    MaximumToolSearchResults)], cancellationToken);
+                var selection = JsonSerializer.Serialize(new { selectedToolNames = ranked.GetValueOrDefault("tools") ?? [] });
+                return CreateToolSearchResult(ParseToolSearchSelection(selection, catalog));
+            }
+
             var input = JsonSerializer.Serialize(new
             {
                 goal = goal.Trim(),
