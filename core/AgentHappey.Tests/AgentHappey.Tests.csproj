@@ -25,6 +25,7 @@
     <ProjectReference Include="..\AgentHappey.Async\AgentHappey.Async.csproj" />
     <ProjectReference Include="..\AgentHappey.Gateway.HeaderAuth\AgentHappey.Gateway.HeaderAuth.csproj" />
     <ProjectReference Include="..\Agents\AgentHappey.Agents.JSON\AgentHappey.Agents.JSON.csproj" />
+    <ProjectReference Include="..\..\samples\AgentHappey.AzureAuth\AgentHappey.AzureAuth.csproj" />
   </ItemGroup>
 
   <ItemGroup>

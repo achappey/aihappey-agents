@@ -6,6 +6,7 @@ using AgentHappey.AsyncResponses;
 using AgentHappey.Common.Models;
 using AgentHappey.Core;
 using AgentHappey.Core.ChatRuntime;
+using AgentHappey.Core.DecisionRuntime;
 using AgentHappey.Core.Diagnostics;
 using AgentHappey.Core.MCP;
 using AgentHappey.Core.Responses;
@@ -43,6 +44,7 @@ builder.Services
 .AddSingleton<IResponsesNativeMapper, ResponsesNativeMapper>()
 .AddSingleton<IStreamingContentMapper, StreamingContentMapper>()
 .AddSingleton<IChatRuntimeOrchestrator, ChatRuntimeOrchestrator>()
+.AddSingleton<AgentDecisionService>()
 .AddSingleton<IModelCatalog, ModelCatalog>()
 .AddSingleton<IModelSource>(_ => new JsonModelSource(basePath, appConfig?.McpConfig?.McpBaseUrl))
 .AddSingleton<IModelSource>(_ => new BlobModelSource(appConfig?.BlobAgents))

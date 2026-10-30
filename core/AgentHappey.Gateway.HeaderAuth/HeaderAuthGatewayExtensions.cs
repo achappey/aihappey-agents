@@ -2,6 +2,7 @@ using AgentHappey.Agents.JSON;
 using AgentHappey.Common.Models;
 using AgentHappey.Core;
 using AgentHappey.Core.ChatRuntime;
+using AgentHappey.Core.DecisionRuntime;
 using AgentHappey.Core.Diagnostics;
 using AgentHappey.Core.MCP;
 using AgentHappey.Core.Responses;
@@ -34,6 +35,7 @@ public static class HeaderAuthGatewayExtensions
         services.AddSingleton<IResponsesNativeMapper, ResponsesNativeMapper>();
         services.AddSingleton<IStreamingContentMapper, StreamingContentMapper>();
         services.AddSingleton<IChatRuntimeOrchestrator, ChatRuntimeOrchestrator>();
+        services.AddSingleton<AgentDecisionService>();
         services.AddSingleton<IModelCatalog, ModelCatalog>();
         services.AddSingleton<IModelSource>(_ => new JsonModelSource(
             Path.Combine(AppContext.BaseDirectory, "Agents"), config.McpConfig?.McpBaseUrl));
