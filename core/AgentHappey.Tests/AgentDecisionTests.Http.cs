@@ -39,7 +39,7 @@ public sealed partial class AgentDecisionTests
     [InlineData(true, true, true)]
     public async Task Both_routes_use_one_structured_execution_in_both_hosts_with_correct_transport(bool azure, bool native, bool tools)
     {
-        var f = new Fixture { UseSkill = tools };
+        var f = new Fixture { UseSkill = tools, InferenceMetadata = _ => new { gateway = new { cost = 0.125m } } };
         await using var host = await HttpHost.Start(f, azure);
         if (azure)
         {
@@ -58,6 +58,9 @@ public sealed partial class AgentDecisionTests
         Assert.Equal(native ? "predicate" : "boolean", answer.GetProperty("type").GetString());
         Assert.Equal(0.8, answer.GetProperty("probability").GetDouble());
         Assert.Equal(tools ? 2 : 1, f.Sent.Count);
+        if (native) Assert.False(result.TryGetProperty("providerMetadata", out _));
+        else Assert.Equal(tools ? 0.25m : 0.125m,
+            result.GetProperty("providerMetadata").GetProperty("gateway").GetProperty("cost").GetDecimal());
         Assert.All(f.Sent, call =>
         {
             Assert.True(IsDecisionRequest(call.Body));

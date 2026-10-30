@@ -33,6 +33,10 @@ public interface IResponsesNativeMapper
 
 public sealed class ResponsesNativeMapper : IResponsesNativeMapper
 {
+    // Reuse Responses cost precedence and aggregation without mapping the agent's output.
+    internal static JsonElement? CollectGatewayMetadata(IEnumerable<ChatMessage> messages, string providerKey)
+        => new NativeResponseState(new ResponseRequest(), null, providerKey).CollectGatewayMetadata(messages);
+
     public async IAsyncEnumerable<ResponseStreamPart> MapStreamingAsync(
         ResponseRequest request,
         string? model,
@@ -813,6 +817,16 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
 
             MergeMetadata(finishMetadata, NormalizeFinishMetadata(metadata));
             return true;
+        }
+
+        public JsonElement? CollectGatewayMetadata(IEnumerable<ChatMessage> messages)
+        {
+            foreach (var content in messages.SelectMany(message => message.Contents).OfType<DataContent>())
+                TrySetFinishMetadata(content);
+
+            return finishMetadata.TryGetValue("gateway", out var gateway) && TryReadGatewayCost(gateway, out _)
+                ? JsonSerializer.SerializeToElement(gateway, JsonSerializerOptions.Web)
+                : null;
         }
 
         private Dictionary<string, object?> NormalizeFinishMetadata(Dictionary<string, object?> metadata)

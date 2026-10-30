@@ -106,6 +106,100 @@ public sealed partial class AgentDecisionTests
     }
 
     [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task Vercel_returns_gateway_cost_for_all_inference_turns(int toolIterations)
+    {
+        var f = new Fixture
+        {
+            ToolIterations = toolIterations,
+            InferenceMetadata = iteration => new { gateway = new { cost = 0.125m * (iteration + 1), currency = "EUR" } }
+        };
+        var result = await f.Execute((DecisionRequest)Body(native: false));
+        var gateway = result.ProviderMetadata!["gateway"];
+        Assert.Equal(toolIterations == 0 ? 0.125m : 0.75m, gateway.GetProperty("cost").GetDecimal());
+        Assert.Equal("EUR", gateway.GetProperty("currency").GetString());
+        Assert.Equal(toolIterations + 1, f.Sent.Count);
+    }
+
+    [Theory]
+    [InlineData("providerMetadata")]
+    [InlineData("provider_metadata")]
+    public async Task Vercel_prefers_execution_provider_gateway_without_double_counting_aliases(string metadataKey)
+    {
+        var f = new Fixture
+        {
+            ToolIterations = 2,
+            InferenceMetadata = _ => new Dictionary<string, object?>
+            {
+                ["gateway"] = new { cost = 0.01m },
+                [metadataKey] = new
+                {
+                    other = new { gateway = new { cost = 99m } },
+                    openai = new { gateway = new { cost = 0.125m, currency = "EUR" }, private_data = "not-for-output" }
+                }
+            }
+        };
+        var result = await f.Execute((DecisionRequest)Body(native: false));
+        Assert.Equal(0.375m, result.ProviderMetadata!["gateway"].GetProperty("cost").GetDecimal());
+        Assert.Equal("EUR", result.ProviderMetadata["gateway"].GetProperty("currency").GetString());
+        Assert.Single(result.ProviderMetadata);
+        Assert.DoesNotContain("not-for-output", JsonSerializer.Serialize(result));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("{\"gateway\":{\"currency\":\"EUR\"}}")]
+    [InlineData("{\"gateway\":{\"cost\":\"unknown\"}}")]
+    public async Task Vercel_omits_unavailable_gateway_cost(string? metadata)
+    {
+        var f = new Fixture { InferenceMetadata = _ => metadata is null ? null : JsonSerializer.Deserialize<JsonElement>(metadata) };
+        var result = await f.Execute((DecisionRequest)Body(native: false));
+        Assert.Null(result.ProviderMetadata);
+        Assert.False(JsonSerializer.SerializeToElement(result).TryGetProperty("providerMetadata", out _));
+    }
+
+    [Fact]
+    public async Task Vercel_preserves_explicit_zero_gateway_cost()
+    {
+        var f = new Fixture { InferenceMetadata = _ => new { gateway = new { cost = 0m } } };
+        var result = await f.Execute((DecisionRequest)Body(native: false));
+        Assert.Equal(0m, JsonSerializer.SerializeToElement(result)
+            .GetProperty("providerMetadata").GetProperty("gateway").GetProperty("cost").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Vercel_includes_model_routing_cost_once_across_tool_turns()
+    {
+        var f = new Fixture
+        {
+            RouteModel = true, ToolIterations = 2, RoutingCost = 0.025m,
+            InferenceMetadata = _ => new { gateway = new { cost = 0.125m } }
+        };
+        f.Agent.Models =
+        [
+            new() { Id = "router/decision", Type = "decision" },
+            new() { Id = "openai/first", Type = "language" },
+            new() { Id = "anthropic/selected", Type = "language" }
+        ];
+        var result = await f.Execute((DecisionRequest)Body(native: false));
+        Assert.Equal(0.4m, result.ProviderMetadata!["gateway"].GetProperty("cost").GetDecimal());
+        Assert.Equal(1, f.RoutingCalls);
+        Assert.Equal(3, f.Sent.Count);
+    }
+
+    [Fact]
+    public async Task Concurrent_vercel_decisions_do_not_share_cost_totals()
+    {
+        var f = new Fixture { ToolIterations = 2, InferenceMetadata = _ => new { gateway = new { cost = 0.125m } } };
+        var results = await Task.WhenAll(Enumerable.Range(0, 4)
+            .Select(_ => f.Execute((DecisionRequest)Body(native: false))));
+        Assert.All(results, result => Assert.Equal(0.375m,
+            result.ProviderMetadata!["gateway"].GetProperty("cost").GetDecimal()));
+        Assert.Equal(12, f.Sent.Count);
+    }
+
+    [Theory]
     [InlineData("{\"answers\":{}}")]
     [InlineData("{\"answers\":{\"q0\":{\"type\":\"predicate\",\"probability\":1.1}}}")]
     [InlineData("{\"answers\":{\"q0\":{\"type\":\"predicate\",\"probability\":0.5,\"probability\":0.6}}}")]
@@ -464,6 +558,8 @@ public sealed partial class AgentDecisionTests
         public bool UseSkill { get; init; }
         public int ToolIterations { get; init; }
         public bool RouteModel { get; init; }
+        public decimal? RoutingCost { get; init; }
+        public Func<int, object?>? InferenceMetadata { get; init; }
         public int DiscoveryCalls;
         public int RoutingCalls;
         public bool Refuse { get; init; }
@@ -501,7 +597,11 @@ public sealed partial class AgentDecisionTests
                 if (RouteModel && request.RequestUri!.AbsolutePath == "/api/decisions")
                 {
                     Interlocked.Increment(ref RoutingCalls);
-                    return new(HttpStatusCode.OK) { Content = new StringContent("""{"answers":{"model":{"type":"choice","choice":"anthropic/selected"}}}""", Encoding.UTF8, "application/json") };
+                    return new(HttpStatusCode.OK) { Content = JsonContent.Create(new
+                    {
+                        answers = new { model = new { type = "choice", choice = "anthropic/selected" } },
+                        providerMetadata = RoutingCost is { } cost ? new { gateway = new { cost } } : null
+                    }) };
                 }
                 Assert.Equal("/v1/responses", request.RequestUri!.AbsolutePath);
                 var body = JsonSerializer.Deserialize<JsonElement>(await request.Content!.ReadAsStringAsync(ct));
@@ -528,6 +628,7 @@ public sealed partial class AgentDecisionTests
                     {
                         id = "resp_test", @object = "response", created_at = 1, status = FinalStatus,
                         model = "openai/answer-model", output,
+                        metadata = InferenceMetadata?.Invoke(iteration),
                         usage = new { input_tokens = 10, output_tokens = 5, total_tokens = 15,
                             input_tokens_details = new { cached_tokens = 2 }, output_tokens_details = new { reasoning_tokens = 1 } }
                     })

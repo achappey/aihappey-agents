@@ -1,6 +1,8 @@
 using System.Text.Json;
+using AgentHappey.Core.Responses;
 using AIHappey.Core.Models;
 using AIHappey.Responses;
+using Microsoft.Extensions.AI;
 
 namespace AgentHappey.Core.ChatClient;
 
@@ -57,6 +59,9 @@ public partial class AgentChatClient
 
     public ResponseResult GetDecisionResponse()
         => decisionResponse ?? throw new InvalidOperationException("The agent did not produce a decision response.");
+
+    internal JsonElement? GetDecisionGatewayMetadata(IEnumerable<ChatMessage> messages)
+        => ResponsesNativeMapper.CollectGatewayMetadata(messages, GetProviderKey());
 
     public OpenAIDecisionUsage GetDecisionInferenceUsage()
     {

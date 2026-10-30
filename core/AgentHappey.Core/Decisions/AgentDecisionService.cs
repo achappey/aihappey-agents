@@ -38,6 +38,7 @@ public sealed class AgentDecisionService(IChatRuntimeOrchestrator orchestrator, 
                 .ToDictionary(e => e.Key, e => e.Answer, StringComparer.Ordinal),
             Usage = new() { InputTokens = result.Usage.InputTokens, OutputTokens = result.Usage.OutputTokens },
             Response = new() { Id = result.ResponseId, ModelId = plan.Model, Timestamp = DateTimeOffset.UtcNow },
+            ProviderMetadata = result.Gateway is { } gateway ? new() { ["gateway"] = gateway } : null,
             Warnings = []
         };
     }
@@ -67,7 +68,8 @@ public sealed class AgentDecisionService(IChatRuntimeOrchestrator orchestrator, 
             cancellationToken.ThrowIfCancellationRequested();
             var responseResult = client.GetDecisionResponse();
             var answers = DecisionAnswerMapping.Read(responseResult, plan.Questions);
-            return new(answers, client.GetDecisionInferenceUsage(), responseResult.Id);
+            return new(answers, client.GetDecisionInferenceUsage(), responseResult.Id,
+                client.GetDecisionGatewayMetadata(result.Messages));
         }
         finally { client?.Dispose(); }
     }
@@ -84,5 +86,6 @@ public sealed class AgentDecisionService(IChatRuntimeOrchestrator orchestrator, 
             throw new InvalidOperationException("The agent requires interactive input; decisions cannot complete a suspended run.");
     }
 
-    private sealed record DecisionRunResult(IReadOnlyList<JsonElement> Answers, OpenAIDecisionUsage Usage, string ResponseId);
+    private sealed record DecisionRunResult(IReadOnlyList<JsonElement> Answers, OpenAIDecisionUsage Usage,
+        string ResponseId, JsonElement? Gateway);
 }
