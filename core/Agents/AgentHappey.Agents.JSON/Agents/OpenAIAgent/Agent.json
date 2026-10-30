@@ -58,6 +58,52 @@
         },
         {
             "id": "openai/gpt-6.1-terra",
+            "providerHeaders": {},
+            "providerMetadata": {
+                "tools": [
+                    {
+                        "type": "web_search",
+                        "user_location": null,
+                        "search_context_size": "high"
+                    },
+                    {
+                        "type": "image_generation",
+                        "model": "gpt-image-2.5-sunburst",
+                        "quality": "auto",
+                        "action": "auto",
+                        "moderation": "auto",
+                        "output_compression": 100,
+                        "background": "auto",
+                        "size": "auto"
+                    },
+                    {
+                        "type": "shell",
+                        "environment": {
+                            "type": "container_auto",
+                            "skills": [
+                                {
+                                    "type": "skill_reference",
+                                    "skill_id": "openai-spreadsheets"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "include": [
+                    "web_search_call.action.sources",
+                    "reasoning.encrypted_content",
+                    "code_interpreter_call.outputs",
+                    "file_search_call.results"
+                ],
+                "service_tier": "auto",
+                "reasoning": {
+                    "effort": "medium"
+                },
+                "parallel_tool_calls": true
+            }
+        },
+        {
+            "id": "openai/gpt-5.6-luna",
             "providerHeaders": {
                 "OpenAI-Beta": "responses_multi_agent=v1"
             },
@@ -103,52 +149,6 @@
                 ],
                 "service_tier": "auto",
                 "reasoning": {
-                    "effort": "medium"
-                },
-                "parallel_tool_calls": true
-            }
-        },
-        {
-            "id": "openai/gpt-5.6-luna",
-            "providerHeaders": {},
-            "providerMetadata": {
-                "tools": [
-                    {
-                        "type": "web_search",
-                        "user_location": null,
-                        "search_context_size": "high"
-                    },
-                    {
-                        "type": "image_generation",
-                        "model": "gpt-image-2.5-sunburst",
-                        "quality": "auto",
-                        "action": "auto",
-                        "moderation": "auto",
-                        "output_compression": 100,
-                        "background": "auto",
-                        "size": "auto"
-                    },
-                    {
-                        "type": "shell",
-                        "environment": {
-                            "type": "container_auto",
-                            "skills": [
-                                {
-                                    "type": "skill_reference",
-                                    "skill_id": "openai-spreadsheets"
-                                }
-                            ]
-                        }
-                    }
-                ],
-                "include": [
-                    "web_search_call.action.sources",
-                    "reasoning.encrypted_content",
-                    "code_interpreter_call.outputs",
-                    "file_search_call.results"
-                ],
-                "service_tier": "auto",
-                "reasoning": {
                     "effort": "high"
                 },
                 "parallel_tool_calls": true
@@ -156,8 +156,7 @@
         },
         {
             "id": "openai/chat-latest",
-            "providerHeaders": {
-            },
+            "providerHeaders": {},
             "providerMetadata": {
                 "tools": [
                     {
