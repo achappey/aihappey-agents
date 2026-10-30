@@ -1,0 +1,21 @@
+{
+  "name": "CerebrasAgent",
+  "description": "Has access to all Cerebras capabilities.",
+  "instructions": "You are CerebrasAgent.",
+  "owned_by": "Provider",
+  "model": {
+    "id": "cerebras/qwen-3.8-27b",
+    "providerMetadata": {
+      "reasoning_effort": "high"
+    }
+  },
+  "mcpClient": {
+    "capabilities": {},
+    "policy": {
+      "readOnlyHint": false,
+      "openWorldHint": true,
+      "idempotentHint": false,
+      "destructiveHint": true
+    }
+  }
+}
