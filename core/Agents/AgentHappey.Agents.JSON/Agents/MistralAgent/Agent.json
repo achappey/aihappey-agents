@@ -4,7 +4,7 @@
   "instructions": "You are MistralAgent.",
   "owned_by": "Provider",
   "model": {
-    "id": "mistral/mistral-large-4",
+    "id": "mistral/mistral-medium-3-5",
     "providerMetadata": {
       "tools": [
         {
