@@ -22,10 +22,16 @@ public partial class AgentChatClient
             Model = EffectiveModel.Id,
             Input = new ResponseInput(ToResponseReplayInputItems(messages, options)),
             Tools = BuildResponseToolDefinitions(options?.Tools),
-            Text = agent.GetResponsesText(),
-            Metadata = BuildResponsesProviderMetadata(),
+            Text = decisionExecution ? decisionResponseText : agent.GetResponsesText(),
+            Metadata = decisionExecution ? BuildDecisionProviderMetadata() : BuildResponsesProviderMetadata(),
             Instructions = options?.Instructions,
             Stream = false,
+            Store = decisionResponseText is not null ? false : null,
+            MaxOutputTokens = decisionMaxOutputTokens,
+            AdditionalProperties = decisionSafetyIdentifier is null ? null : new()
+            {
+                ["safety_identifier"] = JsonSerializer.SerializeToElement(decisionSafetyIdentifier)
+            },
             ToolChoice = "auto",
             ParallelToolCalls = HasProviderOption("parallel_tool_calls") ? null : true,
             Temperature = EffectiveModel.Options?.Temperature ?? 1
@@ -948,6 +954,7 @@ public partial class AgentChatClient
                 if (message.Role == ChatRole.User)
                     return new InputImagePart
                     {
+                        Detail = data.RawRepresentation is InputImagePart decisionImage ? decisionImage.Detail : null,
                         ImageUrl = string.IsNullOrWhiteSpace(data.Uri)
                             ? ToDataUrl(data)
                             : data.Uri
@@ -1141,7 +1148,7 @@ public partial class AgentChatClient
             parts.Add(new TextContent(response.OutputText));
         }
 
-        if (agent.ResponseFormat != null)
+        if (agent.ResponseFormat != null && !decisionExecution)
         {
             var structuredText = parts.OfType<TextContent>().Select(a => a.Text).FirstOrDefault(a => !string.IsNullOrWhiteSpace(a))
                 ?? SerializeStructuredOutput(response.Text);

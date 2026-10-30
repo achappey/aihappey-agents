@@ -36,6 +36,7 @@ public partial class AgentChatClient(
         EnsureHeaders();
         var replay = await RestoreInputRequiredAsync(messages, cancellationToken);
         await InitializeModelAsync(replay, cancellationToken);
+        if (decisionExecution) SetHistory(replay);
         var request = BuildResponseRequest(replay, options);
         request.Headers = GetInferenceHeaders(request.Model);
         var response = await http.GetResponses(
@@ -43,6 +44,8 @@ public partial class AgentChatClient(
             providerHeaders: EffectiveModel.ProviderHeaders,
             ct: cancellationToken);
 
+        if (decisionExecution)
+            CaptureDecisionInference(response);
         var result = ToChatResponse(response);
         ClientToolDeclaration.MarkCalls(result.Messages.SelectMany(message => message.Contents), options);
         return result;

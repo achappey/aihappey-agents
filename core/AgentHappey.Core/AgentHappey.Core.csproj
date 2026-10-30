@@ -27,6 +27,11 @@
     <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Vercel\AIHappey.Vercel.csproj" />    
     <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Responses\AIHappey.Responses.csproj" />    
   </ItemGroup>  
+  <ItemGroup>
+    <!-- Share the gateway wire contract, not its provider runtime. -->
+    <Compile Include="..\..\..\aihappey-ai\Core\AIHappey.Core\Models\DecisionModels.cs" Link="Decisions\Contracts\DecisionModels.cs" />
+    <Compile Include="..\..\..\aihappey-ai\Core\AIHappey.Core\Models\DecisionJsonConverters.cs" Link="Decisions\Contracts\DecisionJsonConverters.cs" />
+  </ItemGroup>
 
 
 </Project>

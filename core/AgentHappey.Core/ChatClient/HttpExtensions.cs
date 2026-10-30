@@ -254,7 +254,7 @@ public static class HttpExtensions
         if (observer is not null)
             await observer.OnBodyAsync(operation!, "response", body,
                 resp.Content?.Headers.ContentType?.MediaType ?? "application/json", ct);
-        throw new HttpRequestException($"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}: {body}");
+        throw new HttpRequestException($"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}: {body}", null, resp.StatusCode);
     }
 
     private static JsonElement BuildPayload(ResponseRequest options, JsonElement? extraRootProperties)
