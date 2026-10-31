@@ -4,7 +4,7 @@
   "instructions": "You are CerebrasAgent.",
   "owned_by": "Provider",
   "model": {
-    "id": "cerebras/qwen-3.8-27b",
+    "id": "cerebras/gpt-oss-120b",
     "providerMetadata": {
       "reasoning_effort": "high"
     }
