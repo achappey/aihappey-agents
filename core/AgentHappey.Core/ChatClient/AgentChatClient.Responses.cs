@@ -259,6 +259,12 @@ public partial class AgentChatClient
                         continue;
                     }
 
+                    if (TryReadResponseItem<ResponseMultiAgentCallOutputItem>(result.RawRepresentation, out var multiAgentOutput))
+                    {
+                        items.Add(multiAgentOutput);
+                        continue;
+                    }
+
                     if (TryReadResponseItem<ResponseProgramOutputItem>(result.Result, out var programOutput))
                     {
                         RegisterResponseProgramOutput(programOutput);
@@ -525,6 +531,18 @@ public partial class AgentChatClient
                         break;
                     }
 
+                    if (TryReadResponseItem<ResponseCodeInterpreterCallItem>(call.RawRepresentation, out var codeInterpreter))
+                    {
+                        yield return codeInterpreter;
+                        break;
+                    }
+
+                    if (TryReadResponseItem<ResponseMultiAgentCallItem>(call.RawRepresentation, out var multiAgent))
+                    {
+                        yield return multiAgent;
+                        break;
+                    }
+
                     // Informational calls describe provider-managed execution. Check
                     // recognized native Responses items first so their exact replay
                     // representation survives a stateless UI-history round trip.
@@ -560,6 +578,12 @@ public partial class AgentChatClient
                     foreach (var item in FlushResponseInputMessage(message, contentParts))
                         yield return item;
 
+                    if (TryReadResponseItem<ResponseMultiAgentCallOutputItem>(result.RawRepresentation, out var multiAgentOutput))
+                    {
+                        yield return multiAgentOutput;
+                        break;
+                    }
+
                     if (TryCreateToolSearchOutputItem(result, searchReplay, out var toolSearchOutput))
                     {
                         if (toolSearchOutput is not null) yield return toolSearchOutput;
@@ -590,6 +614,9 @@ public partial class AgentChatClient
 
     private ResponseFunctionCallOutputItem ToResponseFunctionCallOutputItem(FunctionResultContent result)
     {
+        if (TryReadResponseItem<ResponseFunctionCallOutputItem>(result.RawRepresentation, out var nativeOutput))
+            return nativeOutput;
+
         var output = ReadToolOutput(result.Result);
         return new()
         {
@@ -933,6 +960,11 @@ public partial class AgentChatClient
 
     private static ResponseContentPart? ToResponseContentPart(ChatMessage message, AIContent content)
     {
+        // Direct Responses input retains details (including hosted file IDs) that
+        // generic framework content cannot express. Do not reconstruct them lossy.
+        if (message.Role == ChatRole.User && content.RawRepresentation is ResponseContentPart originalPart)
+            return originalPart;
+
         switch (content)
         {
             case TextContent text when !string.IsNullOrWhiteSpace(text.Text):
@@ -1476,7 +1508,7 @@ public partial class AgentChatClient
             programOutput)));
     }
 
-    private static void AppendHostedToolSearchCall(List<AIContent> parts, JsonElement call)
+    internal static void AppendHostedToolSearchCall(List<AIContent> parts, JsonElement call)
     {
         var item = call.Deserialize<ResponseToolSearchCallItem>(ResponseJson.Default);
         if (item is null)

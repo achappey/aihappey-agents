@@ -24,8 +24,8 @@
     <ProjectReference Include="..\AgentHappey.Common\AgentHappey.Common.csproj" />
   </ItemGroup>
     <ItemGroup>
-    <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Vercel\AIHappey.Vercel.csproj" />    
-    <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Responses\AIHappey.Responses.csproj" />    
+    <ProjectReference Include="..\..\..\aihappey-vercel\AIHappey.Vercel.csproj" />    
+    <ProjectReference Include="..\..\..\aihappey-responses\AIHappey.Responses.csproj" />    
   </ItemGroup>  
   <ItemGroup>
     <!-- Share the gateway wire contract, not its provider runtime. -->

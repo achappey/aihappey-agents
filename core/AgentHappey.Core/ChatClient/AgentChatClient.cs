@@ -23,7 +23,8 @@ public partial class AgentChatClient(
 
     private Dictionary<string, string> GetInferenceHeaders(string? modelId)
     {
-        var scoped = ProviderCredentialHeaders.ForModel(headers, modelId);
+        var scoped = ProviderCredentialHeaders.ForModel(
+            headers as IReadOnlyDictionary<string, string?> ?? new Dictionary<string, string?>(headers), modelId);
         if (!string.IsNullOrWhiteSpace(agent.Name)) scoped[AgentNameHeader] = agent.Name;
         return scoped;
     }

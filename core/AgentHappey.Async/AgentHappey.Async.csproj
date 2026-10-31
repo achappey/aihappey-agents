@@ -15,7 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AgentHappey.Core\AgentHappey.Core.csproj" />
-    <ProjectReference Include="..\..\..\aihappey-ai\Core\AIHappey.Responses\AIHappey.Responses.csproj" />
+    <ProjectReference Include="..\..\..\aihappey-responses\AIHappey.Responses.csproj" />
   </ItemGroup>
 
 </Project>
