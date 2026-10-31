@@ -95,6 +95,30 @@ public sealed class AsyncResponsesPayloadTests
         Assert.Equal(1, fixture.Queue.Deleted);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Azure_worker_serializes_each_lifecycle_state_with_one_background_property(bool failed)
+    {
+        var fixture = new Fixture();
+        var queued = await fixture.Service.EnqueueAsync(CreateRequest(1024), Context());
+        fixture.Processor.Result = TypedBackgroundResult();
+        if (failed) fixture.Processor.Failure = new InvalidOperationException("Safe failure.");
+
+        await fixture.Worker.ProcessMessageAsync(Delivery(fixture.Queue.Messages.Single()), default);
+
+        AssertLifecycleWrites(fixture.Store.Writes, failed);
+        var terminal = (await fixture.Service.GetAsync(queued.Id, userId: "private-user"))!;
+        Assert.True(terminal.Background);
+        Assert.Equal(queued.Id, terminal.Id);
+        Assert.Equal(queued.CreatedAt, terminal.CreatedAt);
+        Assert.Equal(failed ? "failed" : "completed", terminal.Status);
+        if (!failed) Assert.True(terminal.AdditionalProperties!["provider_extension"].GetProperty("retained").GetBoolean());
+        Assert.Equal(failed ? 0 : 1, fixture.Processor.Processed.Count);
+        Assert.Empty(fixture.Container.Blobs);
+        Assert.Equal(1, fixture.Queue.Deleted);
+    }
+
     [Fact]
     public async Task Worker_logs_do_not_include_request_context_or_exception_contents()
     {
@@ -322,6 +346,50 @@ public sealed class AsyncResponsesPayloadTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Local_worker_serializes_each_lifecycle_state_with_one_background_property(bool failed)
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        try
+        {
+            var options = Options.Create(new LocalResponseStorageOptions { RootPath = root });
+            using var queue = new LocalAsyncResponsesQueue(options);
+            var store = new LocalAsyncResponseStore(options);
+            var service = new LocalAsyncResponsesService(queue, store);
+            var writes = new List<string>();
+            string Snapshot() => File.ReadAllText(Directory.GetFiles(Path.Combine(root, "responses"),
+                "*.json", SearchOption.AllDirectories).Single());
+            var processor = new RecordingProcessor
+            {
+                Result = TypedBackgroundResult(),
+                OnProcess = () => writes.Add(Snapshot()),
+                Failure = failed ? new InvalidOperationException("Safe failure.") : null
+            };
+            using var worker = new LocalAsyncResponsesWorker(queue, processor, store,
+                NullLogger<LocalAsyncResponsesWorker>.Instance);
+            var queued = await service.EnqueueAsync(CreateRequest(1024), Context());
+            writes.Add(Snapshot());
+
+            Assert.True(await worker.ProcessNextAsync());
+            writes.Add(Snapshot());
+
+            AssertLifecycleWrites(writes, failed);
+            var terminal = (await service.GetAsync(queued.Id, userId: "private-user"))!;
+            Assert.True(terminal.Background);
+            Assert.Equal(queued.Id, terminal.Id);
+            Assert.Equal(queued.CreatedAt, terminal.CreatedAt);
+            Assert.Equal(failed ? "failed" : "completed", terminal.Status);
+            if (!failed) Assert.True(terminal.AdditionalProperties!["provider_extension"].GetProperty("retained").GetBoolean());
+            Assert.False(await worker.ProcessNextAsync());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task Local_enqueue_cancellation_removes_saved_response()
     {
@@ -344,6 +412,23 @@ public sealed class AsyncResponsesPayloadTests
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    private static ResponseResult TypedBackgroundResult()
+        => JsonSerializer.Deserialize<ResponseResult>(
+            """{"background":true,"provider_extension":{"retained":true}}""", ResponseJson.Default)!;
+
+    private static void AssertLifecycleWrites(IReadOnlyList<string> writes, bool failed)
+    {
+        Assert.Equal(3, writes.Count);
+        var statuses = new List<string?>();
+        foreach (var json in writes)
+        {
+            BackgroundResponseSerializationAssertions.AssertSingleBackgroundProperty(json);
+            using var document = JsonDocument.Parse(json);
+            statuses.Add(document.RootElement.GetProperty("status").GetString());
+        }
+        Assert.Equal(new[] { "queued", "in_progress", failed ? "failed" : "completed" }, statuses);
     }
 
     private static ResponseRequest CreateRequest(int size, bool file = false)
@@ -438,6 +523,7 @@ public sealed class AsyncResponsesPayloadTests
         internal readonly List<AsyncResponsesQueueMessage> Processed = [];
         internal Exception? Failure;
         internal Action? OnProcess;
+        internal ResponseResult? Result;
 
         public Task<ResponseResult> ProcessAsync(AsyncResponsesQueueMessage message, CancellationToken cancellationToken = default)
         {
@@ -445,29 +531,33 @@ public sealed class AsyncResponsesPayloadTests
             if (Failure is not null)
                 throw Failure;
             Processed.Add(message);
-            return Task.FromResult(new ResponseResult { Object = "response" });
+            return Task.FromResult(Result ?? new ResponseResult { Object = "response" });
         }
     }
 
     private sealed class MemoryStore : IAsyncResponseStore
     {
-        private readonly Dictionary<(string?, string), ResponseResult> responses = [];
+        private readonly Dictionary<(string?, string), string> responses = [];
+        internal readonly List<string> Writes = [];
         internal Exception? SaveFailure;
 
         public Task SaveAsync(ResponseResult response, CancellationToken cancellationToken = default, string? userId = null)
         {
             if (SaveFailure is not null)
                 throw SaveFailure;
-            responses[(userId, response.Id)] = response;
+            var json = JsonSerializer.Serialize(response, ResponseJson.Default);
+            Writes.Add(json);
+            responses[(userId, response.Id)] = json;
             return Task.CompletedTask;
         }
 
         public Task<ResponseResult?> GetAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
-            => Task.FromResult(responses.GetValueOrDefault((userId, responseId)));
+            => Task.FromResult(responses.TryGetValue((userId, responseId), out var json)
+                ? JsonSerializer.Deserialize<ResponseResult>(json, ResponseJson.Default) : null);
 
         public Task<IReadOnlyList<ResponseResult>> ListAsync(CancellationToken cancellationToken = default, string? userId = null)
             => Task.FromResult<IReadOnlyList<ResponseResult>>(responses.Where(pair => pair.Key.Item1 == userId)
-                .Select(pair => pair.Value).ToList());
+                .Select(pair => JsonSerializer.Deserialize<ResponseResult>(pair.Value, ResponseJson.Default)!).ToList());
 
         public Task<bool> DeleteAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
             => Task.FromResult(responses.Remove((userId, responseId)));

@@ -190,6 +190,8 @@ public sealed class HeaderAuthBackgroundResponsesTests
         await restarted.SweepAsync();
         var failed = await restarted.GetAsync(id);
         Assert.Equal("failed", failed!.Status);
+        Assert.Equal(id, failed.Id);
+        Assert.True(failed.Background);
         Assert.Equal("background_execution_expired", failed.Error!.Code);
         Assert.NotNull(failed.CompletedAt);
         Assert.Equal("preserved", Metadata(failed).GetProperty("business").GetString());
@@ -260,8 +262,14 @@ public sealed class HeaderAuthBackgroundResponsesTests
         var queued = await service.EnqueueAsync(Request(), Context());
         f.Processor.Run = (_, _) => throw new InvalidOperationException("Authorization: Bearer header-api-SECRET; body tool-auth-SECRET");
         await service.ProcessNextAsync();
-        Assert.Equal("failed", (await service.GetAsync(queued.Id))!.Status);
-        Assert.Equal("background_execution_failed", (await service.GetAsync(queued.Id))!.Error!.Code);
+        var failed = (await service.GetAsync(queued.Id))!;
+        Assert.Equal("failed", failed.Status);
+        Assert.Equal(queued.Id, failed.Id);
+        Assert.Equal(queued.CreatedAt, failed.CreatedAt);
+        Assert.True(failed.Background);
+        Assert.NotNull(failed.CompletedAt);
+        Assert.Equal("background_execution_failed", failed.Error!.Code);
+        Assert.Equal("Background execution failed or was interrupted.", failed.Error.Message);
         Assert.False(await service.ProcessNextAsync());
         Assert.Equal(1, f.Processor.Calls);
         AssertSafe(f);
@@ -437,6 +445,8 @@ public sealed class HeaderAuthBackgroundResponsesTests
 
     private static void AssertSafe(Fixture f)
     {
+        foreach (var json in f.Container.Writes.Concat(f.Container.Blobs.Values.Select(value => value.Json)))
+            BackgroundResponseSerializationAssertions.AssertSingleBackgroundProperty(json);
         var durable = string.Join('\n', f.Container.Writes.Concat(f.Container.Blobs.Values.Select(value => value.Json)));
         foreach (var secret in Secrets)
         {

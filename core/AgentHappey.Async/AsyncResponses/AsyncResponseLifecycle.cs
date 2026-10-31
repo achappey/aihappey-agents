@@ -14,6 +14,7 @@ public static class AsyncResponseLifecycle
             CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             CompletedAt = null,
             Status = "queued",
+            Background = true,
             Model = string.IsNullOrWhiteSpace(request.Model) ? "agent" : request.Model!,
             Temperature = request.Temperature,
             ParallelToolCalls = request.ParallelToolCalls,
@@ -25,11 +26,7 @@ public static class AsyncResponseLifecycle
             MaxOutputTokens = request.MaxOutputTokens,
             ServiceTier = request.ServiceTier,
             Output = [],
-            Metadata = request.Metadata,
-            AdditionalProperties = new Dictionary<string, JsonElement>
-            {
-                ["background"] = JsonSerializer.SerializeToElement(true, ResponseJson.Default)
-            }
+            Metadata = request.Metadata
         };
 
     public static ResponseRequest CloneForQueue(ResponseRequest request)
@@ -55,7 +52,12 @@ public static class AsyncResponseLifecycle
 
     public static void EnsureBackgroundProperty(ResponseResult response)
     {
-        response.AdditionalProperties ??= new Dictionary<string, JsonElement>();
-        response.AdditionalProperties["background"] = JsonSerializer.SerializeToElement(true, ResponseJson.Default);
+        response.Background = true;
+        // Legacy extension entries would otherwise serialize beside the typed property.
+        // Match the protocol's case-insensitive deserialization without dropping other extensions.
+        if (response.AdditionalProperties is null) return;
+        foreach (var key in response.AdditionalProperties.Keys
+            .Where(key => string.Equals(key, "background", StringComparison.OrdinalIgnoreCase)).ToList())
+            response.AdditionalProperties.Remove(key);
     }
 }
