@@ -9,7 +9,7 @@ using AgentHappey.Core;
 using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.DecisionRuntime;
-using AIHappey.Core.Models;
+using AIHappey.Decisions;
 using AIHappey.Responses;
 using AIHappey.Vercel.Models;
 using Microsoft.AspNetCore.Http;

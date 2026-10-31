@@ -1,0 +1,108 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-pack:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: aihappey-agents
+
+    steps:
+      - name: Checkout Agents
+        uses: actions/checkout@v4
+        with:
+          path: aihappey-agents
+
+      - name: Checkout Responses
+        uses: actions/checkout@v4
+        with:
+          repository: achappey/aihappey-responses
+          path: aihappey-responses
+
+      - name: Checkout Vercel
+        uses: actions/checkout@v4
+        with:
+          repository: achappey/aihappey-vercel
+          path: aihappey-vercel
+
+      - name: Checkout Decisions
+        uses: actions/checkout@v4
+        with:
+          repository: achappey/aihappey-decisions
+          path: aihappey-decisions
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "11.0.x"
+          dotnet-quality: "preview"
+
+      - name: Run tests
+        run: dotnet test .\core\AgentHappey.Tests\AgentHappey.Tests.csproj -c Release
+
+      - name: Publish Windows agents
+        shell: pwsh
+        run: |
+          dotnet publish .\samples\AgentHappey.Windows\AgentHappey.Windows.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:PublishTrimmed=false `
+            -p:WarningLevel=0 `
+            -clp:ErrorsOnly `
+            -o .\artifacts\windows
+
+      - name: Zip executable
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path .\artifacts\windows\* `
+            -DestinationPath .\artifacts\aihappey-agents-windows-x64.zip `
+            -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest
+          path: aihappey-agents/artifacts/aihappey-agents-windows-x64.zip
+
+  release-latest:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-test-pack
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: latest
+          path: .\artifacts
+
+      - name: Update latest release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f latest
+          git push origin latest --force
+
+          if (gh release view latest 2>$null) {
+            gh release upload latest .\artifacts\aihappey-agents-windows-x64.zip --clobber
+          } else {
+            gh release create latest .\artifacts\aihappey-agents-windows-x64.zip `
+              --title "Latest Windows agents build" `
+              --notes "Latest standalone Windows agents build from main."
+          }

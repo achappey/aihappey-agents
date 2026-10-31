@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using AIHappey.Core.Models;
+using AIHappey.Decisions;
 using AIHappey.Vercel.Models;
 using Microsoft.Extensions.AI;
 
@@ -20,6 +20,8 @@ internal sealed record DecisionPlan(string Model, IReadOnlyList<ChatMessage> Mes
         ArgumentNullException.ThrowIfNull(request);
         RequireModel(request.Model);
         ArgumentNullException.ThrowIfNull(request.Input);
+        if (request.PromptCacheKey is not null || request.PromptCacheOptions is not null)
+            throw new NotSupportedException("Agent decisions do not support prompt-cache controls.");
         if (request.AdditionalProperties is { Count: > 0 })
             throw new NotSupportedException("Additional OpenAI decision request fields are not supported by agents.");
         RequireQuestions(request.Questions?.Count ?? 0);
@@ -46,6 +48,8 @@ internal sealed record DecisionPlan(string Model, IReadOnlyList<ChatMessage> Mes
             foreach (var message in request.Input.Messages)
             {
                 if (message?.Content is null) throw new ArgumentException("Input messages require content.");
+                if (message.Role != "user" || message.Phase is not null || message.Type is not (null or "message"))
+                    throw new NotSupportedException("Agent decisions currently support user input messages only.");
                 var parts = new List<AIContent>();
                 if (message.Content.Text is { } content) parts.Add(new TextContent(content));
                 else
@@ -54,8 +58,12 @@ internal sealed record DecisionPlan(string Model, IReadOnlyList<ChatMessage> Mes
                         switch (part)
                         {
                             case OpenAIDecisionInputText inputText when inputText.Text is not null:
+                                if (inputText.PromptCacheBreakpoint is not null)
+                                    throw new NotSupportedException("Agent decisions do not support prompt-cache breakpoints.");
                                 parts.Add(new TextContent(inputText.Text)); break;
                             case OpenAIDecisionInputImage image:
+                                if (image.PromptCacheBreakpoint is not null)
+                                    throw new NotSupportedException("Agent decisions do not support prompt-cache breakpoints.");
                                 if (++imageCount > 128) throw new ArgumentException("At most 128 inline images are supported.");
                                 parts.Add(InlineImage(image.ImageUrl, image.Detail)); break;
                             default: throw new ArgumentException("Unsupported or invalid input part.");

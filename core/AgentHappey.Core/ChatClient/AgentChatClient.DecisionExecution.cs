@@ -1,6 +1,6 @@
 using System.Text.Json;
 using AgentHappey.Core.Responses;
-using AIHappey.Core.Models;
+using AIHappey.Decisions;
 using AIHappey.Responses;
 using Microsoft.Extensions.AI;
 
