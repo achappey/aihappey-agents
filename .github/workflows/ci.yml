@@ -103,6 +103,6 @@ jobs:
             gh release upload latest .\artifacts\aihappey-agents-windows-x64.zip --clobber
           } else {
             gh release create latest .\artifacts\aihappey-agents-windows-x64.zip `
-              --title "Latest Windows agents build" `
-              --notes "Latest standalone Windows agents build from main."
+              --title "Latest Windows build" `
+              --notes "Latest standalone Windows build from main."
           }
