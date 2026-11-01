@@ -1,3 +1,4 @@
+
 name: ci
 
 on:
@@ -48,6 +49,7 @@ jobs:
       - name: Run tests
         run: dotnet test .\core\AgentHappey.Tests\AgentHappey.Tests.csproj -c Release
 
+      # Existing standalone single-file build.
       - name: Publish Windows agents
         shell: pwsh
         run: |
@@ -61,7 +63,11 @@ jobs:
             -clp:ErrorsOnly `
             -o .\artifacts\windows
 
-      - name: Zip executable
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Standalone agents publish failed.'
+          }
+
+      - name: Zip standalone executable
         shell: pwsh
         run: |
           Compress-Archive `
@@ -69,27 +75,128 @@ jobs:
             -DestinationPath .\artifacts\aihappey-agents-windows-x64.zip `
             -Force
 
-      - name: Upload build artifact
+      - name: Upload standalone build artifact
         uses: actions/upload-artifact@v4
         with:
           name: latest
           path: aihappey-agents/artifacts/aihappey-agents-windows-x64.zip
+          if-no-files-found: error
+
+      # Reusable multi-file runtime for aihappey-windows.
+      - name: Publish reusable desktop agents runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = '.\artifacts\desktop-runtime'
+
+          if (Test-Path $output) {
+            Remove-Item $output -Recurse -Force
+          }
+
+          dotnet publish .\samples\AgentHappey.Windows\AgentHappey.Windows.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=false `
+            -p:PublishTrimmed=false `
+            -p:PublishReadyToRun=false `
+            -clp:ErrorsOnly `
+            -o $output
+
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Desktop agents publish failed.'
+          }
+
+          # Verify required runtime files.
+          foreach ($file in @(
+            'AgentHappey.Windows.exe',
+            'AgentHappey.Windows.dll',
+            'AgentHappey.Windows.deps.json',
+            'AgentHappey.Windows.runtimeconfig.json',
+            'appsettings.json'
+          )) {
+            if (-not (Test-Path (Join-Path $output $file) -PathType Leaf)) {
+              throw "Missing runtime file: $file"
+            }
+          }
+
+          # Bundle the complete Agents directory.
+          $source = (Resolve-Path '.\core\Agents\AgentHappey.Agents.JSON\Agents').Path
+          $target = Join-Path $output 'Agents'
+
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+
+          Get-ChildItem -LiteralPath $source -Force |
+            Copy-Item -Destination $target -Recurse -Force
+
+          # Validate all files recursively, including nested assets.
+          $files = @(Get-ChildItem -LiteralPath $source -File -Recurse -Force)
+
+          if ($files.Count -eq 0) {
+            throw 'No agent files found.'
+          }
+
+          foreach ($file in $files) {
+            $relative = [IO.Path]::GetRelativePath($source, $file.FullName)
+            $published = Join-Path $target $relative
+
+            if (-not (Test-Path -LiteralPath $published -PathType Leaf)) {
+              throw "Missing published agent file: $relative"
+            }
+
+            $sourceHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+            $publishedHash = (Get-FileHash -LiteralPath $published -Algorithm SHA256).Hash
+
+            if ($sourceHash -ne $publishedHash) {
+              throw "Published agent file differs: $relative"
+            }
+          }
+
+          Write-Host "Validated $($files.Count) agent files."
+
+          # Record the exact runtime source commit.
+          @{
+            repository = $env:GITHUB_REPOSITORY
+            commit = $env:GITHUB_SHA
+          } | ConvertTo-Json |
+            Set-Content (Join-Path $output 'build-info.json') -Encoding utf8
+
+          # Package complete multi-file runtime.
+          Compress-Archive `
+            -Path "$output\*" `
+            -DestinationPath .\artifacts\aihappey-agents-runtime-win-x64.zip `
+            -Force
+
+      - name: Upload reusable desktop agents runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-runtime-agents-win-x64
+          path: aihappey-agents/artifacts/aihappey-agents-runtime-win-x64.zip
+          if-no-files-found: error
 
   release-latest:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build-test-pack
     runs-on: windows-latest
+
     permissions:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Agents
+        uses: actions/checkout@v4
 
-      - name: Download build artifact
+      - name: Download standalone artifact
         uses: actions/download-artifact@v4
         with:
           name: latest
-          path: .\artifacts
+          path: ./artifacts
+
+      - name: Download reusable desktop runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-runtime-agents-win-x64
+          path: ./artifacts
 
       - name: Update latest release
         shell: pwsh
@@ -99,10 +206,29 @@ jobs:
           git tag -f latest
           git push origin latest --force
 
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to update latest tag.'
+          }
+
           if (gh release view latest 2>$null) {
-            gh release upload latest .\artifacts\aihappey-agents-windows-x64.zip --clobber
+            gh release upload latest `
+              ./artifacts/aihappey-agents-windows-x64.zip `
+              --clobber
           } else {
-            gh release create latest .\artifacts\aihappey-agents-windows-x64.zip `
+            gh release create latest `
+              ./artifacts/aihappey-agents-windows-x64.zip `
               --title "Latest Windows build" `
-              --notes "Latest standalone Windows build from main."
+              --notes "Latest standalone Windows agents build from main."
+          }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Standalone agents release update failed.'
+          }
+
+          gh release upload latest `
+            ./artifacts/aihappey-agents-runtime-win-x64.zip `
+            --clobber
+
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Desktop agents runtime release update failed.'
           }
