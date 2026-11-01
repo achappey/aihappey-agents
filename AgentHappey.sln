@@ -31,7 +31,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentHappey.Async", "core\A
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentHappey.Gateway.HeaderAuth", "core\AgentHappey.Gateway.HeaderAuth\AgentHappey.Gateway.HeaderAuth.csproj", "{5A8F0676-5D1B-49B0-8DAF-5D351512EAD3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIHappey.Decisions", "..\aihappey-decisions\AIHappey.Decisions.csproj", "{8C52EC26-2CC7-4CED-8922-52AF9A8F0753}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIHappey.Decisions", "..\aihappey-openai\Decisions\AIHappey.Decisions.csproj", "{8C52EC26-2CC7-4CED-8922-52AF9A8F0753}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

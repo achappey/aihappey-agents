@@ -28,7 +28,7 @@
     <ProjectReference Include="..\..\..\aihappey-responses\AIHappey.Responses.csproj" />    
   </ItemGroup>  
   <ItemGroup>
-    <ProjectReference Include="..\..\..\aihappey-decisions\AIHappey.Decisions.csproj" />
+    <ProjectReference Include="..\..\..\aihappey-openai\Decisions\AIHappey.Decisions.csproj" />
   </ItemGroup>
 
 
