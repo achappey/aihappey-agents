@@ -412,6 +412,18 @@ public partial class AgentChatClient
                 yield return CreateErrorUpdate(Guid.NewGuid().ToString(), error?.Message ?? "Responses stream failed.");
                 yield break;
 
+            case ResponseShellCallOutputContentDelta shellDelta:
+                if (state.TryCreateShellOutputPreliminaryUpdate(shellDelta.OutputIndex, shellDelta.ItemId,
+                    shellDelta.CommandIndex, shellDelta.Delta, isCompletedChunk: false, out ChatResponseUpdate typedShellDeltaUpdate))
+                    yield return typedShellDeltaUpdate;
+                yield break;
+
+            case ResponseShellCallOutputContentDone shellDone:
+                if (state.TryCreateShellOutputPreliminaryUpdate(shellDone.OutputIndex, shellDone.ItemId,
+                    shellDone.CommandIndex, shellDone.Output, isCompletedChunk: true, out ChatResponseUpdate typedShellDoneUpdate))
+                    yield return typedShellDoneUpdate;
+                yield break;
+
             case ResponseUnknownEvent unknown
                 when string.Equals(unknown.Type, "response.shell_call_output_content.delta", StringComparison.OrdinalIgnoreCase):
                 if (state.TryCreateShellOutputPreliminaryUpdate(unknown, isCompletedChunk: false, out ChatResponseUpdate shellOutputDeltaUpdate))
@@ -1034,24 +1046,27 @@ public partial class AgentChatClient
             if (outputIndexElement is null || !TryGetInt32(outputIndexElement.Value, out var outputIndex))
                 return false;
 
-            var output = GetOrCreateShellOutput(outputIndex);
-            output.OutputItemId = GetUnknownEventString(unknown, "item_id") ?? output.OutputItemId;
-
             var commandIndexElement = GetUnknownEventProperty(unknown, "command_index");
-            if (commandIndexElement is not null && TryGetInt32(commandIndexElement.Value, out var commandIndex))
+            int? commandIndex = commandIndexElement is not null && TryGetInt32(commandIndexElement.Value, out var index)
+                ? index : null;
+            var chunk = GetUnknownEventProperty(unknown, isCompletedChunk ? "output" : "delta");
+            return TryCreateShellOutputPreliminaryUpdate(outputIndex, GetUnknownEventString(unknown, "item_id"),
+                commandIndex, chunk, isCompletedChunk, out update);
+        }
+
+        public bool TryCreateShellOutputPreliminaryUpdate(int outputIndex, string? itemId, int? commandIndex,
+            JsonElement? chunk, bool isCompletedChunk, out ChatResponseUpdate update)
+        {
+            update = null!;
+            var output = GetOrCreateShellOutput(outputIndex);
+            output.OutputItemId = itemId ?? output.OutputItemId;
+
+            if (commandIndex is { } index)
             {
-                if (!isCompletedChunk)
-                {
-                    var delta = GetUnknownEventProperty(unknown, "delta");
-                    if (delta is not null && delta.Value.ValueKind == JsonValueKind.Object)
-                        AppendShellOutputChunkDelta(GetShellOutputChunk(output, commandIndex), delta.Value);
-                }
-                else
-                {
-                    var completedOutput = GetUnknownEventProperty(unknown, "output");
-                    if (completedOutput is not null && completedOutput.Value.ValueKind == JsonValueKind.Array)
-                        ApplyShellOutputChunks(output, completedOutput.Value, commandIndex);
-                }
+                if (!isCompletedChunk && chunk is { ValueKind: JsonValueKind.Object } delta)
+                    AppendShellOutputChunkDelta(GetShellOutputChunk(output, index), delta);
+                else if (isCompletedChunk && chunk is { ValueKind: JsonValueKind.Array } completedOutput)
+                    ApplyShellOutputChunks(output, completedOutput, index);
             }
 
             return TryCreateShellOutputUpdate(output, preliminary: true, out update);

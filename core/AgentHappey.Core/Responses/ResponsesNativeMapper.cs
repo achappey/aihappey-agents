@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using AIHappey.Responses;
+using AIHappey.Responses.Output;
 using AIHappey.Responses.Streaming;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
@@ -262,7 +263,8 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                     && native.ValueKind == JsonValueKind.Object && native.TryGetProperty("type", out var type))
                 {
                     var nativeId = native.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String ? id.GetString() : null;
-                    itemId = nativeId ?? itemId;
+                    if (type.GetString() is "message" or "reasoning")
+                        itemId = nativeId ?? itemId;
                     ResponseOutputState? state = type.GetString() switch
                     {
                         "message" => GetOrCreateMessage(itemId),
@@ -322,7 +324,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             parts.AddRange(EnsureMessageStarted(state));
 
             var textPart = EnsureTextPart(state, parts);
-            ((OutputTextPart)textPart.Part).Text += delta;
+            ((ResponseOutputText)textPart.Part).Text += delta;
 
             parts.Add(new ResponseOutputTextDelta
             {
@@ -387,13 +389,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                 {
                     SequenceNumber = NextSequence(),
                     OutputIndex = state.OutputIndex,
-                    Item = new ResponseStreamItem
-                    {
-                        Id = state.ItemId,
-                        Type = "reasoning",
-                        Status = "in_progress",
-                        Content = null
-                    }
+                    Item = ToOutputItem(state).ToStreamItem()
                 });
             }
 
@@ -421,46 +417,39 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             var state = new ToolCallOutputState(outputs.Count, functionCall.CallId!)
             {
                 Name = functionCall.Name,
-                Arguments = SerializeJson(functionCall.Arguments)
+                Arguments = SerializeJson(functionCall.Arguments),
+                NativeItem = ReadNativeResponseItem(functionCall)
             };
             outputs.Add(state);
             toolCalls[state.ItemId] = state;
 
-            var item = new ResponseStreamItem
-            {
-                Id = state.ItemId,
-                Type = "function_call",
-                Status = "completed",
-                Name = state.Name,
-                Arguments = JsonSerializer.SerializeToElement(state.Arguments),
-                AdditionalProperties = new Dictionary<string, JsonElement>
-                {
-                    ["call_id"] = JsonSerializer.SerializeToElement(state.ItemId)
-                }
-            };
+            var item = state.NativeItem?.Deserialize<ResponseStreamItem>(ResponseJson.Default) ?? ToOutputItem(state).ToStreamItem();
 
-            return
-            [
+            var parts = new List<ResponseStreamPart>
+            {
                 new ResponseOutputItemAdded
                 {
                     SequenceNumber = NextSequence(),
                     OutputIndex = state.OutputIndex,
                     Item = item
-                },
-                new ResponseFunctionCallArgumentsDone
-                {
-                    SequenceNumber = NextSequence(),
-                    OutputIndex = state.OutputIndex,
-                    ItemId = state.ItemId,
-                    Arguments = state.Arguments
-                },
-                new ResponseOutputItemDone
-                {
-                    SequenceNumber = NextSequence(),
-                    OutputIndex = state.OutputIndex,
-                    Item = item
                 }
-            ];
+            };
+            if (item.Type == "function_call")
+                parts.Add(new ResponseFunctionCallArgumentsDone
+                {
+                    SequenceNumber = NextSequence(),
+                    OutputIndex = state.OutputIndex,
+                    ItemId = item.Id ?? state.ItemId,
+                    Arguments = item.Arguments is { ValueKind: JsonValueKind.String } arguments
+                        ? arguments.GetString()! : state.Arguments
+                });
+            parts.Add(new ResponseOutputItemDone
+            {
+                SequenceNumber = NextSequence(),
+                OutputIndex = state.OutputIndex,
+                Item = item
+            });
+            return parts;
         }
 
         private IEnumerable<ResponseStreamPart> AddToolResult(FunctionResultContent functionResult)
@@ -475,22 +464,13 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             var state = new ToolResultOutputState(outputs.Count, itemId)
             {
                 CallId = functionResult.CallId,
-                Output = SerializeJson(functionResult.Result)
+                Output = ResponseOutputConversions.ToToolOutput(functionResult.Result),
+                NativeItem = ReadNativeResponseItem(functionResult)
             };
             outputs.Add(state);
             toolResults[state.ItemId] = state;
 
-            var item = new ResponseStreamItem
-            {
-                Id = state.ItemId,
-                Type = "function_call_output",
-                Status = "completed",
-                AdditionalProperties = new Dictionary<string, JsonElement>
-                {
-                    ["call_id"] = JsonSerializer.SerializeToElement(state.CallId),
-                    ["output"] = JsonSerializer.SerializeToElement(state.Output)
-                }
-            };
+            var item = state.NativeItem?.Deserialize<ResponseStreamItem>(ResponseJson.Default) ?? ToOutputItem(state).ToStreamItem();
 
             return
             [
@@ -522,25 +502,18 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                 {
                     SequenceNumber = NextSequence(),
                     OutputIndex = state.OutputIndex,
-                    Item = new ResponseStreamItem
-                    {
-                        Id = state.ItemId,
-                        Type = "message",
-                        Status = "in_progress",
-                        Role = "assistant",
-                        Content = null
-                    }
+                    Item = ToOutputItem(state).ToStreamItem()
                 }
             ];
         }
 
         private MessagePartState EnsureTextPart(MessageOutputState state, List<ResponseStreamPart> parts)
         {
-            var existing = state.Parts.FirstOrDefault(part => part.Part is OutputTextPart);
+            var existing = state.Parts.FirstOrDefault(part => part.Part is ResponseOutputText);
             if (existing is not null)
                 return existing;
 
-            var textPart = new MessagePartState(state.Parts.Count, new OutputTextPart(string.Empty));
+            var textPart = new MessagePartState(state.Parts.Count, new ResponseOutputText { Text = string.Empty, Annotations = [] });
             state.Parts.Add(textPart);
 
             parts.Add(new ResponseContentPartAdded
@@ -564,7 +537,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             state.IsClosed = true;
             var parts = new List<ResponseStreamPart>();
 
-            foreach (var content in state.Parts.Where(part => part.Part is OutputTextPart))
+            foreach (var content in state.Parts.Where(part => part.Part is ResponseOutputText))
             {
                 parts.Add(new ResponseOutputTextDone
                 {
@@ -572,7 +545,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                     Outputindex = state.OutputIndex,
                     ItemId = state.ItemId,
                     ContentIndex = content.ContentIndex,
-                    Text = ((OutputTextPart)content.Part).Text
+                    Text = ((ResponseOutputText)content.Part).Text
                 });
 
                 parts.Add(new ResponseContentPartDone
@@ -589,16 +562,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             {
                 SequenceNumber = NextSequence(),
                 OutputIndex = state.OutputIndex,
-                Item = state.NativeItem?.Deserialize<ResponseStreamItem>(ResponseJson.Default) ?? new ResponseStreamItem
-                {
-                    Id = state.ItemId,
-                    Type = "message",
-                    Status = "completed",
-                    Role = "assistant",
-                    Content = JsonSerializer.SerializeToElement(state.Parts
-                        .OrderBy(part => part.ContentIndex)
-                        .Select(part => ToStreamContentPart(part.Part)).ToList())
-                }
+                Item = state.NativeItem?.Deserialize<ResponseStreamItem>(ResponseJson.Default) ?? ToOutputItem(state).ToStreamItem()
             });
 
             return parts;
@@ -612,23 +576,6 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
 
             state.IsClosed = true;
             var text = state.Text.ToString();
-            var summary = string.IsNullOrWhiteSpace(text)
-                ? Array.Empty<ResponseReasoningSummaryTextPart>()
-                :
-                [
-                    new ResponseReasoningSummaryTextPart
-                    {
-                        Text = text
-                    }
-                ];
-
-            var additionalProperties = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
-            {
-                ["summary"] = JsonSerializer.SerializeToElement(summary, JsonSerializerOptions.Web)
-            };
-
-            if (!string.IsNullOrWhiteSpace(state.ProtectedData))
-                additionalProperties["encrypted_content"] = JsonSerializer.SerializeToElement(state.ProtectedData, JsonSerializerOptions.Web);
 
             return
             [
@@ -644,19 +591,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                 {
                     SequenceNumber = NextSequence(),
                     OutputIndex = state.OutputIndex,
-                    Item = state.NativeItem?.Deserialize<ResponseStreamItem>(ResponseJson.Default) ?? new ResponseStreamItem
-                    {
-                        Id = state.ItemId,
-                        Type = "reasoning",
-                        Status = "completed",
-                        Content = string.IsNullOrWhiteSpace(text)
-                            ? null
-                            : JsonSerializer.SerializeToElement(
-                                   new List<ResponseStreamContentPart>() {
-                                    new() { Type = "summary_text", Text = text }
-                                }),
-                        AdditionalProperties = additionalProperties
-                    }
+                    Item = state.NativeItem?.Deserialize<ResponseStreamItem>(ResponseJson.Default) ?? ToOutputItem(state).ToStreamItem()
                 }
             ];
         }
@@ -724,7 +659,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                     .OfType<MessageOutputState>()
                     .SelectMany(message => message.Parts)
                     .Select(part => part.Part)
-                    .OfType<OutputTextPart>()
+                    .OfType<ResponseOutputText>()
                     .Select(part => part.Text)
                     .Where(value => !string.IsNullOrWhiteSpace(value)));
 
@@ -1096,51 +1031,49 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
         private static object? CloneMetadataValue(object? value)
             => value is JsonElement json ? json.Clone() : value;
 
-        private static object ToOutputObject(ResponseOutputState output) => output.NativeItem is { } native ? native : output switch
+        // Native replay is authoritative and must not be normalized or reconstructed.
+        private object ToOutputObject(ResponseOutputState output)
+            => output.NativeItem is { } native ? native : ToOutputItem(output);
+
+        private ResponseOutputItem ToOutputItem(ResponseOutputState output) => output switch
         {
-            MessageOutputState message => new
+            MessageOutputState message => new ResponseOutputMessage
             {
-                type = "message",
-                id = message.ItemId,
-                status = "completed",
-                role = "assistant",
-                content = message.Parts.OrderBy(part => part.ContentIndex).Select(part => (object)part.Part).ToArray()
+                Id = message.ItemId,
+                Status = message.IsClosed ? errorMessage is null ? "completed" : "incomplete" : "in_progress",
+                Role = ResponseRole.Assistant,
+                Content = message.Parts.OrderBy(part => part.ContentIndex).Select(part => part.Part).ToList()
             },
-            ReasoningOutputState reasoning => new ResponseReasoningItem
+            ReasoningOutputState reasoning => new ResponseOutputReasoningItem
             {
                 Id = reasoning.ItemId,
                 EncryptedContent = reasoning.ProtectedData,
-                Summary = string.IsNullOrWhiteSpace(reasoning.Text.ToString())
-                    ? []
-                    :
-                    [
-                        new ResponseReasoningSummaryTextPart
-                        {
-                            Text = reasoning.Text.ToString()
-                        }
-                    ]
+                Status = reasoning.IsClosed ? errorMessage is null ? "completed" : "incomplete" : "in_progress",
+                Summary = [],
+                Content = reasoning.Text.Length == 0 ? null
+                    : [new ResponseOutputReasoningText { Text = reasoning.Text.ToString() }]
             },
-            ToolCallOutputState toolCall => new ResponseFunctionCallItem
+            ToolCallOutputState toolCall => new ResponseOutputItem<ResponseFunctionCallItem>(new ResponseFunctionCallItem
             {
                 Id = toolCall.ItemId,
                 CallId = toolCall.ItemId,
                 Name = toolCall.Name ?? "tool",
                 Arguments = toolCall.Arguments,
                 Status = "completed"
-            },
-            ToolResultOutputState toolResult => new ResponseFunctionCallOutputItem
+            }),
+            ToolResultOutputState toolResult => new ResponseOutputFunctionCallResult
             {
                 Id = toolResult.ItemId,
                 CallId = toolResult.CallId,
                 Output = toolResult.Output,
                 Status = "completed"
             },
-            _ => new { type = "message", role = "assistant", content = Array.Empty<object>() }
+            _ => throw new InvalidOperationException($"Unsupported constructed response output state: {output.GetType().Name}.")
         };
 
         private static bool TryCreateResponseContentPart(
             DataContent content,
-            out ResponseContentPart responsePart,
+            out ResponseOutputContent responsePart,
             out ResponseStreamContentPart streamPart)
         {
             if (ShouldIgnoreDataContent(content))
@@ -1158,19 +1091,12 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
 
                 var imagePart = new InputImagePart
                 {
-                    ImageUrl = imageUrl
+                    ImageUrl = imageUrl,
+                    AdditionalProperties = CreateContentAdditionalProperties(("media_type", content.MediaType), ("filename", content.Name))
                 };
 
-                responsePart = imagePart;
-                streamPart = new ResponseStreamContentPart
-                {
-                    Type = imagePart.Type,
-                    AdditionalProperties = new Dictionary<string, JsonElement>
-                    {
-                        ["image_url"] = JsonSerializer.SerializeToElement(imagePart.ImageUrl),
-                        ["media_type"] = JsonSerializer.SerializeToElement(content.MediaType)
-                    }
-                };
+                responsePart = imagePart.ToOutputContent();
+                streamPart = ToStreamContentPart(responsePart);
                 return true;
             }
 
@@ -1178,19 +1104,12 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             {
                 Filename = content.Name,
                 FileUrl = string.IsNullOrWhiteSpace(content.Uri) ? null : content.Uri,
-                FileData = string.IsNullOrWhiteSpace(content.Uri) ? ToDataUrl(content) : null
+                FileData = string.IsNullOrWhiteSpace(content.Uri) ? ToDataUrl(content) : null,
+                AdditionalProperties = CreateContentAdditionalProperties(("media_type", content.MediaType))
             };
 
-            responsePart = filePart;
-            streamPart = new ResponseStreamContentPart
-            {
-                Type = filePart.Type,
-                AdditionalProperties = CreateContentAdditionalProperties(
-                    ("filename", filePart.Filename),
-                    ("file_url", filePart.FileUrl),
-                    ("file_data", filePart.FileData),
-                    ("media_type", content.MediaType))
-            };
+            responsePart = filePart.ToOutputContent();
+            streamPart = ToStreamContentPart(responsePart);
             return true;
         }
 
@@ -1205,36 +1124,9 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                     || name.Equals("model-context-log", StringComparison.OrdinalIgnoreCase));
         }
 
-        private static ResponseStreamContentPart ToStreamContentPart(ResponseContentPart part) => part switch
-        {
-            OutputTextPart textPart => new ResponseStreamContentPart
-            {
-                Type = textPart.Type,
-                Text = textPart.Text,
-                Annotations = []
-            },
-            InputFilePart filePart => new ResponseStreamContentPart
-            {
-                Type = filePart.Type,
-                AdditionalProperties = CreateContentAdditionalProperties(
-                    ("file_data", filePart.FileData),
-                    ("file_id", filePart.FileId),
-                    ("file_url", filePart.FileUrl),
-                    ("filename", filePart.Filename))
-            },
-            InputImagePart imagePart => new ResponseStreamContentPart
-            {
-                Type = imagePart.Type,
-                AdditionalProperties = CreateContentAdditionalProperties(
-                    ("detail", imagePart.Detail),
-                    ("file_id", imagePart.FileId),
-                    ("image_url", imagePart.ImageUrl))
-            },
-            _ => new ResponseStreamContentPart
-            {
-                Type = part.Type
-            }
-        };
+        private static ResponseStreamContentPart ToStreamContentPart(ResponseOutputContent part)
+            => JsonSerializer.SerializeToElement<ResponseOutputContent>(part, ResponseJson.Default)
+                .Deserialize<ResponseStreamContentPart>(ResponseJson.Default)!;
 
         private static Dictionary<string, JsonElement>? CreateContentAdditionalProperties(params (string Key, object? Value)[] pairs)
         {
@@ -1259,6 +1151,15 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             return JsonSerializer.Serialize(value, JsonSerializerOptions.Web);
         }
 
+        private static JsonElement? ReadNativeResponseItem(AIContent content)
+        {
+            if (content.RawRepresentation is null)
+                return null;
+            var raw = JsonSerializer.SerializeToElement(content.RawRepresentation, ResponseJson.Default);
+            return raw.ValueKind == JsonValueKind.Object && raw.TryGetProperty("responses_item", out var item)
+                && item.ValueKind == JsonValueKind.Object ? item.Clone() : null;
+        }
+
         private static string? ToDataUrl(DataContent content)
         {
             var base64Data = content.Base64Data.ToString();
@@ -1280,7 +1181,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             public List<MessagePartState> Parts { get; } = [];
         }
 
-        private sealed record MessagePartState(int ContentIndex, ResponseContentPart Part);
+        private sealed record MessagePartState(int ContentIndex, ResponseOutputContent Part);
 
         private sealed record ReasoningOutputState(int OutputIndex, string ItemId) : ResponseOutputState(OutputIndex, ItemId)
         {
@@ -1299,7 +1200,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
         private sealed record ToolResultOutputState(int OutputIndex, string ItemId) : ResponseOutputState(OutputIndex, ItemId)
         {
             public string CallId { get; set; } = string.Empty;
-            public string Output { get; set; } = "{}";
+            public ResponseMessageContent Output { get; set; } = new("{}");
         }
     }
 }

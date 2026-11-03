@@ -109,7 +109,16 @@ public static class ResponsesRuntimeMapper
                 yield break;
 
             case ResponseReasoningItem reasoning:
-                var text = string.Join("\n", reasoning.Summary.Select(part => part.Text));
+                var text = reasoning.Content is { ValueKind: JsonValueKind.Array } reasoningContent
+                    ? string.Join("\n", reasoningContent.EnumerateArray()
+                        .Where(part => part.ValueKind == JsonValueKind.Object
+                            && part.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String
+                            && (type.GetString() is "reasoning_text" or "summary_text")
+                            && part.TryGetProperty("text", out var value) && value.ValueKind == JsonValueKind.String)
+                        .Select(part => part.GetProperty("text").GetString()))
+                    : string.Empty;
+                if (string.IsNullOrEmpty(text))
+                    text = string.Join("\n", reasoning.Summary.Select(part => part.Text));
                 if (string.IsNullOrEmpty(text) && string.IsNullOrEmpty(reasoning.EncryptedContent))
                     yield break;
 
