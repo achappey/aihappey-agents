@@ -1,43 +1,4 @@
-using System.Text.Json.Serialization;
-using ModelContextProtocol.Protocol;
-
 namespace AgentHappey.Common.Models;
-
-/// <summary>Discovery only. Never include instructions, provider settings, headers, or archive contents.</summary>
-public sealed class AgentModelMetadata
-{
-    public ModelReference? Model { get; init; }
-    public IReadOnlyList<ModelReference>? Models { get; init; }
-    public ModelReference? Transcription { get; init; }
-    public SpeechReference? Speech { get; init; }
-    public IEnumerable<Icon>? Icons { get; init; }
-    public string? ArgumentHint { get; init; }
-    public bool HasMcpServers { get; init; }
-    public bool CanSaveAsPlugin { get; init; }
-
-    public sealed record ModelReference(
-        [property: JsonPropertyName("id")] string Id,
-        [property: JsonPropertyName("type"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Type);
-    public sealed record SpeechReference(ModelReference? Model);
-
-    public static AgentModelMetadata FromAgent(Agent agent)
-    {
-        static ModelReference? Reference(AIModel? model) => string.IsNullOrWhiteSpace(model?.Id) ? null : new(model.Id, model.Type);
-        var hasMcpServers = agent.McpServers?.Any(server => !string.IsNullOrWhiteSpace(server.Key) && server.Value.Disabled != true) == true;
-        return new()
-        {
-            Model = Reference(agent.Model),
-            Models = agent.Models?.Where(model => !string.IsNullOrWhiteSpace(model.Id))
-                .DistinctBy(model => model.Id, StringComparer.Ordinal).Select(model => Reference(model)!).ToArray(),
-            Transcription = Reference(agent.Transcription),
-            Speech = agent.Speech is null ? null : new(Reference(agent.Speech.Model)),
-            Icons = agent.Icons,
-            ArgumentHint = agent.ArgumentHint,
-            HasMcpServers = hasMcpServers,
-            CanSaveAsPlugin = hasMcpServers || agent.Skills?.Any() == true
-        };
-    }
-}
 
 /// <summary>HTTP projections leave the internal catalog and its cached definitions untouched.</summary>
 public static class ModelApi
@@ -53,11 +14,19 @@ public static class ModelApi
             OwnedBy = model.OwnedBy,
             Name = model.Name ?? model.Agent?.Name,
             Description = model.Description ?? model.Agent?.Description,
-            Tags = model.Tags ?? model.Agent?.Tags,
-            Type = model.Type,
-            AgentMetadata = model.Agent is { } agent ? AgentModelMetadata.FromAgent(agent) : model.AgentMetadata
+            Tags = DiscoveryTags(model),
+            Type = model.Type
         }).ToArray()
     };
+
+    private static string[]? DiscoveryTags(Model model)
+    {
+        var tags = model.Tags ?? model.Agent?.Tags;
+        // A configured audio input advertises a realtime candidate using the same tag
+        // as the AI gateway. Clients validate the actual model/provider on selection.
+        if (string.IsNullOrWhiteSpace(model.Agent?.Transcription?.Id)) return tags;
+        return (tags ?? []).Append("real-time").Distinct(StringComparer.Ordinal).ToArray();
+    }
 
     public static async Task<Model?> RetrieveAsync(this IModelCatalog catalog, string id, CancellationToken ct = default)
     {

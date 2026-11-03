@@ -36,9 +36,6 @@ public class Model
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Agent? Agent { get; set; }
 
-    [JsonPropertyName("agent_metadata")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public AgentModelMetadata? AgentMetadata { get; set; }
 }
 
 public class ModelListResponse
