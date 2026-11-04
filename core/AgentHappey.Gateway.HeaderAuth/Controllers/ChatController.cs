@@ -48,7 +48,7 @@ public class ChatController(IHttpClientFactory httpClientFactory,
         }
         catch (Exception e)
         {
-            await TryWriteErrorAsync(e.Message);
+            await TryWriteErrorAsync(ProviderErrorMessages.FromException(e));
         }
 
         return new EmptyResult();

@@ -2,6 +2,7 @@ using System.Net.Mime;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using AgentHappey.Core.ChatClient;
 using AIHappey.Responses;
 using AIHappey.Responses.Output;
 using AIHappey.Responses.Streaming;
@@ -171,7 +172,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             if (update is WorkflowErrorEvent || update is ExecutorFailedEvent)
             {
                 if (update.Data is Exception exception)
-                    errorMessage ??= exception.Message;
+                    errorMessage ??= ProviderErrorMessages.FromException(exception);
 
                 return [];
             }
@@ -308,8 +309,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
 
         private IEnumerable<ResponseStreamPart> SetErrorAndReturn(string? message)
         {
-            if (!string.IsNullOrWhiteSpace(message))
-                errorMessage ??= message;
+            errorMessage ??= ProviderErrorMessages.FromText(message);
 
             return [];
         }

@@ -49,6 +49,17 @@ public static class HttpExtensions
             await observer.OnBodyAsync(operation!, "response", body,
                 resp.Content.Headers.ContentType?.MediaType ?? "application/json", ct);
 
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+        if (root.ValueKind == JsonValueKind.Object
+            && ((root.TryGetProperty("error", out var error) && error.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+                || (root.TryGetProperty("status", out var status) && status.ValueKind == JsonValueKind.String && status.GetString() == "failed")))
+        {
+            var exception = new InvalidOperationException(ProviderErrorMessages.FromJson(root));
+            exception.Data[ProviderErrorMessages.ResponseBodyKey] = body;
+            throw exception;
+        }
+
         var result = JsonSerializer.Deserialize<ResponseResult>(body, ResponseJson.Default);
 
         if (result is null)
@@ -210,20 +221,25 @@ public static class HttpExtensions
         {
             using var document = JsonDocument.Parse(data);
             var root = document.RootElement;
-            // A gateway failure may use the OpenAI error envelope instead of a
-            // typed Responses event. It is a downstream error, not invalid JSON.
-            if (!root.TryGetProperty("type", out _)
-                && root.TryGetProperty("error", out var error)
-                && error.ValueKind == JsonValueKind.Object)
+            // Both typed and untyped gateway errors can carry their useful text
+            // in a nested error envelope instead of the top-level message.
+            if (root.ValueKind == JsonValueKind.Object
+                && ((root.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String && type.GetString() == "error")
+                    || (!root.TryGetProperty("type", out _) && root.TryGetProperty("error", out _))))
             {
+                var nested = root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Object ? error : root;
+                static string? ReadString(JsonElement value, string name)
+                    => value.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String ? property.GetString() : null;
+
                 return new ResponseError
                 {
-                    Message = error.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String
-                        ? message.GetString()! : "Responses stream failed.",
-                    Code = error.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.String
-                        ? code.GetString()! : null!,
-                    Param = error.TryGetProperty("param", out var param) && param.ValueKind == JsonValueKind.String
-                        ? param.GetString()! : null!
+                    Message = ProviderErrorMessages.FromJson(root),
+                    Code = ReadString(root, "code") ?? ReadString(nested, "code"),
+                    Param = ReadString(root, "param") ?? ReadString(nested, "param"),
+                    SequenceNumber = root.TryGetProperty("sequence_number", out var sequence) && sequence.ValueKind == JsonValueKind.Number && sequence.TryGetInt32(out var number) ? number : 0,
+                    AdditionalProperties = root.EnumerateObject()
+                        .Where(property => property.Name is not ("type" or "message" or "code" or "param" or "sequence_number"))
+                        .ToDictionary(property => property.Name, property => property.Value.Clone())
                 };
             }
 
@@ -254,7 +270,10 @@ public static class HttpExtensions
         if (observer is not null)
             await observer.OnBodyAsync(operation!, "response", body,
                 resp.Content?.Headers.ContentType?.MediaType ?? "application/json", ct);
-        throw new HttpRequestException($"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}: {body}", null, resp.StatusCode);
+        var exception = new HttpRequestException(
+            ProviderErrorMessages.FromHttpResponse(body, resp.StatusCode, resp.ReasonPhrase), null, resp.StatusCode);
+        exception.Data[ProviderErrorMessages.ResponseBodyKey] = body;
+        throw exception;
     }
 
     private static JsonElement BuildPayload(ResponseRequest options, JsonElement? extraRootProperties)

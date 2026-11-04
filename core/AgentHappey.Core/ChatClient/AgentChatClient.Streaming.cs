@@ -405,11 +405,12 @@ public partial class AgentChatClient
                 yield break;
 
             case ResponseFailed failed:
-                yield return CreateErrorUpdate(Guid.NewGuid().ToString(), failed.Response?.Error?.Message ?? "Responses stream failed.");
+                yield return CreateErrorUpdate(Guid.NewGuid().ToString(), ProviderErrorMessages.FromJson(
+                    JsonSerializer.SerializeToElement(failed.Response, ResponseJson.Default)));
                 yield break;
 
             case ResponseError error:
-                yield return CreateErrorUpdate(Guid.NewGuid().ToString(), error?.Message ?? "Responses stream failed.");
+                yield return CreateErrorUpdate(Guid.NewGuid().ToString(), ProviderErrorMessages.FromText(error.Message));
                 yield break;
 
             case ResponseShellCallOutputContentDelta shellDelta:
@@ -783,61 +784,7 @@ public partial class AgentChatClient
     }
 
     private static string GetExceptionMessage(Exception exception)
-    {
-        if (exception is HttpRequestException httpException)
-        {
-            var parsed = TryGetProviderErrorMessage(httpException.Message);
-            if (!string.IsNullOrWhiteSpace(parsed))
-                return parsed!;
-        }
-
-        return exception.Message;
-    }
-
-    private static string? TryGetProviderErrorMessage(string? message)
-    {
-        if (string.IsNullOrWhiteSpace(message))
-            return null;
-
-        var jsonStart = message.IndexOf('{');
-        if (jsonStart < 0)
-            return message;
-
-        try
-        {
-            using var document = JsonDocument.Parse(message[jsonStart..]);
-            if (document.RootElement.TryGetProperty("error", out var error))
-            {
-                var errorMessage = error.TryGetProperty("message", out var errorMessageProperty)
-                    ? errorMessageProperty.GetString()
-                    : null;
-
-                var errorCode = error.TryGetProperty("code", out var errorCodeProperty)
-                    ? errorCodeProperty.GetString()
-                    : null;
-
-                var parameter = error.TryGetProperty("param", out var parameterProperty)
-                    ? parameterProperty.GetString()
-                    : null;
-
-                var parts = new List<string>();
-                if (!string.IsNullOrWhiteSpace(errorMessage))
-                    parts.Add(errorMessage!);
-                if (!string.IsNullOrWhiteSpace(parameter))
-                    parts.Add($"param: {parameter}");
-                if (!string.IsNullOrWhiteSpace(errorCode))
-                    parts.Add($"code: {errorCode}");
-
-                if (parts.Count > 0)
-                    return string.Join(" | ", parts);
-            }
-        }
-        catch
-        {
-        }
-
-        return message;
-    }
+        => ProviderErrorMessages.FromException(exception);
 
     private sealed class StreamingResponseState(
         string modelId,

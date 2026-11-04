@@ -65,7 +65,7 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
                 {
                     error = new
                     {
-                        message = e.Message,
+                        message = ProviderErrorMessages.FromException(e),
                         type = "server_error"
                     }
                 });
@@ -110,7 +110,7 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
             }
             catch (Exception e)
             {
-                await TryWriteResponsesStreamErrorAsync(e.Message);
+                await TryWriteResponsesStreamErrorAsync(ProviderErrorMessages.FromException(e));
             }
 
             return new EmptyResult();
@@ -145,7 +145,7 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
             {
                 error = new
                 {
-                    message = e.Message,
+                    message = ProviderErrorMessages.FromException(e),
                     type = "server_error"
                 }
             });
@@ -249,7 +249,7 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
         {
             var error = new ResponseError
             {
-                Message = string.IsNullOrWhiteSpace(message) ? "Something went wrong" : message,
+                Message = ProviderErrorMessages.FromText(message),
                 Code = "server_error",
                 Param = null!
             };

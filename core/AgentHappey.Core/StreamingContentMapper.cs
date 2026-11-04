@@ -48,7 +48,7 @@ public static class StreamWriterExtensions
         CancellationToken ct = default)
         => response.WritePartAsync(new ErrorUIPart
         {
-            ErrorText = string.IsNullOrWhiteSpace(error) ? "Something went wrong" : error
+            ErrorText = ProviderErrorMessages.FromText(error)
         }, ct);
 
     public static Task WriteAbortPartAsync(
@@ -218,7 +218,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
                 if (update.Data is Exception exception)
                     yield return new ErrorUIPart()
                     {
-                        ErrorText = exception.Message
+                        ErrorText = ProviderErrorMessages.FromException(exception)
                     };
             }
         }
@@ -303,7 +303,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
             case ErrorContent errorContent:
                 yield return new ErrorUIPart
                 {
-                    ErrorText = errorContent.Message
+                    ErrorText = ProviderErrorMessages.FromText(errorContent.Message)
                 };
                 break;
             case TextContent t:
