@@ -14,6 +14,14 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Identity.Web;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.WebHost.ConfigureKestrel(o =>
+{
+    o.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(230);
+    o.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(230);
+    o.Limits.MaxRequestBodySize = null;
+});
+
 var appConfig = builder.Configuration.Get<Config>();
 
 builder.Services.Configure<Config>(builder.Configuration);

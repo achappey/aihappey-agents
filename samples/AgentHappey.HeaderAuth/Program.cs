@@ -4,6 +4,14 @@ using AgentHappey.HeaderAuth;
 using AgentHappey.HeaderAuth.AsyncResponses;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.WebHost.ConfigureKestrel(o =>
+{
+    o.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(230);
+    o.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(230);
+    o.Limits.MaxRequestBodySize = null;
+});
+
 builder.AddHeaderAuthGateway();
 var appConfig = builder.Configuration.Get<Config>();
 builder.Services.AddSingleton<IModelSource>(_ => new BlobModelSource(appConfig?.BlobAgents));
