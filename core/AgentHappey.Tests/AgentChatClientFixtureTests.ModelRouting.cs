@@ -61,7 +61,9 @@ public sealed partial class AgentChatClientFixtureTests
             Assert.Equal("/v1/responses", path);
             inferenceCount++;
             Assert.Equal("anthropic/second", root.GetProperty("model").GetString());
-            Assert.Equal(0.25, root.GetProperty("temperature").GetDouble());
+            // Generic chat tuning is not forwarded; native provider configuration is.
+            Assert.False(root.TryGetProperty("temperature", out _));
+            Assert.False(root.TryGetProperty("parallel_tool_calls", out _));
             Assert.Equal(42, root.GetProperty("max_tokens").GetInt32());
             Assert.False(root.TryGetProperty("metadata", out _));
             Assert.Equal("selected-setting", Assert.Single(request.Headers.GetValues("X-Selected-Setting")));
@@ -122,7 +124,8 @@ public sealed partial class AgentChatClientFixtureTests
             Assert.Equal("/v1/responses", request.RequestUri.AbsolutePath);
             using var json = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
             Assert.Equal("openai/first", json.RootElement.GetProperty("model").GetString());
-            Assert.Equal(0.25, json.RootElement.GetProperty("temperature").GetDouble());
+            Assert.False(json.RootElement.TryGetProperty("temperature", out _));
+            Assert.False(json.RootElement.TryGetProperty("parallel_tool_calls", out _));
             Assert.Equal(42, json.RootElement.GetProperty("max_tokens").GetInt32());
             Assert.False(json.RootElement.TryGetProperty("metadata", out _));
             Assert.Equal("selected-setting", Assert.Single(request.Headers.GetValues("X-Selected-Setting")));

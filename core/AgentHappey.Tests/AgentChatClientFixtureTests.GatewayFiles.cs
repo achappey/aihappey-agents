@@ -24,7 +24,9 @@ public sealed partial class AgentChatClientFixtureTests
         using var http = CreateHttpClient(request =>
         {
             requests.Add(request.Content!.ReadAsStringAsync().Result);
-            return streaming ? CreateStreamingResponse(GatewayFileStream(item))
+            using var body = JsonDocument.Parse(requests[^1]);
+            var requestStreaming = body.RootElement.GetProperty("stream").GetBoolean();
+            return requestStreaming ? CreateStreamingResponse(GatewayFileStream(item))
                 : CreateJsonResponse(JsonSerializer.Serialize(new { id = "resp_files", output = new[] { item } }));
         });
         using var client = CreateClient(http, CreateAgent(modelId: provider + "/fixture"));
@@ -58,7 +60,11 @@ public sealed partial class AgentChatClientFixtureTests
             JsonSerializer.SerializeToElement(result.Output)));
         var file = Assert.Single(ui.OfType<FileUIPart>());
         Assert.Equal("data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,AAEC/w==", file.Url);
-        Assert.Equal("report.docx", file.Filename);
+        // Top-level filenames are input-only; output filenames stay in provider metadata.
+        Assert.Null(file.Filename);
+        Assert.False(JsonSerializer.SerializeToElement(file, JsonSerializerOptions.Web).TryGetProperty("filename", out _));
+        Assert.Equal("report.docx", JsonSerializer.SerializeToElement(file.ProviderMetadata)
+            .GetProperty(provider).GetProperty("filename").GetString());
 
         var mapped = new ResponsesNativeMapper().Map(new ResponseRequest(), "StructuredAgent", "transport", new AgentResponse(messages));
         Assert.True(JsonElement.DeepEquals(item, JsonSerializer.SerializeToElement(Assert.Single(mapped.Output), ResponseJson.Default)));
@@ -129,7 +135,10 @@ public sealed partial class AgentChatClientFixtureTests
         {
             var file = Assert.Single(ui.OfType<FileUIPart>());
             Assert.Equal(mediaType, file.MediaType);
-            Assert.Equal(filename, file.Filename);
+            Assert.Null(file.Filename);
+            Assert.False(JsonSerializer.SerializeToElement(file, JsonSerializerOptions.Web).TryGetProperty("filename", out _));
+            Assert.Equal(filename, JsonSerializer.SerializeToElement(file.ProviderMetadata)
+                .GetProperty("openai").GetProperty("filename").GetString());
             Assert.Equal(new byte[] { 0, 1, 2, 255 }, Convert.FromBase64String(file.Url.Split(',')[1]));
         }
     }

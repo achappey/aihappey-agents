@@ -58,7 +58,8 @@ public sealed partial class AgentDecisionTests
             Assert.Equal("openai/answer-model", call.Body.GetProperty("model").GetString());
             Assert.Equal("json_schema", call.Body.GetProperty("text").GetProperty("format").GetProperty("type").GetString());
             Assert.Equal("opaque-caller", call.Body.GetProperty("safety_identifier").GetString());
-            Assert.Equal("auto", call.Body.GetProperty("tool_choice").GetString());
+            Assert.False(call.Body.TryGetProperty("tool_choice", out _));
+            Assert.False(call.Body.TryGetProperty("parallel_tool_calls", out _));
             Assert.Contains("activate_skill", call.Body.GetProperty("tools").GetRawText());
             Assert.Contains("Always inspect the evidence", call.Body.GetProperty("instructions").GetString());
         });
@@ -416,7 +417,8 @@ public sealed partial class AgentDecisionTests
         Assert.All(calls, call =>
         {
             Assert.Equal(firstUserMessages, UserTexts(call.Body));
-            Assert.Equal("auto", call.Body.GetProperty("tool_choice").GetString());
+            Assert.False(call.Body.TryGetProperty("tool_choice", out _));
+            Assert.False(call.Body.TryGetProperty("parallel_tool_calls", out _));
             Assert.Contains("activate_skill", call.Body.GetProperty("tools").GetRawText());
             Assert.Equal("agent_decision", call.Body.GetProperty("text").GetProperty("format").GetProperty("name").GetString());
             Assert.Equal(calls[0].Body.GetProperty("text").GetRawText(), call.Body.GetProperty("text").GetRawText());
