@@ -282,6 +282,10 @@ public static class VercelHelpers
 
                             var outputPart = parts.FirstOrDefault(candidate => IsToolOutputPart(candidate, tc.ToolCallId));
                             var pairedOutput = outputPart as ToolOutputAvailablePart;
+                            if (GatewayTransport.IsProviderMetadata(tc.ProviderMetadata)
+                                || GatewayTransport.IsProviderMetadata(pairedOutput?.ProviderMetadata)
+                                || GatewayTransport.IsOutputOnly(pairedOutput?.Output))
+                                break;
                             var continuationName = ResolveContinuationName(tc.ToolName, pairedOutput?.Output,
                                 tc.ProviderMetadata, pairedOutput?.ProviderMetadata);
                             if (tc.ProviderExecuted == true && continuationName is not null
@@ -325,6 +329,10 @@ public static class VercelHelpers
                     // The important one: ToolInvocationPart => assistant call + tool result
                     case ToolInvocationPart ti:
                         {
+                            if (GatewayTransport.IsProviderMetadata(ti.CallProviderMetadata)
+                                || GatewayTransport.IsProviderMetadata(ti.ResultProviderMetadata)
+                                || GatewayTransport.IsOutputOnly(ti.Output))
+                                break;
                             var toolName = NormalizeToolName(ti.Type);
                             var continuationName = ResolveContinuationName(toolName, ti.Output,
                                 ti.CallProviderMetadata, ti.ResultProviderMetadata);

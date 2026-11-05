@@ -71,6 +71,8 @@ public static class ResponsesRuntimeMapper
         string? hostedSearchCallId = null;
         foreach (var item in input?.Items ?? [])
         {
+            if (GatewayTransport.IsItem(JsonSerializer.SerializeToElement(item, ResponseJson.Default)))
+                continue;
             if (item is ResponseToolSearchCallItem { Execution: "server" } search)
                 hostedSearchCallId = search.Id;
 

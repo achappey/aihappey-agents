@@ -182,6 +182,11 @@ public partial class AgentChatClient
                 yield break;
 
             case ResponseOutputItemAdded added:
+                if (IsGatewayStreamItem(added.Item))
+                {
+                    if (added.Item.Id is { } gatewayId) state.GatewayItemIds.Add(gatewayId);
+                    yield break;
+                }
                 state.RegisterOutputItem(added.Item, added.OutputIndex);
                 RegisterProgramReplayStreamItem(added.Item);
                 RegisterResponseCallerStreamItem(added.Item);
@@ -238,6 +243,7 @@ public partial class AgentChatClient
                 yield break;
 
             case ResponseMcpCallArgumentsDone mcpArgumentsDone:
+                if (state.GatewayItemIds.Contains(mcpArgumentsDone.ItemId)) yield break;
                 state.SetArguments(mcpArgumentsDone.ItemId, mcpArgumentsDone.Arguments, providerExecuted: true);
                 if (state.TryCreateMcpInputUpdate(mcpArgumentsDone.ItemId, out ChatResponseUpdate mcpInputUpdate))
                     yield return mcpInputUpdate;
@@ -271,6 +277,12 @@ public partial class AgentChatClient
 
                 yield break;
             case ResponseOutputItemDone done:
+                if (IsGatewayStreamItem(done.Item))
+                {
+                    foreach (var gatewayUpdate in CreateGatewayTransportUpdates(JsonSerializer.SerializeToElement(done.Item, ResponseJson.Default), state))
+                        yield return gatewayUpdate;
+                    yield break;
+                }
                 state.RegisterOutputItem(done.Item, done.OutputIndex);
                 RegisterProgramReplayStreamItem(done.Item);
                 RegisterResponseCallerStreamItem(done.Item);
@@ -396,6 +408,13 @@ public partial class AgentChatClient
 
             case ResponseCompleted completed:
                 state.RegisterModel(completed.Response.Model);
+                foreach (var item in completed.Response.Output ?? [])
+                {
+                    var json = item is JsonElement element ? element : JsonSerializer.SerializeToElement(item, ResponseJson.Default);
+                    if (GatewayTransport.IsItem(json))
+                        foreach (var gatewayUpdate in CreateGatewayTransportUpdates(json, state))
+                            yield return gatewayUpdate;
+                }
                 if (state.MultiAgentActive
                     && TryCreateAuthoritativeMultiAgentFinalUpdate(completed.Response, out var finalTextUpdate))
                 {
@@ -794,6 +813,8 @@ public partial class AgentChatClient
         private readonly Dictionary<string, string> toolSearchIdsByItemId = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> toolSearchIdsByCallId = new(StringComparer.Ordinal);
         private readonly Queue<string> pendingHostedToolSearchIds = new();
+        public HashSet<string> GatewayItemIds { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> CompletedGatewayItems { get; } = new(StringComparer.Ordinal);
         private readonly HashSet<string> emittedProgramStarts = new(StringComparer.Ordinal);
         private readonly HashSet<string> emittedProgramInputs = new(StringComparer.Ordinal);
         private readonly HashSet<string> emittedProgramOutputs = new(StringComparer.Ordinal);

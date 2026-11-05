@@ -2,6 +2,7 @@ using System.Net.Mime;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using AgentHappey.Common.Extensions;
 using AgentHappey.Core.ChatClient;
 using AIHappey.Responses;
 using AIHappey.Responses.Output;
@@ -116,6 +117,7 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
         private readonly Dictionary<string, ReasoningOutputState> reasoningItems = new(StringComparer.Ordinal);
         private readonly Dictionary<string, ToolCallOutputState> toolCalls = new(StringComparer.Ordinal);
         private readonly Dictionary<string, ToolResultOutputState> toolResults = new(StringComparer.Ordinal);
+        private readonly HashSet<string> gatewayItems = new(StringComparer.Ordinal);
         private readonly Dictionary<string, object?> finishMetadata = new(StringComparer.Ordinal);
         private DateTimeOffset createdAt = DateTimeOffset.UtcNow;
         private string responseId = Guid.NewGuid().ToString("N");
@@ -411,6 +413,10 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
 
         private IEnumerable<ResponseStreamPart> AddToolCall(FunctionCallContent functionCall)
         {
+            // The paired result owns the one MCP output item. Never expose these
+            // informational artifacts as executable function calls/results.
+            if (ReadNativeResponseItem(functionCall) is { } native && GatewayTransport.IsItem(native))
+                return [];
             if (string.IsNullOrWhiteSpace(functionCall.CallId) || toolCalls.ContainsKey(functionCall.CallId))
                 return [];
 
@@ -454,6 +460,8 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
 
         private IEnumerable<ResponseStreamPart> AddToolResult(FunctionResultContent functionResult)
         {
+            if (ReadNativeResponseItem(functionResult) is { } native && GatewayTransport.IsItem(native))
+                return AddGatewayItem(native);
             if (string.IsNullOrWhiteSpace(functionResult.CallId))
                 return [];
 
@@ -485,6 +493,35 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
                     SequenceNumber = NextSequence(),
                     OutputIndex = state.OutputIndex,
                     Item = item
+                }
+            ];
+        }
+
+        private IEnumerable<ResponseStreamPart> AddGatewayItem(JsonElement native)
+        {
+            var id = GatewayTransport.String(native, "id");
+            if (string.IsNullOrWhiteSpace(id) || !gatewayItems.Add(id)) return [];
+            var state = new ToolCallOutputState(outputs.Count, id) { NativeItem = native.Clone() };
+            outputs.Add(state);
+            var started = native.EnumerateObject().ToDictionary(field => field.Name, field => field.Value.Clone());
+            started["status"] = JsonSerializer.SerializeToElement("in_progress");
+            started["output"] = JsonSerializer.SerializeToElement<object?>(null);
+            return
+            [
+                new ResponseOutputItemAdded
+                {
+                    SequenceNumber = NextSequence(), OutputIndex = state.OutputIndex,
+                    Item = JsonSerializer.SerializeToElement(started).Deserialize<ResponseStreamItem>(ResponseJson.Default)!
+                },
+                new ResponseMcpCallArgumentsDone
+                {
+                    SequenceNumber = NextSequence(), OutputIndex = state.OutputIndex, ItemId = id,
+                    Arguments = GatewayTransport.String(native, "arguments") ?? "{}"
+                },
+                new ResponseOutputItemDone
+                {
+                    SequenceNumber = NextSequence(), OutputIndex = state.OutputIndex,
+                    Item = native.Deserialize<ResponseStreamItem>(ResponseJson.Default)!
                 }
             ];
         }

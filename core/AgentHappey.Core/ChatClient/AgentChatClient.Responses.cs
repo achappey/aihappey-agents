@@ -198,6 +198,8 @@ public partial class AgentChatClient
             {
                 foreach (var result in message.Contents.OfType<FunctionResultContent>())
                 {
+                    if (GatewayTransport.IsOutputOnly(result.RawRepresentation) || GatewayTransport.IsOutputOnly(result.Result))
+                        continue;
                     if (searchReplay.IgnoredCalls.Contains(result.CallId))
                         continue;
                     if (ownedCalls.TryGetValue(result.CallId, out var owned) && !owned)
@@ -406,6 +408,9 @@ public partial class AgentChatClient
 
         foreach (var content in message.Contents)
         {
+            if (GatewayTransport.IsOutputOnly(content.RawRepresentation)
+                || content is FunctionResultContent gatewayResult && GatewayTransport.IsOutputOnly(gatewayResult.Result))
+                continue;
             if (message.Role == ChatRole.Assistant)
             {
                 if (!IsOwnedContinuation(content.RawRepresentation))
@@ -1197,6 +1202,12 @@ public partial class AgentChatClient
 
         if (json.ValueKind != JsonValueKind.Object)
             return;
+
+        if (GatewayTransport.IsItem(json))
+        {
+            AppendGatewayTransport(parts, json);
+            return;
+        }
 
         var type = json.TryGetProperty("type", out var typeProperty)
             ? typeProperty.GetString()

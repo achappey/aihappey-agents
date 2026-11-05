@@ -1210,6 +1210,7 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         fileId = null;
 
         var callToolResult = TryDeserializeCallToolResult(output);
+        if (callToolResult?.IsError == true) return false;
         JsonElement payload;
         if (callToolResult?.IsError != true
             && callToolResult?.StructuredContent is JsonElement structuredContent
