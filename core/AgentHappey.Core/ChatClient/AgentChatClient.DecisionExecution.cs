@@ -24,24 +24,6 @@ public partial class AgentChatClient
         decisionSafetyIdentifier = safetyIdentifier;
     }
 
-    private Dictionary<string, object?>? BuildDecisionProviderMetadata()
-    {
-        var metadata = BuildResponsesProviderMetadata();
-        if (metadata is null) return null;
-        // Provider metadata is materialized after request fields by some gateway providers.
-        // Keep normal tool configuration, but never overwrite the request-local output schema.
-        var source = JsonSerializer.SerializeToElement(metadata[GetProviderKey()], JsonSerializerOptions.Web);
-        var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "text", "response_format", "responseFormat"
-        };
-        if (decisionMaxOutputTokens is not null)
-            excluded.UnionWith(["max_output_tokens", "maxOutputTokens"]);
-        var safe = source.EnumerateObject().Where(p => !excluded.Contains(p.Name))
-            .ToDictionary(p => p.Name, p => p.Value.Clone(), StringComparer.Ordinal);
-        return safe.Count == 0 ? null : new() { [GetProviderKey()] = JsonSerializer.SerializeToElement(safe) };
-    }
-
     private void CaptureDecisionInference(ResponseResult response)
     {
         if (response.Error is not null || response.Status is not (null or "completed")

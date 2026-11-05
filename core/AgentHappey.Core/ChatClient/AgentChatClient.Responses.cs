@@ -17,25 +17,18 @@ public partial class AgentChatClient
     private readonly Dictionary<string, ResponseFunctionCallItem> responseFunctionCalls = new(StringComparer.Ordinal);
 
     private ResponseRequest BuildResponseRequest(IEnumerable<ChatMessage> messages, ChatOptions? options)
-        => new()
+        => ApplyProviderOptions(new ResponseRequest
         {
             Model = EffectiveModel.Id,
             Input = new ResponseInput(ToResponseReplayInputItems(messages, options)),
             Tools = BuildResponseToolDefinitions(options?.Tools),
             Text = decisionExecution ? decisionResponseText : agent.GetResponsesText(),
-            Metadata = decisionExecution ? BuildDecisionProviderMetadata() : BuildResponsesProviderMetadata(),
             Instructions = options?.Instructions,
             Stream = false,
             Store = decisionResponseText is not null ? false : null,
-            MaxOutputTokens = decisionMaxOutputTokens,
-            AdditionalProperties = decisionSafetyIdentifier is null ? null : new()
-            {
-                ["safety_identifier"] = JsonSerializer.SerializeToElement(decisionSafetyIdentifier)
-            },
-            ToolChoice = "auto",
-            ParallelToolCalls = HasProviderOption("parallel_tool_calls") ? null : true,
-            Temperature = EffectiveModel.Options?.Temperature ?? 1
-        };
+            MaxOutputTokens = decisionMaxOutputTokens ?? options?.MaxOutputTokens,
+            SafetyIdentifier = decisionSafetyIdentifier
+        });
 
     private List<ResponseInputItem> ToResponseReplayInputItems(IEnumerable<ChatMessage> messages, ChatOptions? options)
     {
@@ -58,17 +51,6 @@ public partial class AgentChatClient
     private bool HasProviderOption(string optionName)
         => EffectiveModel.ProviderMetadata?.ContainsKey(optionName) == true;
 
-    private Dictionary<string, object?>? BuildResponsesProviderMetadata()
-    {
-        if (EffectiveModel.ProviderMetadata is not { Count: > 0 } providerMetadata)
-            return null;
-
-        return new Dictionary<string, object?>
-        {
-            [GetProviderKey()] = JsonSerializer.SerializeToElement(providerMetadata, JsonSerializerOptions.Web)
-        };
-    }
-
     private static readonly HashSet<string> SideInferenceOwnedProviderOptions = new(StringComparer.OrdinalIgnoreCase)
     {
         "background",
@@ -90,37 +72,6 @@ public partial class AgentChatClient
         "toolChoice",
         "tools"
     };
-
-    /// <summary>
-    /// Preserves provider/model tuning for a side-inference request while ensuring
-    /// provider metadata cannot inject tools, replay state, or override the request's
-    /// input and instructions. Some providers materialize metadata.tools after the
-    /// request has already supplied an empty tool list, so Tools = [] alone is not
-    /// sufficient to guarantee a tool-free inference call.
-    /// </summary>
-    private Dictionary<string, object?>? BuildSideInferenceProviderMetadata()
-    {
-        if (EffectiveModel.ProviderMetadata is not { Count: > 0 } providerMetadata)
-            return null;
-
-        var source = JsonSerializer.SerializeToElement(providerMetadata, JsonSerializerOptions.Web);
-        if (source.ValueKind != JsonValueKind.Object)
-            return null;
-
-        var safeOptions = source.EnumerateObject()
-            .Where(property => !SideInferenceOwnedProviderOptions.Contains(property.Name))
-            .ToDictionary(
-                property => property.Name,
-                property => property.Value.Clone(),
-                StringComparer.Ordinal);
-
-        return safeOptions.Count == 0
-            ? null
-            : new Dictionary<string, object?>
-            {
-                [GetProviderKey()] = JsonSerializer.SerializeToElement(safeOptions, JsonSerializerOptions.Web)
-            };
-    }
 
 
     private static JsonElement ToJsonElement(object value)

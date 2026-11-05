@@ -62,7 +62,8 @@ public sealed partial class AgentChatClientFixtureTests
             inferenceCount++;
             Assert.Equal("anthropic/second", root.GetProperty("model").GetString());
             Assert.Equal(0.25, root.GetProperty("temperature").GetDouble());
-            Assert.Equal(42, root.GetProperty("metadata").GetProperty("anthropic").GetProperty("max_tokens").GetInt32());
+            Assert.Equal(42, root.GetProperty("max_tokens").GetInt32());
+            Assert.False(root.TryGetProperty("metadata", out _));
             Assert.Equal("selected-setting", Assert.Single(request.Headers.GetValues("X-Selected-Setting")));
             Assert.False(request.Headers.Contains("X-OpenAI-Key"));
             Assert.False(request.Headers.Contains("X-Router-Setting"));
@@ -122,7 +123,8 @@ public sealed partial class AgentChatClientFixtureTests
             using var json = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
             Assert.Equal("openai/first", json.RootElement.GetProperty("model").GetString());
             Assert.Equal(0.25, json.RootElement.GetProperty("temperature").GetDouble());
-            Assert.Equal(42, json.RootElement.GetProperty("metadata").GetProperty("openai").GetProperty("max_tokens").GetInt32());
+            Assert.Equal(42, json.RootElement.GetProperty("max_tokens").GetInt32());
+            Assert.False(json.RootElement.TryGetProperty("metadata", out _));
             Assert.Equal("selected-setting", Assert.Single(request.Headers.GetValues("X-Selected-Setting")));
             return streaming ? CreateStreamingResponse(LoadFixture(StreamingFixturePath)) : CreateJsonResponse(LoadFixture(StructuredFixturePath));
         });

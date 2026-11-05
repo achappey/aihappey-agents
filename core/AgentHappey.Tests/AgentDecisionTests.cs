@@ -340,7 +340,8 @@ public sealed partial class AgentDecisionTests
             Assert.Equal("anthropic/selected", call.Body.GetProperty("model").GetString());
             Assert.Equal("selected-model-key", call.Headers["X-Provider-Key"]);
         });
-        Assert.Contains("reasoning", f.Sent.Last().Body.GetProperty("metadata").GetProperty("anthropic").GetRawText());
+        Assert.Equal("low", f.Sent.Last().Body.GetProperty("reasoning").GetProperty("effort").GetString());
+        Assert.False(f.Sent.Last().Body.TryGetProperty("metadata", out _));
     }
 
     [Fact]
@@ -352,13 +353,12 @@ public sealed partial class AgentDecisionTests
         f.Agent.Model.ProviderMetadata["tool_choice"] = "required";
         await f.Execute(NativeRequest());
         var final = f.Sent.Last().Body;
-        var metadata = final.GetProperty("metadata").GetProperty("openai");
-        Assert.Equal("web_search", metadata.GetProperty("tools")[0].GetProperty("type").GetString());
-        Assert.Equal("required", metadata.GetProperty("tool_choice").GetString());
-        Assert.False(metadata.TryGetProperty("text", out _));
-        Assert.False(metadata.TryGetProperty("response_format", out _));
+        Assert.Contains(final.GetProperty("tools").EnumerateArray(), tool => tool.GetProperty("type").GetString() == "web_search");
+        Assert.Equal("required", final.GetProperty("tool_choice").GetString());
+        Assert.False(final.TryGetProperty("metadata", out _));
+        Assert.False(final.TryGetProperty("response_format", out _));
         Assert.Equal("json_schema", final.GetProperty("text").GetProperty("format").GetProperty("type").GetString());
-        Assert.Equal("low", metadata.GetProperty("reasoning").GetProperty("effort").GetString());
+        Assert.Equal("low", final.GetProperty("reasoning").GetProperty("effort").GetString());
     }
 
     [Fact]

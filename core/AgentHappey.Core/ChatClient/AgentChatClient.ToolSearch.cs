@@ -52,7 +52,7 @@ public partial class AgentChatClient
                 tools = catalog
             }, JsonSerializerOptions.Web);
 
-            var request = new ResponseRequest
+            var request = ApplyProviderOptions(new ResponseRequest
             {
                 Model = EffectiveModel.Id,
                 Instructions = GetComposedInstructions(),
@@ -72,9 +72,8 @@ public partial class AgentChatClient
                 ToolChoice = "none",
                 ParallelToolCalls = false,
                 Stream = false,
-                Temperature = EffectiveModel.Options?.Temperature ?? 1,
-                Metadata = BuildSideInferenceProviderMetadata()
-            };
+                Temperature = EffectiveModel.Options?.Temperature ?? 1
+            }, sideInference: true);
 
             EnsureHeaders();
             request.Headers = GetInferenceHeaders(request.Model);
