@@ -277,6 +277,12 @@ public partial class AgentChatClient
 
                 yield break;
             case ResponseOutputItemDone done:
+                if (string.Equals(done.Item.Type, "web_search_call", StringComparison.Ordinal))
+                {
+                    foreach (var searchUpdate in CreateWebSearchUpdates(JsonSerializer.SerializeToElement(done.Item, ResponseJson.Default), state))
+                        yield return searchUpdate;
+                    yield break;
+                }
                 if (IsGatewayStreamItem(done.Item))
                 {
                     foreach (var gatewayUpdate in CreateGatewayTransportUpdates(JsonSerializer.SerializeToElement(done.Item, ResponseJson.Default), state))
@@ -414,6 +420,9 @@ public partial class AgentChatClient
                     if (GatewayTransport.IsItem(json))
                         foreach (var gatewayUpdate in CreateGatewayTransportUpdates(json, state))
                             yield return gatewayUpdate;
+                    if (GatewayTransport.String(json, "type") == "web_search_call")
+                        foreach (var searchUpdate in CreateWebSearchUpdates(json, state))
+                            yield return searchUpdate;
                 }
                 if (state.MultiAgentActive
                     && TryCreateAuthoritativeMultiAgentFinalUpdate(completed.Response, out var finalTextUpdate))
@@ -815,6 +824,7 @@ public partial class AgentChatClient
         private readonly Queue<string> pendingHostedToolSearchIds = new();
         public HashSet<string> GatewayItemIds { get; } = new(StringComparer.Ordinal);
         public HashSet<string> CompletedGatewayItems { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> CompletedWebSearchItems { get; } = new(StringComparer.Ordinal);
         private readonly HashSet<string> emittedProgramStarts = new(StringComparer.Ordinal);
         private readonly HashSet<string> emittedProgramInputs = new(StringComparer.Ordinal);
         private readonly HashSet<string> emittedProgramOutputs = new(StringComparer.Ordinal);

@@ -200,6 +200,9 @@ public partial class AgentChatClient
                 {
                     if (GatewayTransport.IsOutputOnly(result.RawRepresentation) || GatewayTransport.IsOutputOnly(result.Result))
                         continue;
+                    if (TryReadResponseItem<ResponseWebSearchCallItem>(result.RawRepresentation, out _)
+                        || TryReadResponseItem<ResponseWebSearchCallItem>(result.Result, out _))
+                        continue;
                     if (searchReplay.IgnoredCalls.Contains(result.CallId))
                         continue;
                     if (ownedCalls.TryGetValue(result.CallId, out var owned) && !owned)
@@ -232,17 +235,17 @@ public partial class AgentChatClient
             }
 
             foreach (var call in message.Contents.OfType<FunctionCallContent>()
-                .Where(call => VercelHelpers.IsContinuationStateTool(call.Name)))
+                .Where(call => VercelHelpers.IsContinuationStateTool(call.Name) || IsWebSearchCall(call)))
                 ownedCalls[call.CallId] = IsOwnedContinuation(call.RawRepresentation);
 
             var replayMessage = message;
             if (message.Contents.OfType<FunctionCallContent>()
-                .Any(call => VercelHelpers.IsContinuationStateTool(call.Name)
+                .Any(call => (VercelHelpers.IsContinuationStateTool(call.Name) || IsWebSearchCall(call))
                     && !ownedCalls[call.CallId]))
             {
                 replayMessage = new ChatMessage(message.Role, message.Contents
                     .Where(content => content is not FunctionCallContent call
-                        || !VercelHelpers.IsContinuationStateTool(call.Name)
+                        || !(VercelHelpers.IsContinuationStateTool(call.Name) || IsWebSearchCall(call))
                         || ownedCalls[call.CallId]).ToList()) { MessageId = message.MessageId };
             }
 
@@ -357,10 +360,21 @@ public partial class AgentChatClient
             .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
         var emittedPrograms = new HashSet<string>(StringComparer.Ordinal);
         var emittedProgramOutputs = new HashSet<string>(StringComparer.Ordinal);
+        var latestWebSearches = items.OfType<ResponseWebSearchCallItem>()
+            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+            .GroupBy(item => item.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+        var emittedWebSearches = new HashSet<string>(StringComparer.Ordinal);
         var result = new List<ResponseInputItem>(items.Count);
 
         foreach (var item in items)
         {
+            if (item is ResponseWebSearchCallItem webSearch)
+            {
+                if (!string.IsNullOrWhiteSpace(webSearch.Id) && emittedWebSearches.Add(webSearch.Id))
+                    result.Add(latestWebSearches[webSearch.Id]);
+                continue;
+            }
             if (item is ResponseProgramItem program && !string.IsNullOrWhiteSpace(program.CallId))
             {
                 if (emittedPrograms.Add(program.CallId))
@@ -475,7 +489,11 @@ public partial class AgentChatClient
                     searchReplay.OrdinaryCalls.Add(call.CallId);
                     if (IsWebSearchCall(call))
                     {
-                        if (TryReadResponseItem<ResponseWebSearchCallItem>(call.RawRepresentation, out var webSearchCall))
+                        if (TryReadResponseItem<ResponseWebSearchCallItem>(call.RawRepresentation, out var webSearchCall)
+                            && !string.IsNullOrWhiteSpace(webSearchCall.Id)
+                            && string.Equals(webSearchCall.Id, call.CallId, StringComparison.Ordinal)
+                            && webSearchCall.Action.ValueKind == JsonValueKind.Object
+                            && webSearchCall.Status is null or "completed")
                             yield return webSearchCall;
                         break;
                     }
@@ -531,6 +549,9 @@ public partial class AgentChatClient
                     break;
 
                 case FunctionResultContent result:
+                    if (TryReadResponseItem<ResponseWebSearchCallItem>(result.RawRepresentation, out _)
+                        || TryReadResponseItem<ResponseWebSearchCallItem>(result.Result, out _))
+                        break;
                     foreach (var item in FlushResponseInputMessage(message, contentParts))
                         yield return item;
 
@@ -1225,6 +1246,10 @@ public partial class AgentChatClient
 
             case "function_call":
                 AppendFunctionCall(parts, json);
+                return;
+
+            case "web_search_call":
+                AppendWebSearchCall(parts, json);
                 return;
 
             case "tool_search_call":

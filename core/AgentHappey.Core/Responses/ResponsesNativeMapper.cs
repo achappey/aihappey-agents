@@ -460,9 +460,17 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
 
         private IEnumerable<ResponseStreamPart> AddToolResult(FunctionResultContent functionResult)
         {
+            // Web search is one self-contained native item. Its framework result
+            // exists only to complete the chat/UI lifecycle, not as another output.
+            if (ReadNativeResponseItem(functionResult) is { } search
+                && GatewayTransport.String(search, "type") == "web_search_call")
+                return [];
             if (ReadNativeResponseItem(functionResult) is { } native && GatewayTransport.IsItem(native))
                 return AddGatewayItem(native);
             if (string.IsNullOrWhiteSpace(functionResult.CallId))
+                return [];
+            if (toolCalls.TryGetValue(functionResult.CallId, out var call)
+                && call.NativeItem is { } searchCall && GatewayTransport.String(searchCall, "type") == "web_search_call")
                 return [];
 
             var itemId = $"{functionResult.CallId}:output";

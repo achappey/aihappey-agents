@@ -1003,7 +1003,11 @@ public sealed class StreamingContentMapper : IStreamingContentMapper
         var result = metadata is null
             ? new Dictionary<string, Dictionary<string, object>?>(StringComparer.Ordinal)
             : new Dictionary<string, Dictionary<string, object>?>(metadata, StringComparer.Ordinal);
-        result[authorName] = new Dictionary<string, object> { ["agent_name"] = authorName };
+        var owned = result.TryGetValue(authorName, out var original) && original is not null
+            ? new Dictionary<string, object>(original, StringComparer.Ordinal)
+            : new Dictionary<string, object>(StringComparer.Ordinal);
+        owned["agent_name"] = authorName;
+        result[authorName] = owned;
         return result;
     }
 

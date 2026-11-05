@@ -139,6 +139,50 @@ public static class VercelHelpers
             .Select(value => value!.TryGetValue("type", out var type) ? type?.ToString() : null)
             .FirstOrDefault(type => !string.IsNullOrWhiteSpace(type));
 
+    private static bool TryRestoreWebSearch(UIMessage message, string callId, string? owner,
+        HashSet<string> activeNames, Dictionary<string, Dictionary<string, object>?>? callMetadata,
+        Dictionary<string, Dictionary<string, object>?>? resultMetadata, out FunctionCallContent? call)
+    {
+        call = null;
+        var original = ReadResponsesItem(callMetadata) ?? ReadResponsesItem(resultMetadata);
+        if (original is null) return false;
+        var item = JsonSerializer.SerializeToElement(original, JsonSerializerOptions.Web);
+        if (GatewayTransport.String(item, "type") != "web_search_call") return false;
+
+        var metadataOwner = new[] { callMetadata, resultMetadata }.Where(metadata => metadata is not null)
+            .SelectMany(metadata => metadata!)
+            .Where(pair => pair.Value?.ContainsKey("responses_item") == true)
+            .Select(pair => pair.Value!.GetValueOrDefault("agent_name")?.ToString()
+                ?? (activeNames.Contains(pair.Key) ? pair.Key : null))
+            .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+        // An explicit producer outranks the single-active-agent legacy fallback.
+        var searchOwner = message.Metadata?.GetValueOrDefault("model")?.ToString() ?? metadataOwner ?? owner;
+
+        // Recognized provider-managed items must never fall through to the
+        // ordinary executable-function path, even when invalid or not owned.
+        if (GatewayTransport.String(item, "id") != callId
+            || GatewayTransport.String(item, "status") is not (null or "completed")
+            || !item.TryGetProperty("action", out var action) || action.ValueKind != JsonValueKind.Object
+            || activeNames.Count > 0 && (searchOwner is not null
+                ? !activeNames.Contains(searchOwner)
+                : !activeNames.Any(name => BelongsToAgent(message, name, activeNames, callMetadata, resultMetadata))))
+            return true;
+
+        call = new FunctionCallContent(callId, "web_search",
+            action.Deserialize<Dictionary<string, object?>>(JsonSerializerOptions.Web))
+        {
+            InformationalOnly = true,
+            RawRepresentation = new Dictionary<string, object?>
+            {
+                ["responses_item"] = item.Clone(),
+                ["responses_type"] = "web_search_call",
+                ["provider_metadata"] = callMetadata ?? resultMetadata,
+                ["agent_name"] = searchOwner
+            }
+        };
+        return true;
+    }
+
     private static object? ReadResponseItemRawRepresentation(object? value, string owner, string expectedType, string? fallbackText = null)
     {
         var item = JsonSerializer.SerializeToElement(value, JsonSerializerOptions.Web);
@@ -286,6 +330,12 @@ public static class VercelHelpers
                                 || GatewayTransport.IsProviderMetadata(pairedOutput?.ProviderMetadata)
                                 || GatewayTransport.IsOutputOnly(pairedOutput?.Output))
                                 break;
+                            if (TryRestoreWebSearch(ui, tc.ToolCallId, owner, activeAgentNameSet,
+                                tc.ProviderMetadata, pairedOutput?.ProviderMetadata, out var nativeSearch))
+                            {
+                                if (nativeSearch is not null) assistantContents.Add(nativeSearch);
+                                break;
+                            }
                             var continuationName = ResolveContinuationName(tc.ToolName, pairedOutput?.Output,
                                 tc.ProviderMetadata, pairedOutput?.ProviderMetadata);
                             if (tc.ProviderExecuted == true && continuationName is not null
@@ -333,6 +383,12 @@ public static class VercelHelpers
                                 || GatewayTransport.IsProviderMetadata(ti.ResultProviderMetadata)
                                 || GatewayTransport.IsOutputOnly(ti.Output))
                                 break;
+                            if (TryRestoreWebSearch(ui, ti.ToolCallId, owner, activeAgentNameSet,
+                                ti.CallProviderMetadata, ti.ResultProviderMetadata, out var nativeSearch))
+                            {
+                                if (nativeSearch is not null) assistantContents.Add(nativeSearch);
+                                break;
+                            }
                             var toolName = NormalizeToolName(ti.Type);
                             var continuationName = ResolveContinuationName(toolName, ti.Output,
                                 ti.CallProviderMetadata, ti.ResultProviderMetadata);
@@ -343,10 +399,9 @@ public static class VercelHelpers
                                 || IsConnectMcpControlPart(ti, toolName))
                                 break;
 
-                            // Dynamic provider-executed UI parts are descriptive
-                            // artifacts, never client function calls. Their exact
-                            // native identity is not recoverable unless the standard
-                            // ToolCallPart path carried a Responses item.
+                            // Unrecognized provider-executed UI parts remain
+                            // descriptive artifacts, never client function calls.
+                            // Replayable native web searches were restored above.
                             if (ti.ProviderExecuted == true && continuationName is null)
                                 break;
 
