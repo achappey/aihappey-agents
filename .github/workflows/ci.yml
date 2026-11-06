@@ -1,4 +1,3 @@
-
 name: ci
 
 on:
@@ -48,6 +47,43 @@ jobs:
 
       - name: Run tests
         run: dotnet test .\core\AgentHappey.Tests\AgentHappey.Tests.csproj -c Release
+
+      - name: Publish agents webapp
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          $output = '.\artifacts\azure-headerauth'
+
+          dotnet publish .\samples\AgentHappey.HeaderAuth\AgentHappey.HeaderAuth.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=false `
+            -p:PublishTrimmed=false `
+            -o $output
+
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Agents HeaderAuth publish failed.'
+          }
+
+          foreach ($file in @(
+            'AgentHappey.HeaderAuth.dll',
+            'AgentHappey.HeaderAuth.deps.json',
+            'AgentHappey.HeaderAuth.runtimeconfig.json',
+            'web.config'
+          )) {
+            if (-not (Test-Path (Join-Path $output $file) -PathType Leaf)) {
+              throw "Missing Azure runtime file: $file"
+            }
+          }
+
+      - name: Upload agents webapp artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: azure-headerauth
+          path: aihappey-agents/artifacts/azure-headerauth/
+          if-no-files-found: error
 
       # Existing standalone single-file build.
       - name: Publish Windows agents
@@ -232,3 +268,38 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw 'Desktop agents runtime release update failed.'
           }
+
+  deploy-azure:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-test-pack
+    runs-on: windows-latest
+
+    environment: production
+
+    concurrency:
+      group: aihappey-agents-production
+      cancel-in-progress: false
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download agents webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: azure-headerauth
+          path: ./artifacts/azure-headerauth
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy agents webapp
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: aihappey-agents
+          package: ./artifacts/azure-headerauth
