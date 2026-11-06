@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AIHappey.Vercel.Models;
+using AIHappey.Vercel.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -16,10 +17,12 @@ public sealed class ChatSseWriter : IProviderDebugSink, IDisposable
     private readonly HttpContext _context;
     private readonly SemaphoreSlim _writes = new(1, 1);
     private readonly IDisposable? _subscription;
+    private readonly ToolApprovalSigner? _approvals;
 
-    public ChatSseWriter(HttpContext context)
+    public ChatSseWriter(HttpContext context, ToolApprovalSigner? approvals = null)
     {
         _context = context;
+        _approvals = approvals;
         if (context.Items.ContainsKey(ContextKey))
             throw new InvalidOperationException("A chat SSE writer is already active for this request.");
         var events = context.RequestServices.GetRequiredService<RequestDebugEvents>();
@@ -30,6 +33,10 @@ public sealed class ChatSseWriter : IProviderDebugSink, IDisposable
 
     internal static ChatSseWriter? Current(HttpContext context)
         => context.Items.TryGetValue(ContextKey, out var writer) ? writer as ChatSseWriter : null;
+
+    internal IAsyncEnumerable<UIMessagePart> SignOutgoing(
+        IAsyncEnumerable<UIMessagePart> parts, CancellationToken cancellationToken)
+        => _approvals?.SignOutgoing(parts, cancellationToken) ?? parts;
 
     public async ValueTask WriteAsync(UIMessagePart part, CancellationToken cancellationToken = default)
     {

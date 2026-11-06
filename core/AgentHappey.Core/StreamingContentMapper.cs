@@ -36,6 +36,10 @@ public static class StreamWriterExtensions
         IAsyncEnumerable<UIMessagePart> parts,
         CancellationToken ct = default)
     {
+        // Only API chat installs this writer. Responses/background/workflow
+        // execution without the UI chat adapter keeps its original behavior.
+        if (ChatSseWriter.Current(response.HttpContext) is { } writer)
+            parts = writer.SignOutgoing(parts, ct);
         await foreach (var p in parts.WithCancellation(ct))
         {
             await response.WritePartAsync(p, ct);

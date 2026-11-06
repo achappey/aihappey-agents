@@ -5,6 +5,7 @@ using AgentHappey.Core.ChatClient;
 using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core;
 using AgentHappey.Core.Diagnostics;
+using AIHappey.Vercel.Security;
 
 namespace AgentHappey.HeaderAuth.Controllers;
 
@@ -13,14 +14,19 @@ namespace AgentHappey.HeaderAuth.Controllers;
 [Route("api/chat")]
 public class ChatController(IHttpClientFactory httpClientFactory,
     IOptions<Config> options,
-    [FromServices] IChatRuntimeOrchestrator orchestrator) : ControllerBase
+    [FromServices] IChatRuntimeOrchestrator orchestrator,
+    AgentToolApprovalSecurity approvalSecurity) : ControllerBase
 {
     private readonly string Endpoint = options.Value.AiConfig.AiEndpoint;
 
     [HttpPost]
     public async Task<IActionResult> Post([FromBody] AgentRequest chatRequest, CancellationToken cancellationToken)
     {
-        using var writer = new ChatSseWriter(HttpContext);
+        var approvals = approvalSecurity.ForHeaderAuth();
+        try { approvals?.ValidateIncoming(chatRequest.Messages); }
+        catch (ToolApprovalSignatureException error) { return BadRequest(new { error = error.Message }); }
+
+        using var writer = new ChatSseWriter(HttpContext, approvals);
         using var debugScope = ResponsesTransportDebugObserver.Begin(HttpContext);
         try
         {

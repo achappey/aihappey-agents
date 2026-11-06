@@ -25,6 +25,8 @@ builder.WebHost.ConfigureKestrel(o =>
 var appConfig = builder.Configuration.Get<Config>();
 
 builder.Services.Configure<Config>(builder.Configuration);
+builder.Services.Configure<AgentToolApprovalOptions>(builder.Configuration.GetSection("EndUserIdHashing"));
+builder.Services.AddSingleton<AgentToolApprovalSecurity>();
 
 var basePath = Path.Combine(AppContext.BaseDirectory, "Agents");
 

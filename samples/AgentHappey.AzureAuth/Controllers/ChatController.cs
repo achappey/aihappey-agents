@@ -12,6 +12,7 @@ using System.Text;
 using AIHappey.Vercel.Models;
 using AgentHappey.Core;
 using AgentHappey.Core.Diagnostics;
+using AIHappey.Vercel.Security;
 
 namespace AgentHappey.AzureAuth.Controllers;
 
@@ -21,7 +22,8 @@ public class ChatController(IHttpClientFactory httpClientFactory,
     IOptions<Config> options,
     [FromServices] IChatRuntimeOrchestrator orchestrator,
     IServiceProvider serviceProvider,
-    ITokenAcquisition tokenAcquisition) : ControllerBase
+    ITokenAcquisition tokenAcquisition,
+    AgentToolApprovalSecurity approvalSecurity) : ControllerBase
 {
     private readonly string Endpoint = options.Value.AiConfig.AiEndpoint!;
 
@@ -31,7 +33,11 @@ public class ChatController(IHttpClientFactory httpClientFactory,
     [Authorize]
     public async Task<IActionResult> Post([FromBody] AgentRequest chatRequest, CancellationToken cancellationToken)
     {
-        using var writer = new ChatSseWriter(HttpContext);
+        var approvals = approvalSecurity.ForUser(User.FindFirst(ClaimConstants.ObjectId)?.Value);
+        try { approvals?.ValidateIncoming(chatRequest.Messages); }
+        catch (ToolApprovalSignatureException error) { return BadRequest(new { error = error.Message }); }
+
+        using var writer = new ChatSseWriter(HttpContext, approvals);
         using var debugScope = ResponsesTransportDebugObserver.Begin(HttpContext);
         try
         {

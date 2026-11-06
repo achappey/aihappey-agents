@@ -21,6 +21,8 @@ public static class HeaderAuthGatewayExtensions
         var services = builder.Services;
         var config = builder.Configuration.Get<Config>() ?? new Config();
         services.Configure<Config>(builder.Configuration);
+        services.Configure<AgentToolApprovalOptions>(builder.Configuration.GetSection("EndUserIdHashing"));
+        services.AddSingleton<AgentToolApprovalSecurity>();
         services.AddOptions<HeaderAuthHostOptions>();
         if (configure is not null)
             services.Configure(configure);
