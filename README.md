@@ -28,4 +28,30 @@ curl "https://agents.aihappey.net/v1/responses" \
   }'
 ```
 
+```bash
+curl "https://agents.aihappey.net/v1/responses" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{
+   "agent": {
+      "name": "GreetingAgent",
+      "description": "Greets the user",
+      "instructions": "Reply with a brief greeting.",
+      "model": { "id": "openai/gpt-6-luna" }
+    }, 
+    "input": "Say hi"
+  }'
+```
+
+```bash
+curl "https://agents.aihappey.net/v1/responses" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{
+    "models": ["GoogleSearchAgent", "OpenAIAgent"],
+    "workflowType": "sequential"
+    "input": "Say hi"
+  }'
+```
+
 See the [API documentation](https://docs.aihappey.com/agents) for endpoints, authentication, request schemas and examples.
