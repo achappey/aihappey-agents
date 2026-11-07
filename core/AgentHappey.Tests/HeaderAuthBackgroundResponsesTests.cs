@@ -62,21 +62,15 @@ public sealed class HeaderAuthBackgroundResponsesTests
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
         controller.Request.Headers["X-Api-Key"] = "header-api-SECRET";
-        var request = new ResponseRequest
+        var request = new AgentResponseRequest
         {
             Input = new ResponseInput("run"), Background = true, Store = false,
-            Metadata = new()
+            Metadata = new() { ["business"] = "preserved" },
+            Agent = new Agent
             {
-                ["business"] = "preserved",
-                ["agents"] = new[]
-                {
-                    new Agent
-                    {
-                        Name = "TestAgent", Instructions = "Answer briefly.",
-                        Model = new AIModel { Id = "test/model", Options = new AIModelOptions { Temperature = 0 },
-                            ProviderHeaders = new() { ["X-Provider-Key"] = "provider-header-SECRET" } }
-                    }
-                }
+                Name = "TestAgent", Instructions = "Answer briefly.",
+                Model = new AIModel { Id = "test/model", Options = new AIModelOptions { Temperature = 0 },
+                    ProviderHeaders = new() { ["X-Provider-Key"] = "provider-header-SECRET" } }
             }
         };
         var queued = Assert.IsType<ResponseResult>(Assert.IsType<OkObjectResult>(await controller.Post(request, default)).Value);
@@ -407,16 +401,16 @@ public sealed class HeaderAuthBackgroundResponsesTests
         else Assert.Contains(services, descriptor => descriptor.ImplementationType == typeof(DisabledAsyncResponsesService));
     }
 
-    private static ResponseRequest Request() => JsonSerializer.Deserialize<ResponseRequest>("""
+    private static AgentResponseRequest Request() => JsonSerializer.Deserialize<AgentResponseRequest>("""
         {
           "model": "test-agent", "input": "private input need not be persisted", "background": true, "store": false,
           "tools": [{"type":"function","name":"test_tool","parameters":{"type":"object","properties":{
             "api_key":{"type":"string","description":"An API key argument","default":"nested-api-SECRET"},
             "query":{"type":"string"}}},"authorization":"Bearer tool-auth-SECRET"}],
+          "agents":[{"name":"test-agent","model":{"id":"test/model","providerHeaders":{"X-Api-Key":"provider-header-SECRET"}},
+            "mcpServers":{"example":{"url":"https://example.test/mcp","headers":{"X-Custom":"mcp-header-SECRET"}}}}],
           "metadata": {
             "business":"preserved",
-            "agents":[{"name":"test-agent","model":{"id":"test/model","providerHeaders":{"X-Api-Key":"provider-header-SECRET"}},
-              "mcpServers":{"example":{"url":"https://example.test/mcp","headers":{"X-Custom":"mcp-header-SECRET"}}}}],
             "nested":{"api_key":"nested-api-SECRET"},
             "server_url":"https://user:url-password-SECRET@example.test/mcp?api_key=url-api-SECRET&region=eu"
           }

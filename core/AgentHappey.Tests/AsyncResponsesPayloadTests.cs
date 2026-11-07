@@ -431,10 +431,10 @@ public sealed class AsyncResponsesPayloadTests
         Assert.Equal(new[] { "queued", "in_progress", failed ? "failed" : "completed" }, statuses);
     }
 
-    private static ResponseRequest CreateRequest(int size, bool file = false)
+    private static AgentHappey.Common.Models.AgentResponseRequest CreateRequest(int size, bool file = false)
     {
         if (!file)
-            return new ResponseRequest
+            return new AgentHappey.Common.Models.AgentResponseRequest
             {
                 Model = "agent",
                 Input = new ResponseInput("private extracted PDF text " + new string('文', size)),
@@ -442,7 +442,7 @@ public sealed class AsyncResponsesPayloadTests
                 Stream = true
             };
 
-        return JsonSerializer.Deserialize<ResponseRequest>(JsonSerializer.Serialize(new
+        return JsonSerializer.Deserialize<AgentHappey.Common.Models.AgentResponseRequest>(JsonSerializer.Serialize(new
         {
             model = "agent",
             background = true,

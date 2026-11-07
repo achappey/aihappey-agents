@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AgentHappey.AsyncResponses;
+using AgentHappey.Common.Models;
 using AIHappey.Responses;
 
 namespace AgentHappey.Tests;
@@ -9,7 +10,7 @@ public sealed class AsyncResponseLifecycleTests
     [Fact]
     public void Queued_response_uses_typed_background_property_and_round_trips()
     {
-        var response = AsyncResponseLifecycle.CreateQueuedResponse(new ResponseRequest
+        var response = AsyncResponseLifecycle.CreateQueuedResponse(new AgentResponseRequest
         {
             Model = "test-agent", Background = false, Store = false,
             Metadata = new() { ["business"] = "preserved" }
@@ -76,7 +77,7 @@ public sealed class AsyncResponseLifecycleTests
         var message = new AsyncResponsesQueueMessage
         {
             ResponseId = "resp_owned", CreatedAt = 123,
-            Request = new ResponseRequest { Model = "test-agent" }
+            Request = new AgentResponseRequest { Model = "test-agent" }
         };
 
         for (var pass = 0; pass < 3; pass++)

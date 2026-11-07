@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AgentHappey.Common.Models;
 using AgentHappey.Core.Responses;
 using AIHappey.Responses;
 using Microsoft.Extensions.AI;
@@ -13,7 +14,7 @@ public sealed class ResponsesRuntimeMapperTests
     [InlineData("  ")]
     public void String_input_is_a_single_user_message(string text)
     {
-        var mapped = new ResponseRequest { Input = text }.ToChatRuntimeRequest();
+        var mapped = new AgentResponseRequest { Input = text }.ToChatRuntimeRequest();
         var message = Assert.Single(mapped.Messages);
         Assert.Equal(ChatRole.User, message.Role);
         Assert.Equal(text, Assert.IsType<TextContent>(Assert.Single(message.Contents)).Text);
@@ -51,7 +52,7 @@ public sealed class ResponsesRuntimeMapperTests
         var request = Read($$$"""
             {"model":"Router","models":["One","",null,"Two"],"input":"Hello",
              "{{{typeKey}}}":"groupchat","{{{metadataKey}}}":{"groupchat":{"maximumIterationCount":3}},
-             "metadata":{"agents":[{"name":"InlineAgent"}],"custom":"unchanged"},
+             "agents":[{"name":"InlineAgent"}],"metadata":{"custom":"unchanged"},
              "instructions":"Existing instructions","temperature":0.3,"reasoning":{"effort":"high"}}
             """);
         var before = JsonSerializer.Serialize(request, ResponseJson.Default);
@@ -67,14 +68,14 @@ public sealed class ResponsesRuntimeMapperTests
     [Fact]
     public void Null_and_empty_input_retain_runtime_defaults()
     {
-        var mapped = new ResponseRequest().ToChatRuntimeRequest();
+        var mapped = new AgentResponseRequest().ToChatRuntimeRequest();
         Assert.Empty(mapped.Messages);
         Assert.Null(mapped.Models);
         Assert.Null(mapped.Agents);
         Assert.Null(mapped.Tools);
         Assert.Equal("sequential", mapped.WorkflowType);
-        Assert.Empty(new ResponseRequest { Input = new ResponseInput([]) }.ToChatRuntimeRequest().Messages);
-        Assert.Throws<ArgumentNullException>(() => ResponsesRuntimeMapper.ToChatRuntimeRequest(null!));
+        Assert.Empty(new AgentResponseRequest { Input = new ResponseInput([]) }.ToChatRuntimeRequest().Messages);
+        Assert.Throws<ArgumentNullException>(() => ResponsesRuntimeMapper.ToChatRuntimeRequest((AgentResponseRequest)null!));
     }
 
     [Fact]
@@ -123,7 +124,7 @@ public sealed class ResponsesRuntimeMapperTests
     [InlineData("null", "{}")]
     public void Function_calls_and_results_keep_correlation_arguments_and_output(string output, string expectedJson)
     {
-        var request = new ResponseRequest
+        var request = new AgentResponseRequest
         {
             Input = new ResponseInput([
                 new ResponseFunctionCallItem { Id = "fc-1", CallId = "call-1", Name = "lookup", Namespace = "catalog",
@@ -156,7 +157,7 @@ public sealed class ResponsesRuntimeMapperTests
             Summary = encryptedOnly ? [] : [new() { Text = "first" }, new() { Text = "second" }],
             AdditionalProperties = new() { ["signature"] = JsonSerializer.SerializeToElement("provider-signature") }
         };
-        var message = Assert.Single(new ResponseRequest { Input = new ResponseInput([reasoning]) }.ToChatRuntimeRequest().Messages);
+        var message = Assert.Single(new AgentResponseRequest { Input = new ResponseInput([reasoning]) }.ToChatRuntimeRequest().Messages);
         Assert.Equal(ChatRole.Assistant, message.Role);
         Assert.Equal(reasoning.Id, message.MessageId);
         var content = Assert.IsType<TextReasoningContent>(Assert.Single(message.Contents));
@@ -234,7 +235,7 @@ public sealed class ResponsesRuntimeMapperTests
                 || reference.Name == "AIHappey.Core");
     }
 
-    private static ResponseRequest Read(string json) => JsonSerializer.Deserialize<ResponseRequest>(json, ResponseJson.Default)!;
+    private static AgentResponseRequest Read(string json) => JsonSerializer.Deserialize<AgentResponseRequest>(json, ResponseJson.Default)!;
 
     private static JsonElement NativeItem(AIContent content)
         => JsonSerializer.SerializeToElement(content.RawRepresentation, ResponseJson.Default).GetProperty("responses_item");
