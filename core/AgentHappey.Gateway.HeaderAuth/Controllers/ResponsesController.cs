@@ -7,6 +7,7 @@ using AgentHappey.Core.ChatRuntime;
 using AgentHappey.Core.Responses;
 using AIHappey.Responses.Streaming;
 using AgentHappey.AsyncResponses;
+using AgentHappey.Common.Models;
 
 namespace AgentHappey.HeaderAuth.Controllers;
 
@@ -23,19 +24,27 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
     private readonly string Endpoint = options.Value.AiConfig.AiEndpoint!;
 
     [HttpPost]
-    public async Task<IActionResult> Post([FromBody] ResponseRequest requestDto, CancellationToken cancellationToken)
+    public async Task<IActionResult> Post([FromBody] AgentResponseRequest requestDto, CancellationToken cancellationToken)
     {
         if (requestDto == null || requestDto.Input == null)
             return BadRequest(new { error = "'input' is a required field" });
 
-        var runtimeRequest = requestDto.ToChatRuntimeRequest();
+        ChatRuntimeRequest runtimeRequest;
+        try
+        {
+            runtimeRequest = requestDto.ToChatRuntimeRequest();
+        }
+        catch (ArgumentException e)
+        {
+            return BadRequest(new { error = e.Message });
+        }
         if (runtimeRequest.Messages.Count == 0)
             return BadRequest(new { error = "The request did not contain any supported conversation items." });
 
         if (string.IsNullOrWhiteSpace(runtimeRequest.Model)
             && runtimeRequest.Models is not { Count: > 0 }
             && runtimeRequest.Agents is not { Count: > 0 })
-            return BadRequest(new { error = "Provide 'model', 'models', or metadata.agents." });
+            return BadRequest(new { error = "Provide 'model', 'models', 'agent', or 'agents' at the request root." });
 
         if (requestDto.Background == true)
         {
@@ -72,6 +81,7 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
             }
         }
 
+        var protocolRequest = requestDto.ToResponseRequest();
         if (requestDto.Stream == true)
         {
             Response.ContentType = "text/event-stream";
@@ -83,13 +93,13 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
 
                 var stream = context.Agents.Count > 1
                     ? responsesMapper.MapStreamingAsync(
-                        requestDto,
+                        protocolRequest,
                         responseModel,
                         providerKey,
                         orchestrator.StreamWorkflowAsync(runtimeRequest, context, emitTurnToken: true, cancellationToken),
                         cancellationToken)
                     : responsesMapper.MapStreamingAsync(
-                        requestDto,
+                        protocolRequest,
                         responseModel,
                         providerKey,
                         orchestrator.StreamAgentAsync(context, cancellationToken),
@@ -97,7 +107,7 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
 
                 await foreach (var part in stream.WithCancellation(cancellationToken))
                 {
-                    await persistence.SaveTerminalAsync(requestDto, part, cancellationToken);
+                    await persistence.SaveTerminalAsync(protocolRequest, part, cancellationToken);
                     await WriteEventAsync(writer, part, cancellationToken);
                 }
 
@@ -122,17 +132,17 @@ public class ResponsesController(IHttpClientFactory httpClientFactory,
 
             var result = context.Agents.Count > 1
                 ? responsesMapper.Map(
-                    requestDto,
+                    protocolRequest,
                     responseModel,
                     providerKey,
                     await orchestrator.RunWorkflowAsync(runtimeRequest, context, emitTurnToken: true, cancellationToken))
                 : responsesMapper.Map(
-                    requestDto,
+                    protocolRequest,
                     responseModel,
                     providerKey,
                     await orchestrator.RunAgentAsync(context, cancellationToken));
 
-            await persistence.SaveAsync(requestDto, result, cancellationToken);
+            await persistence.SaveAsync(protocolRequest, result, cancellationToken);
             return Ok(result);
         }
         catch (OperationCanceledException)

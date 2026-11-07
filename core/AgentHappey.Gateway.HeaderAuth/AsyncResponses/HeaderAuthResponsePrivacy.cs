@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using AIHappey.Responses;
 using AgentHappey.AsyncResponses;
+using AgentHappey.Common.Models;
 
 namespace AgentHappey.HeaderAuth.AsyncResponses;
 
@@ -15,7 +16,7 @@ public sealed class HeaderAuthResponsePrivacy
     private const string Redacted = "[redacted]";
     private readonly HashSet<string> credentials = new(StringComparer.Ordinal);
 
-    public HeaderAuthResponsePrivacy(ResponseRequest request, AsyncResponsesRequestContext context)
+    public HeaderAuthResponsePrivacy(AgentResponseRequest request, AsyncResponsesRequestContext context)
     {
         foreach (var value in context.Headers.Values) Remember(value);
         Remember(context.UserAccessToken);

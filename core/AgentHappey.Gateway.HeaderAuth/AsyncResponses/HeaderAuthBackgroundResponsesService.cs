@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading.Channels;
 using AgentHappey.AsyncResponses;
+using AgentHappey.Common.Models;
 using AIHappey.Responses;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -45,7 +46,7 @@ public sealed class HeaderAuthBackgroundResponsesService : BackgroundService, IA
 
     public bool IsEnabled => true;
 
-    public async Task<ResponseResult> EnqueueAsync(ResponseRequest request, AsyncResponsesRequestContext context,
+    public async Task<ResponseResult> EnqueueAsync(AgentResponseRequest request, AsyncResponsesRequestContext context,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);

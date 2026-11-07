@@ -1,4 +1,5 @@
 using AgentHappey.Core;
+using AgentHappey.Common.Models;
 using AIHappey.Responses;
 using Azure;
 using Azure.Storage.Queues;
@@ -36,7 +37,7 @@ public sealed class AzureAsyncResponsesService : IAsyncResponsesService
     public bool IsEnabled => true;
 
     public async Task<ResponseResult> EnqueueAsync(
-        ResponseRequest request,
+        AgentResponseRequest request,
         AsyncResponsesRequestContext context,
         CancellationToken cancellationToken = default)
     {
@@ -91,9 +92,9 @@ public sealed class AzureAsyncResponsesService : IAsyncResponsesService
     public Task<bool> DeleteAsync(string responseId, CancellationToken cancellationToken = default, string? userId = null)
         => store.DeleteAsync(responseId, cancellationToken, userId);
 
-    public static ResponseResult CreateQueuedResponse(ResponseRequest request)
+    public static ResponseResult CreateQueuedResponse(AgentResponseRequest request)
         => AsyncResponseLifecycle.CreateQueuedResponse(request);
 
-    public static ResponseRequest CloneForQueue(ResponseRequest request)
+    public static AgentResponseRequest CloneForQueue(AgentResponseRequest request)
         => AsyncResponseLifecycle.CloneForQueue(request);
 }

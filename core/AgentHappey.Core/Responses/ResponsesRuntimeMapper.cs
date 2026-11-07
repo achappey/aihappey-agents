@@ -10,27 +10,36 @@ namespace AgentHappey.Core.Responses;
 
 public static class ResponsesRuntimeMapper
 {
-    public static ChatRuntimeRequest ToChatRuntimeRequest(this ResponseRequest request)
+    public static ChatRuntimeRequest ToChatRuntimeRequest(this AgentResponseRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var messages = ToChatMessages(request.Input).ToList();
-        var models = ReadStringArray(request.AdditionalProperties, "models");
-        var agents = ReadAgents(request.Metadata);
-        var workflowType = ReadString(request.AdditionalProperties, "workflowType")
-            ?? ReadString(request.AdditionalProperties, "workflow_type")
-            ?? "sequential";
-        var workflowMetadata = ReadObject<WorkflowMetadata>(request.AdditionalProperties, "workflowMetadata")
-            ?? ReadObject<WorkflowMetadata>(request.AdditionalProperties, "workflow_metadata");
+        var agents = new List<Agent>();
+        if (request.Agent is not null)
+            agents.Add(request.Agent);
+        if (request.Agents is not null)
+            agents.AddRange(request.Agents);
+        if (agents.Any(agent => agent is null))
+            throw new ArgumentException("'agents' must contain full JSON agent objects, not null entries.");
+        var models = request.Models?.Where(model => !string.IsNullOrWhiteSpace(model)).ToList();
 
         return new ChatRuntimeRequest(
-            messages,
+            ToChatMessages(request.Input).ToList(),
             request.Model,
-            models,
-            agents,
-            workflowType,
-            workflowMetadata,
-            ReadClientTools(request));
+            models is { Count: > 0 } ? models : null,
+            agents.Count > 0 ? agents : null,
+            request.WorkflowType ?? request.WorkflowTypeSnakeCase ?? "sequential",
+            request.WorkflowMetadata ?? request.WorkflowMetadataSnakeCase,
+            ReadClientTools(request.ToResponseRequest()));
+    }
+
+    // Standard protocol requests are also used for stateless replay internally.
+    // They have no backend routing extensions or metadata-based agent selection.
+    public static ChatRuntimeRequest ToChatRuntimeRequest(this ResponseRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return new ChatRuntimeRequest(ToChatMessages(request.Input).ToList(), request.Model,
+            null, null, Tools: ReadClientTools(request));
     }
 
     private static IReadOnlyList<AIHappey.Vercel.Models.Tool>? ReadClientTools(ResponseRequest request)
@@ -282,48 +291,6 @@ public static class ResponsesRuntimeMapper
         ResponseRole.System or ResponseRole.Developer => ChatRole.System,
         _ => ChatRole.User
     };
-
-    private static IReadOnlyList<string>? ReadStringArray(Dictionary<string, JsonElement>? source, string key)
-    {
-        if (source is null || !source.TryGetValue(key, out var element) || element.ValueKind != JsonValueKind.Array)
-            return null;
-
-        var values = element
-            .EnumerateArray()
-            .Where(item => item.ValueKind == JsonValueKind.String)
-            .Select(item => item.GetString())
-            .Where(item => !string.IsNullOrWhiteSpace(item))
-            .Cast<string>()
-            .ToList();
-
-        return values.Count == 0 ? null : values;
-    }
-
-    private static string? ReadString(Dictionary<string, JsonElement>? source, string key)
-        => source is not null && source.TryGetValue(key, out var element) && element.ValueKind == JsonValueKind.String
-            ? element.GetString()
-            : null;
-
-    private static T? ReadObject<T>(Dictionary<string, JsonElement>? source, string key)
-    {
-        if (source is null || !source.TryGetValue(key, out var element))
-            return default;
-
-        return JsonSerializer.Deserialize<T>(element.GetRawText(), ResponseJson.Default);
-    }
-
-    private static IReadOnlyList<Agent>? ReadAgents(Dictionary<string, object?>? metadata)
-    {
-        if (metadata is null || !metadata.TryGetValue("agents", out var agents) || agents is null)
-            return null;
-
-        var normalized = NormalizeObject(agents);
-        var result = JsonSerializer.Deserialize<List<Agent>>(
-            JsonSerializer.Serialize(normalized, JsonSerializerOptions.Web),
-            JsonSerializerOptions.Web);
-
-        return result is { Count: > 0 } ? result : null;
-    }
 
     private static object? NormalizeObject(object? value)
     {

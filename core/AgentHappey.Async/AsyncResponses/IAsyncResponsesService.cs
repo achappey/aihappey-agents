@@ -1,4 +1,5 @@
 using AIHappey.Responses;
+using AgentHappey.Common.Models;
 
 namespace AgentHappey.AsyncResponses;
 
@@ -7,7 +8,7 @@ public interface IAsyncResponsesService
     bool IsEnabled { get; }
 
     Task<ResponseResult> EnqueueAsync(
-        ResponseRequest request,
+        AgentResponseRequest request,
         AsyncResponsesRequestContext context,
         CancellationToken cancellationToken = default);
 

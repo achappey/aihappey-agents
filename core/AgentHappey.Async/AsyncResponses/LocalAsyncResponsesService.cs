@@ -1,4 +1,5 @@
 using AIHappey.Responses;
+using AgentHappey.Common.Models;
 
 namespace AgentHappey.AsyncResponses;
 
@@ -6,7 +7,7 @@ public sealed class LocalAsyncResponsesService(LocalAsyncResponsesQueue queue, I
 {
     public bool IsEnabled => true;
 
-    public async Task<ResponseResult> EnqueueAsync(ResponseRequest request, AsyncResponsesRequestContext context,
+    public async Task<ResponseResult> EnqueueAsync(AgentResponseRequest request, AsyncResponsesRequestContext context,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);

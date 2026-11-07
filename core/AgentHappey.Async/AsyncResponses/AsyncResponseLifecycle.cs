@@ -1,12 +1,13 @@
 using System.Text.Json;
 using AIHappey.Responses;
+using AgentHappey.Common.Models;
 
 namespace AgentHappey.AsyncResponses;
 
 /// <summary>Response protocol state, independent of queue transport or persistence.</summary>
 public static class AsyncResponseLifecycle
 {
-    public static ResponseResult CreateQueuedResponse(ResponseRequest request)
+    public static ResponseResult CreateQueuedResponse(AgentResponseRequest request)
         => new()
         {
             Id = $"resp_{Guid.NewGuid():N}",
@@ -29,9 +30,9 @@ public static class AsyncResponseLifecycle
             Metadata = request.Metadata
         };
 
-    public static ResponseRequest CloneForQueue(ResponseRequest request)
+    public static AgentResponseRequest CloneForQueue(AgentResponseRequest request)
     {
-        var clone = JsonSerializer.Deserialize<ResponseRequest>(
+        var clone = JsonSerializer.Deserialize<AgentResponseRequest>(
             JsonSerializer.Serialize(request, ResponseJson.Default), ResponseJson.Default)
             ?? throw new InvalidOperationException("Failed to clone background response request.");
         clone.Stream = false;

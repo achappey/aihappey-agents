@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization;
-using AIHappey.Responses;
+using AgentHappey.Common.Models;
 
 namespace AgentHappey.AsyncResponses;
 
@@ -12,7 +12,7 @@ public sealed class AsyncResponsesQueueMessage
     public long CreatedAt { get; set; }
 
     [JsonPropertyName("request")]
-    public ResponseRequest Request { get; set; } = default!;
+    public AgentResponseRequest Request { get; set; } = default!;
 
     [JsonPropertyName("context")]
     public AsyncResponsesRequestContext Context { get; set; } = new();
