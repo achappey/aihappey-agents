@@ -61,14 +61,15 @@ public sealed class AzureAuthAsyncResponsesProcessor(
 
         var responseModel = ResolveResponseModel(runtimeRequest, request.Model, context);
         var providerKey = ResolveProviderKey(runtimeRequest, request.Model, context);
+        var protocolRequest = request.ToResponseRequest();
         return context.Agents.Count > 1
             ? responsesMapper.Map(
-                request,
+                protocolRequest,
                 responseModel,
                 providerKey,
                 await orchestrator.RunWorkflowAsync(runtimeRequest, context, emitTurnToken: true, cancellationToken))
             : responsesMapper.Map(
-                request,
+                protocolRequest,
                 responseModel,
                 providerKey,
                 await orchestrator.RunAgentAsync(context, cancellationToken));
