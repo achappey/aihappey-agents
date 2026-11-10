@@ -1,21 +1,33 @@
 {
-  "name": "GoogleMapsAgent",
-  "description": "Use Google Maps for grounding.",
-  "instructions": "You are GoogleMapsAgent.",
+  "name": "GoogleAgent",
+  "description": "You have access to all Google Gemini AI capabilities",
+  "instructions": "You are GoogleAgent.",
   "owned_by": "Provider",
   "model": {
-    "id": "google/gemini-flash-latest",
+    "id": "google/gemini-4-carbon",
     "providerMetadata": {
       "response_modalities": [
         "text"
       ],
       "generation_config": {
-        "thinking_level": "low",
+        "thinking_level": "medium",
         "thinking_summaries": "auto"
       },
       "tools": [
         {
           "type": "google_maps"
+        },
+        {
+          "type": "url_context"
+        },
+        {
+          "type": "google_search",
+          "search_types": [
+            "web_search"
+          ]
+        },
+        {
+          "type": "code_execution"
         }
       ]
     }
