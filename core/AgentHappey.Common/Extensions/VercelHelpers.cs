@@ -201,6 +201,61 @@ public static class VercelHelpers
                 : null;
     }
 
+    private static bool TryRestoreProgram(UIMessage message, string callId, string? owner,
+        HashSet<string> activeNames, bool providerExecuted,
+        Dictionary<string, Dictionary<string, object>?>? callMetadata,
+        Dictionary<string, Dictionary<string, object>?>? resultMetadata,
+        out FunctionCallContent? call, out FunctionResultContent? result)
+    {
+        call = null;
+        result = null;
+        var original = ReadResponsesItem(callMetadata);
+        if (original is null) return false;
+        var item = JsonSerializer.SerializeToElement(original, JsonSerializerOptions.Web);
+        if (GatewayTransport.String(item, "type") != "program") return false;
+
+        var producer = callMetadata?.Where(pair => pair.Value?.ContainsKey("responses_item") == true)
+            .Select(pair => pair.Value!.GetValueOrDefault("agent_name")?.ToString()
+                ?? (activeNames.Contains(pair.Key) ? pair.Key : null))
+            .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+        var programOwner = message.Metadata?.GetValueOrDefault("model")?.ToString() ?? producer ?? owner;
+        // Recognized native programs never fall through to executable functions.
+        // An explicit metadata producer must not be reassigned to the active agent.
+        if (!providerExecuted || GatewayTransport.String(item, "call_id") != callId
+            || string.IsNullOrWhiteSpace(GatewayTransport.String(item, "id"))
+            || string.IsNullOrWhiteSpace(GatewayTransport.String(item, "fingerprint"))
+            || !item.TryGetProperty("code", out var code) || code.ValueKind != JsonValueKind.String
+            || activeNames.Count > 0 && (programOwner is null || !activeNames.Contains(programOwner)
+                || producer is not null && !activeNames.Contains(producer)))
+            return true;
+
+        call = new FunctionCallContent(callId, "program", new Dictionary<string, object?> { ["code"] = code.GetString() })
+        {
+            InformationalOnly = true,
+            RawRepresentation = new Dictionary<string, object?>
+            {
+                ["responses_type"] = "program", ["responses_item"] = item.Clone(),
+                ["provider_metadata"] = callMetadata, ["agent_name"] = programOwner
+            }
+        };
+        // A suspended program has no output yet. Never invent one just to make
+        // the UI tool lifecycle look complete; its child results resume execution.
+        if (ReadResponsesItem(resultMetadata) is { } nativeOutput)
+        {
+            var output = JsonSerializer.SerializeToElement(nativeOutput, JsonSerializerOptions.Web);
+            if (GatewayTransport.String(output, "type") == "program_output"
+                && GatewayTransport.String(output, "call_id") == callId)
+            {
+                var raw = new Dictionary<string, object?>
+                {
+                    ["responses_item"] = output.Clone(), ["agent_name"] = programOwner
+                };
+                result = new FunctionResultContent(callId, raw) { RawRepresentation = raw };
+            }
+        }
+        return true;
+    }
+
     public static AIContent? ToUserMessagePart(this UIMessagePart message)
     {
         return message switch
@@ -330,6 +385,17 @@ public static class VercelHelpers
                                 || GatewayTransport.IsProviderMetadata(pairedOutput?.ProviderMetadata)
                                 || GatewayTransport.IsOutputOnly(pairedOutput?.Output))
                                 break;
+                            if (TryRestoreProgram(ui, tc.ToolCallId, owner, activeAgentNameSet, tc.ProviderExecuted == true,
+                                tc.ProviderMetadata, pairedOutput?.ProviderMetadata, out var program, out var programResult))
+                            {
+                                if (program is not null) assistantContents.Add(program);
+                                if (programResult is not null)
+                                {
+                                    FlushAssistantContents();
+                                    mappedMessages.Add(new ChatMessage(ChatRole.Tool, [programResult]) { MessageId = tc.ToolCallId });
+                                }
+                                break;
+                            }
                             if (TryRestoreWebSearch(ui, tc.ToolCallId, owner, activeAgentNameSet,
                                 tc.ProviderMetadata, pairedOutput?.ProviderMetadata, out var nativeSearch))
                             {
@@ -383,6 +449,19 @@ public static class VercelHelpers
                                 || GatewayTransport.IsProviderMetadata(ti.ResultProviderMetadata)
                                 || GatewayTransport.IsOutputOnly(ti.Output))
                                 break;
+                            if (TryRestoreProgram(ui, ti.ToolCallId, owner, activeAgentNameSet,
+                                ti.ProviderExecuted == true && ti.Preliminary != true
+                                    && ti.State is not ("input-streaming" or "input-error") && ti.Approval?.Approved != false,
+                                ti.CallProviderMetadata, ti.ResultProviderMetadata, out var program, out var programResult))
+                            {
+                                if (program is not null) assistantContents.Add(program);
+                                if (programResult is not null)
+                                {
+                                    FlushAssistantContents();
+                                    mappedMessages.Add(new ChatMessage(ChatRole.Tool, [programResult]) { MessageId = ti.ToolCallId });
+                                }
+                                break;
+                            }
                             if (TryRestoreWebSearch(ui, ti.ToolCallId, owner, activeAgentNameSet,
                                 ti.CallProviderMetadata, ti.ResultProviderMetadata, out var nativeSearch))
                             {

@@ -30,24 +30,57 @@ public partial class AgentChatClient
         var state = new StreamingResponseState(
             GetStreamingModelId(),
             agent.Name);
+        // The final snapshot can advance a suspended program's fingerprint and
+        // child-call status. Hand each programmatic child to the SDK only once,
+        // after that snapshot has replaced its earlier output_item.done version.
+        var programCalls = new Dictionary<string, ChatResponseUpdate>(StringComparer.Ordinal);
+        var failed = false;
 
         await foreach (var part in http.GetResponsesUpdates(
             request,
             providerHeaders: EffectiveModel.ProviderHeaders,
             ct: cancellationToken).WithCancellation(cancellationToken))
         {
+            if (part is ResponseFailed or ResponseError)
+                failed = true;
             foreach (var update in ToStreamingChatResponseUpdates(part, state))
             {
+                if (update.Contents.Count == 1 && update.Contents[0] is FunctionCallContent call
+                    && !call.InformationalOnly && ReadResponseCaller(call.RawRepresentation)?.Type == "program")
+                {
+                    programCalls[call.CallId] = update;
+                    continue;
+                }
+                if (update.FinishReason is not null && !failed)
+                {
+                    foreach (var pending in programCalls.Values)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        ClientToolDeclaration.MarkCalls(pending.Contents, options);
+                        yield return pending;
+                    }
+                    programCalls.Clear();
+                }
                 ClientToolDeclaration.MarkCalls(update.Contents, options);
                 yield return update;
             }
         }
+        if (!failed)
+            foreach (var update in programCalls.Values)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ClientToolDeclaration.MarkCalls(update.Contents, options);
+                yield return update;
+            }
     }
 
     private IEnumerable<ChatResponseUpdate> ToStreamingChatResponseUpdates(
         ResponseStreamPart part,
         StreamingResponseState state)
     {
+        if (state.IsTerminal)
+            yield break;
+
         switch (part)
         {
             case ResponseCreated created:
@@ -413,16 +446,33 @@ public partial class AgentChatClient
                 yield break;
 
             case ResponseCompleted completed:
+                state.IsTerminal = true;
                 state.RegisterModel(completed.Response.Model);
+                var outputIndex = 0;
                 foreach (var item in completed.Response.Output ?? [])
                 {
                     var json = item is JsonElement element ? element : JsonSerializer.SerializeToElement(item, ResponseJson.Default);
+                    if (GatewayTransport.String(json, "type") is "program" or "function_call")
+                    {
+                        var native = json.Deserialize<ResponseStreamItem>(ResponseJson.Default)!;
+                        RegisterProgramReplayStreamItem(native);
+                        RegisterResponseCallerStreamItem(native);
+                        state.RegisterOutputItem(native, outputIndex);
+                        if (native.Type == "program"
+                            && state.TryCreateProgramDoneUpdate(native, outputIndex, out var programUpdate, authoritative: true))
+                            yield return programUpdate;
+                        if (native.Type == "function_call"
+                            && json.TryGetProperty("caller", out var caller) && GatewayTransport.String(caller, "type") == "program"
+                            && state.TryCreateFunctionCallUpdate(native, outputIndex, out var callUpdate, authoritative: true))
+                            yield return callUpdate;
+                    }
                     if (GatewayTransport.IsItem(json))
                         foreach (var gatewayUpdate in CreateGatewayTransportUpdates(json, state))
                             yield return gatewayUpdate;
                     if (GatewayTransport.String(json, "type") == "web_search_call")
                         foreach (var searchUpdate in CreateWebSearchUpdates(json, state))
                             yield return searchUpdate;
+                    outputIndex++;
                 }
                 if (state.MultiAgentActive
                     && TryCreateAuthoritativeMultiAgentFinalUpdate(completed.Response, out var finalTextUpdate))
@@ -433,11 +483,13 @@ public partial class AgentChatClient
                 yield break;
 
             case ResponseFailed failed:
+                state.IsTerminal = true;
                 yield return CreateErrorUpdate(Guid.NewGuid().ToString(), ProviderErrorMessages.FromJson(
                     JsonSerializer.SerializeToElement(failed.Response, ResponseJson.Default)));
                 yield break;
 
             case ResponseError error:
+                state.IsTerminal = true;
                 yield return CreateErrorUpdate(Guid.NewGuid().ToString(), ProviderErrorMessages.FromText(error.Message));
                 yield break;
 
@@ -840,6 +892,7 @@ public partial class AgentChatClient
         public string AuthorName { get; } = authorName;
         public string? ProviderId { get; private set; }
         public bool MultiAgentActive { get; set; }
+        public bool IsTerminal { get; set; }
 
         public void RegisterModel(string? model)
         {
@@ -1165,7 +1218,8 @@ public partial class AgentChatClient
         public bool TryCreateFunctionCallUpdate(
             ResponseStreamItem item,
             int outputIndex,
-            out ChatResponseUpdate update)
+            out ChatResponseUpdate update,
+            bool authoritative = false)
         {
             update = null!;
             var itemId = item.Id;
@@ -1173,7 +1227,7 @@ public partial class AgentChatClient
             if (string.IsNullOrWhiteSpace(itemId)
                 || !toolCalls.TryGetValue(itemId, out var state)
                 || state.IsProviderExecuted
-                || state.InputEmitted
+                || state.InputEmitted && !authoritative
                 || string.IsNullOrWhiteSpace(state.Name))
             {
                 return false;
@@ -1357,13 +1411,14 @@ public partial class AgentChatClient
         public bool TryCreateProgramDoneUpdate(
             ResponseStreamItem item,
             int outputIndex,
-            out ChatResponseUpdate update)
+            out ChatResponseUpdate update,
+            bool authoritative = false)
         {
             update = null!;
             var callId = item.CallId
                 ?? GetAdditionalPropertyString(item.AdditionalProperties, "call_id")
                 ?? item.Id;
-            if (string.IsNullOrWhiteSpace(callId) || !emittedProgramInputs.Add(callId))
+            if (string.IsNullOrWhiteSpace(callId) || !emittedProgramInputs.Add(callId) && !authoritative)
                 return false;
 
             var nativeItem = JsonSerializer.SerializeToElement(item, ResponseJson.Default);

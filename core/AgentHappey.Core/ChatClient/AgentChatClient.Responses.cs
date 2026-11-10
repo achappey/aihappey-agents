@@ -343,6 +343,21 @@ public partial class AgentChatClient
             }
         }
 
+        var programIds = result.OfType<ResponseProgramItem>().SelectMany(GetProgramReplayIds)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var item in result)
+        {
+            var caller = item switch
+            {
+                ResponseFunctionCallItem call => call.Caller,
+                ResponseFunctionCallOutputItem output => output.Caller,
+                _ => null
+            };
+            if (caller?.Type == "program" && (string.IsNullOrWhiteSpace(caller.CallerId)
+                || !programIds.Contains(caller.CallerId)))
+                throw new InvalidOperationException($"Missing program continuation state for caller '{caller.CallerId}'. Replay the parent program descriptor before continuing.");
+        }
+
         return result;
     }
 

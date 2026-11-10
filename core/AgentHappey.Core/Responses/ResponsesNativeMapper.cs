@@ -417,8 +417,15 @@ public sealed class ResponsesNativeMapper : IResponsesNativeMapper
             // informational artifacts as executable function calls/results.
             if (ReadNativeResponseItem(functionCall) is { } native && GatewayTransport.IsItem(native))
                 return [];
-            if (string.IsNullOrWhiteSpace(functionCall.CallId) || toolCalls.ContainsKey(functionCall.CallId))
+            if (string.IsNullOrWhiteSpace(functionCall.CallId))
                 return [];
+            if (toolCalls.TryGetValue(functionCall.CallId, out var existing))
+            {
+                // Program start/done/final snapshots share one call identity.
+                // Keep the latest native descriptor in the final response too.
+                existing.NativeItem = ReadNativeResponseItem(functionCall) ?? existing.NativeItem;
+                return [];
+            }
 
             var state = new ToolCallOutputState(outputs.Count, functionCall.CallId!)
             {
