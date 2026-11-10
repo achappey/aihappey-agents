@@ -41,6 +41,7 @@ public partial class AgentChatClient
             providerHeaders: EffectiveModel.ProviderHeaders,
             ct: cancellationToken).WithCancellation(cancellationToken))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (part is ResponseFailed or ResponseError)
                 failed = true;
             foreach (var update in ToStreamingChatResponseUpdates(part, state))
@@ -65,6 +66,7 @@ public partial class AgentChatClient
                 yield return update;
             }
         }
+        cancellationToken.ThrowIfCancellationRequested();
         if (!failed)
             foreach (var update in programCalls.Values)
             {
