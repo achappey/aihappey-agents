@@ -15,9 +15,6 @@
       },
       "tools": [
         {
-          "type": "google_maps"
-        },
-        {
           "type": "url_context"
         },
         {
