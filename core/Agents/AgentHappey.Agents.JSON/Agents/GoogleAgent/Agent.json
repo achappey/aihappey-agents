@@ -5,6 +5,44 @@
   "owned_by": "Provider",
   "models": [
     {
+      "id": "google/gemini-omni-flash-preview",
+      "providerMetadata": {
+        "service_tier": "standard",
+        "store": false,
+        "generation_config": {
+          "thinking_level": "high",
+          "thinking_summaries": "auto",
+          "video_config": {}
+        },
+        "response_format": [
+          {
+            "type": "video",
+            "delivery": "inline"
+          }
+        ]
+      }
+    },
+    {
+      "id": "google/lyria-3-clip-preview",
+      "providerMetadata": {
+        "service_tier": "standard",
+        "store": false
+      }
+    },
+    {
+      "id": "google/lyria-3-pro-preview",
+      "providerMetadata": {
+        "service_tier": "standard",
+        "store": false
+      }
+    },
+    {
+      "id": "google/antigravity-preview-09-2026",
+      "providerMetadata": {
+        "environment": "remote"
+      }
+    },
+    {
       "id": "google/gemini-4-carbon",
       "providerMetadata": {
         "response_modalities": [
