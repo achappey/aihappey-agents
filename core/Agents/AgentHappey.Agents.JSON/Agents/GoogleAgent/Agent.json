@@ -5,7 +5,7 @@
   "owned_by": "Provider",
   "models": [
     {
-      "id": "google/gemini-omni-flash-preview",
+      "id": "google/gemini-omni-1.2-flash",
       "providerMetadata": {
         "service_tier": "standard",
         "store": false,
@@ -18,28 +18,11 @@
           {
             "type": "video",
             "delivery": "inline"
+          },
+          {
+            "type": "text"
           }
         ]
-      }
-    },
-    {
-      "id": "google/lyria-3-clip-preview",
-      "providerMetadata": {
-        "service_tier": "standard",
-        "store": false
-      }
-    },
-    {
-      "id": "google/lyria-3-pro-preview",
-      "providerMetadata": {
-        "service_tier": "standard",
-        "store": false
-      }
-    },
-    {
-      "id": "google/antigravity-preview-09-2026",
-      "providerMetadata": {
-        "environment": "remote"
       }
     },
     {
