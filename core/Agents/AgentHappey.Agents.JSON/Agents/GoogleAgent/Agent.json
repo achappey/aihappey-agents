@@ -3,32 +3,116 @@
   "description": "You have access to all Google Gemini AI capabilities",
   "instructions": "You are GoogleAgent.",
   "owned_by": "Provider",
-  "model": {
-    "id": "google/gemini-4-carbon",
-    "providerMetadata": {
-      "response_modalities": [
-        "text"
-      ],
-      "generation_config": {
-        "thinking_level": "medium",
-        "thinking_summaries": "auto"
-      },
-      "tools": [
-        {
-          "type": "url_context"
+  "models": [
+    {
+      "id": "google/gemini-4-carbon",
+      "providerMetadata": {
+        "response_modalities": [
+          "text"
+        ],
+        "generation_config": {
+          "thinking_level": "medium",
+          "thinking_summaries": "auto"
         },
-        {
-          "type": "google_search",
-          "search_types": [
-            "web_search"
-          ]
+        "tools": [
+          {
+            "type": "url_context"
+          },
+          {
+            "type": "google_search",
+            "search_types": [
+              "web_search"
+            ]
+          },
+          {
+            "type": "code_execution"
+          }
+        ]
+      }
+    },
+    {
+      "id": "google/gemini-4-argon",
+      "providerMetadata": {
+        "response_modalities": [
+          "text"
+        ],
+        "generation_config": {
+          "thinking_level": "medium",
+          "thinking_summaries": "auto"
         },
-        {
-          "type": "code_execution"
-        }
-      ]
+        "tools": [
+          {
+            "type": "url_context"
+          },
+          {
+            "type": "google_search",
+            "search_types": [
+              "web_search"
+            ]
+          },
+          {
+            "type": "code_execution"
+          }
+        ]
+      }
+    },
+    {
+      "id": "google/gemini-flash-latest",
+      "providerMetadata": {
+        "response_modalities": [
+          "text"
+        ],
+        "generation_config": {
+          "thinking_level": "medium",
+          "thinking_summaries": "auto"
+        },
+        "tools": [
+          {
+            "type": "url_context"
+          },
+          {
+            "type": "google_search",
+            "search_types": [
+              "web_search"
+            ]
+          },
+          {
+            "type": "code_execution"
+          }
+        ]
+      }
+    },
+    {
+      "id": "google/gemini-flash-lite-latest",
+      "providerMetadata": {
+        "response_modalities": [
+          "text"
+        ],
+        "generation_config": {
+          "thinking_level": "medium",
+          "thinking_summaries": "auto"
+        },
+        "tools": [
+          {
+            "type": "url_context"
+          },
+          {
+            "type": "google_search",
+            "search_types": [
+              "web_search"
+            ]
+          },
+          {
+            "type": "code_execution"
+          }
+        ]
+      }
+    },
+    {
+      "id": "google/gemini-decision-1",
+      "providerMetadata": {}
     }
-  },
+  ],
   "transcription": {
     "id": "google/gemini-3.5-transcribe-live"
   },
