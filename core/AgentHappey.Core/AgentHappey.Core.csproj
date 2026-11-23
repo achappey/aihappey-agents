@@ -12,8 +12,8 @@
       <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.28.0" />
       <PackageReference Include="Microsoft.Agents.AI.Workflows.Declarative" Version="1.28.0" />
       <PackageReference Include="System.Security.Cryptography.Xml" Version="11.0.0" />
-      <PackageReference Include="Microsoft.Extensions.AI" Version="11.0.0" />
-      <PackageReference Include="Microsoft.Graph.Beta" Version="6.9.0-preview" />
+      <PackageReference Include="Microsoft.Extensions.AI" Version="11.0.1" />
+      <PackageReference Include="Microsoft.Graph.Beta" Version="6.11.2-preview" />
       <PackageReference Include="Microsoft.Identity.Web" Version="4.18.0" />
       <PackageReference Include="ModelContextProtocol" Version="2.4.0" />
       <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.4.0" />

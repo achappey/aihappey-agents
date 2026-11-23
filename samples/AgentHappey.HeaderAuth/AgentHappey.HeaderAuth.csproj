@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="11.0.0" />
-    <PackageReference Include="Microsoft.OpenApi" Version="3.11.0" />
+    <PackageReference Include="Microsoft.OpenApi" Version="3.11.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\core\AgentHappey.Gateway.HeaderAuth\AgentHappey.Gateway.HeaderAuth.csproj" />
